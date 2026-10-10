@@ -5,8 +5,12 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.main import create_app
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -58,3 +62,12 @@ def db(engine: Engine) -> Iterator[Session]:
         finally:
             session.close()
             outer.rollback()
+
+
+@pytest.fixture
+def client(db: Session) -> Iterator[TestClient]:
+    """An API client whose requests use the per-test session, so they're rolled back too."""
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as client:
+        yield client

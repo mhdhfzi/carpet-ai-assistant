@@ -18,5 +18,5 @@ pip install -e ".[dev]"
 alembic upgrade head           # apply database migrations
 ruff check . && ruff format --check .
 pytest                         # needs the database running; uses a separate carpet_test DB
-uvicorn app.main:app --reload  # http://localhost:8000/health
+uvicorn app.main:app --reload  # API docs at http://127.0.0.1:8000/docs
 ```
