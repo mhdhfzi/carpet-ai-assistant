@@ -73,12 +73,12 @@ This is **not** my university final-year project. It is a separate portfolio pie
 Work through these phases in order. Tick items off as they are done.
 
 ### Phase 1: Backend and data
-- [ ] Project scaffold, pyproject, linting (ruff), formatting
-- [ ] docker-compose with Postgres + pgvector
-- [ ] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
-- [ ] CRUD endpoints for services and bookings
-- [ ] Pricing service (estimate from carpet size/type) with unit tests
-- [ ] Availability service (free slots) with unit tests
+- [x] Project scaffold, pyproject, linting (ruff), formatting
+- [x] docker-compose with Postgres + pgvector
+- [x] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
+- [x] CRUD endpoints for services and bookings
+- [x] Pricing service (estimate from carpet size/type) with unit tests
+- [x] Availability service (free slots) with unit tests
 
 ### Phase 2: RAG chatbot
 - [ ] Write knowledge documents in `backend/knowledge/`

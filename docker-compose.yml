@@ -1,0 +1,22 @@
+# Local development services. Start with: docker compose up -d
+services:
+  db:
+    # Official Postgres 16 image with the pgvector extension pre-installed.
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-carpet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-carpet}
+      POSTGRES_DB: ${POSTGRES_DB:-carpet}
+    ports:
+      # Bound to localhost only so the dev database isn't exposed on the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
