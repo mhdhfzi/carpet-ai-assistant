@@ -78,7 +78,7 @@ Work through these phases in order. Tick items off as they are done.
 - [x] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
 - [x] CRUD endpoints for services and bookings
 - [x] Pricing service (estimate from carpet size/type) with unit tests
-- [ ] Availability service (free slots) with unit tests
+- [x] Availability service (free slots) with unit tests
 
 ### Phase 2: RAG chatbot
 - [ ] Write knowledge documents in `backend/knowledge/`

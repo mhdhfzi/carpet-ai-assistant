@@ -25,6 +25,18 @@ def get_service(db: Session, service_id: int) -> Service:
     return service
 
 
+def get_bookable_services(db: Session, service_ids: set[int]) -> dict[int, Service]:
+    """Load services by id, failing if any is unknown or no longer offered."""
+    services = {s.id: s for s in db.scalars(select(Service).where(Service.id.in_(service_ids)))}
+    missing = service_ids - services.keys()
+    if missing:
+        raise BusinessRuleError(f"Unknown service id(s): {sorted(missing)}")
+    inactive = sorted(s.name for s in services.values() if not s.is_active)
+    if inactive:
+        raise BusinessRuleError(f"Service(s) no longer offered: {', '.join(inactive)}")
+    return services
+
+
 def create_service(db: Session, data: ServiceCreate) -> Service:
     _check_price_range(data.unit_price, data.unit_price_max)
     service = Service(**data.model_dump())

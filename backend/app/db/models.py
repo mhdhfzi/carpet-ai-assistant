@@ -1,15 +1,17 @@
 """ORM models for the core domain: services, customers, bookings and conversations."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -36,6 +38,11 @@ class BookingStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class BookingLocation(StrEnum):
+    CUSTOMER_HOME = "customer_home"  # the team visits (collects carpets or cleans on site)
+    SHOP = "shop"  # the customer drops the item off; doesn't occupy the team
+
+
 class Channel(StrEnum):
     WEB = "web"
     WHATSAPP = "whatsapp"
@@ -55,6 +62,7 @@ class Service(TimestampMixin, Base):
         CheckConstraint(
             "unit_price_max IS NULL OR unit_price_max >= unit_price", name="unit_price_range"
         ),
+        CheckConstraint("visit_minutes > 0", name="visit_minutes_positive"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -66,6 +74,9 @@ class Service(TimestampMixin, Base):
     # inspection); unit_price is then the lower bound. NULL means a fixed price.
     unit_price_max: Mapped[Decimal | None] = mapped_column(Money)
     minimum_charge: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
+    # How long the team spends at the customer's home: e.g. 30 min to collect a carpet
+    # (cleaned at the shop, returned in 5-7 days), 2 hours to clean a sofa on site.
+    visit_minutes: Mapped[int] = mapped_column(Integer, default=120, server_default="120")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
@@ -84,6 +95,8 @@ class Customer(TimestampMixin, Base):
 
 
 class Booking(TimestampMixin, Base):
+    # The migration also adds ex_bookings_no_overlap, an exclusion constraint that stops two
+    # active home visits overlapping (there is one team). SQLAlchemy can't express it here.
     __tablename__ = "bookings"
     __table_args__ = (
         CheckConstraint("scheduled_end > scheduled_start", name="end_after_start"),
@@ -101,6 +114,11 @@ class Booking(TimestampMixin, Base):
     )
     scheduled_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     scheduled_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    location: Mapped[BookingLocation] = mapped_column(
+        str_enum(BookingLocation, "booking_location"),
+        default=BookingLocation.CUSTOMER_HOME,
+        server_default=BookingLocation.CUSTOMER_HOME.value,
+    )
     status: Mapped[BookingStatus] = mapped_column(
         str_enum(BookingStatus, "booking_status"),
         default=BookingStatus.PENDING,
@@ -191,3 +209,12 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class ClosedDate(Base):
+    """A day the business is closed besides Fridays, e.g. a public holiday."""
+
+    __tablename__ = "closed_dates"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    reason: Mapped[str] = mapped_column(String(100), default="")

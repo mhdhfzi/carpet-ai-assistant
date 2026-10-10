@@ -1,6 +1,8 @@
 import os
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from alembic import command
@@ -9,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.db.session import get_db
 from app.main import create_app
 
@@ -35,6 +38,17 @@ def alembic_config(url: URL) -> Config:
         "sqlalchemy.url", url.render_as_string(hide_password=False).replace("%", "%%")
     )
     return cfg
+
+
+# Saturday 10 Oct 2026, 10:00 in Malaysia. With 2 days' notice, Monday 12 Oct is the earliest
+# bookable day. Freezing time keeps date-based tests from breaking as the calendar moves on.
+FROZEN_NOW = datetime(2026, 10, 10, 10, 0, tzinfo=ZoneInfo("Asia/Kuala_Lumpur"))
+
+
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> datetime:
+    monkeypatch.setattr(clock, "now", lambda: FROZEN_NOW)
+    return FROZEN_NOW
 
 
 @pytest.fixture(scope="session")

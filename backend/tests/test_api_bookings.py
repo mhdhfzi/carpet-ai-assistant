@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -5,12 +6,19 @@ from fastapi.testclient import TestClient
 
 from tests.test_api_services import create_service
 
+# Tests run with the clock frozen at Saturday 10 Oct 2026 (see conftest.py).
+MONDAY_9AM = "2026-11-02T09:00:00+08:00"
+
+
+def at(iso: str) -> datetime:
+    """Parse an ISO timestamp, so times compare as instants whatever their UTC offset."""
+    return datetime.fromisoformat(iso)
+
 
 def booking_payload(service_id: int, **overrides: Any) -> dict[str, Any]:
     return {
         "customer": {"name": "Aminah", "phone": "012-345 6789", "area": "Seremban"},
-        "scheduled_start": "2026-11-02T09:00:00+08:00",
-        "scheduled_end": "2026-11-02T11:00:00+08:00",
+        "scheduled_start": MONDAY_9AM,
         "items": [{"service_id": service_id, "quantity": "100"}],
         **overrides,
     }
@@ -35,6 +43,9 @@ def test_create_booking_prices_on_server(client: TestClient, service_id: int) ->
     assert booking["items"][0]["service"]["name"] == "Carpet shampoo"
     assert booking["items"][0]["unit_price"] == "1.20"
     assert booking["customer"]["phone"] == "+60123456789"  # normalised
+    # The end time comes from the service's visit duration (120 min by default).
+    assert at(booking["scheduled_end"]) == at("2026-11-02T11:00:00+08:00")
+    assert booking["location"] == "customer_home"
 
 
 def test_minimum_charge_applies_to_small_jobs(client: TestClient, service_id: int) -> None:
@@ -56,6 +67,7 @@ def test_existing_customer_is_reused_by_phone(client: TestClient, service_id: in
     second = create_booking(
         client,
         service_id,
+        scheduled_start="2026-11-02T13:00:00+08:00",
         customer={"name": "Someone Else", "phone": "+60123456789", "address": "Somewhere"},
     )
 
@@ -66,7 +78,6 @@ def test_existing_customer_is_reused_by_phone(client: TestClient, service_id: in
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"scheduled_end": "2026-11-02T08:00:00+08:00"}, "scheduled_end must be after"),
         ({"scheduled_start": "2026-11-02T09:00:00"}, "timezone"),
         ({"items": []}, "at least 1 item"),
         ({"customer": {"name": "A", "phone": "abc"}}, "Invalid phone number"),
@@ -122,7 +133,6 @@ def test_list_bookings_filters(client: TestClient, service_id: int) -> None:
         client,
         service_id,
         scheduled_start="2026-11-05T09:00:00+08:00",
-        scheduled_end="2026-11-05T10:00:00+08:00",
     )
     client.patch(f"/api/bookings/{late['id']}", json={"status": "confirmed"})
 

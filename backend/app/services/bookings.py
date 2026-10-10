@@ -3,12 +3,13 @@
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Booking, BookingItem, BookingStatus, Customer, Service
+from app.db.models import Booking, BookingItem, BookingStatus, Customer
 from app.schemas.booking import BookingCreate, BookingUpdate, CustomerIn
-from app.services import pricing
-from app.services.errors import BusinessRuleError, InvalidStatusTransitionError, NotFoundError
+from app.services import availability, catalog, pricing
+from app.services.errors import ConflictError, InvalidStatusTransitionError, NotFoundError
 
 # Which statuses a booking may move to from each status. Done and cancelled are final.
 ALLOWED_TRANSITIONS: dict[BookingStatus, set[BookingStatus]] = {
@@ -54,8 +55,13 @@ def get_booking(db: Session, booking_id: int) -> Booking:
 def create_booking(
     db: Session, data: BookingCreate, *, conversation_id: int | None = None
 ) -> Booking:
-    """Create a pending booking. Prices come from the catalogue, never from the caller."""
-    services = _load_bookable_services(db, {item.service_id for item in data.items})
+    """Create a pending booking for the owner to confirm with the customer.
+
+    Prices and the visit's end time come from the catalogue, never from the caller.
+    """
+    services = catalog.get_bookable_services(db, {item.service_id for item in data.items})
+    duration = availability.visit_duration(services.values())
+    availability.ensure_slot_available(db, data.scheduled_start, duration, location=data.location)
 
     items, line_estimates = [], []
     for item in data.items:
@@ -79,14 +85,23 @@ def create_booking(
         customer=_find_or_create_customer(db, data.customer),
         conversation_id=conversation_id,
         scheduled_start=data.scheduled_start,
-        scheduled_end=data.scheduled_end,
+        scheduled_end=data.scheduled_start + duration,
+        location=data.location,
         estimated_price=total.low,
         estimated_price_max=total.high,
         notes=data.notes,
         items=items,
     )
     db.add(booking)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # The check above passed, but another booking took the slot in the meantime;
+        # the database's exclusion constraint is the final guard against double-booking.
+        db.rollback()
+        if "ex_bookings_no_overlap" in str(exc.orig):
+            raise ConflictError("That time was just booked; please choose another.") from exc
+        raise
     return get_booking(db, booking.id)
 
 
@@ -107,17 +122,6 @@ def update_booking(db: Session, booking_id: int, data: BookingUpdate) -> Booking
 
     db.commit()
     return get_booking(db, booking_id)
-
-
-def _load_bookable_services(db: Session, service_ids: set[int]) -> dict[int, Service]:
-    services = {s.id: s for s in db.scalars(select(Service).where(Service.id.in_(service_ids)))}
-    missing = service_ids - services.keys()
-    if missing:
-        raise BusinessRuleError(f"Unknown service id(s): {sorted(missing)}")
-    inactive = sorted(s.name for s in services.values() if not s.is_active)
-    if inactive:
-        raise BusinessRuleError(f"Service(s) no longer offered: {', '.join(inactive)}")
-    return services
 
 
 def _find_or_create_customer(db: Session, data: CustomerIn) -> Customer:

@@ -17,80 +17,53 @@ from app.db.session import SessionLocal
 
 D = Decimal
 
+CARPET_PROCESS = (
+    "We collect the carpet from your home (or you can drop it off at our shop), clean it at "
+    "our shop and return it in 5-7 days. The size is measured and the final price confirmed "
+    "after collection."
+)
+ON_SITE_PROCESS = "Cleaned at your home (about 2 hours) or you can bring it to our shop."
+
+
+def carpet(name: str, kind: str, price: str, price_max: str | None = None) -> dict:
+    priced = f"Priced per square foot. {CARPET_PROCESS}"
+    if price_max:
+        priced = (
+            f"RM{price} to RM{price_max} per square foot depending on the carpet's material; "
+            f"the owner confirms the price after inspecting it. {CARPET_PROCESS}"
+        )
+    return {
+        "name": name,
+        "description": f"{kind} cleaning. {priced}",
+        "pricing_unit": PricingUnit.PER_SQFT,
+        "unit_price": D(price),
+        "unit_price_max": D(price_max) if price_max else None,
+        "visit_minutes": 30,  # the visit is only to collect the carpet
+    }
+
+
+def on_site(name: str, kind: str, per: str, price: str) -> dict:
+    return {
+        "name": name,
+        "description": f"{kind} cleaning, priced per {per}. {ON_SITE_PROCESS}",
+        "pricing_unit": PricingUnit.PER_ITEM,
+        "unit_price": D(price),
+        "visit_minutes": 120,
+    }
+
+
 SERVICES: list[dict] = [
-    # Carpets: priced per square foot. The size is recorded on site and the final
-    # price confirmed to the customer afterwards.
-    {
-        "name": "Karpet Biasa",
-        "description": "Standard carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("1.80"),
-    },
-    {
-        "name": "Karpet Shaggy",
-        "description": "Shaggy (long-pile) carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("2.00"),
-    },
-    {
-        "name": "Karpet Velvet",
-        "description": "Velvet carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("0.90"),
-    },
-    {
-        "name": "Karpet Premium Velvet",
-        "description": "Premium velvet carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("1.00"),
-    },
-    {
-        "name": "Karpet Span",
-        "description": "Span carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("0.90"),
-    },
-    {
-        "name": "Karpet Tatami",
-        "description": "Tatami carpet cleaning, priced per square foot.",
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("0.90"),
-    },
-    {
-        "name": "Karpet Handmade",
-        "description": (
-            "Handmade carpet cleaning, RM2.50 to RM4.00 per square foot depending on the "
-            "carpet's material. The owner confirms the final price after inspecting it."
-        ),
-        "pricing_unit": PricingUnit.PER_SQFT,
-        "unit_price": D("2.50"),
-        "unit_price_max": D("4.00"),
-    },
-    # Furniture: priced per item.
-    {
-        "name": "Cucian Sofa",
-        "description": "Sofa cleaning, priced per seat.",
-        "pricing_unit": PricingUnit.PER_ITEM,
-        "unit_price": D("60.00"),
-    },
-    {
-        "name": "Cucian Tilam Single",
-        "description": "Single mattress cleaning, priced per mattress.",
-        "pricing_unit": PricingUnit.PER_ITEM,
-        "unit_price": D("100.00"),
-    },
-    {
-        "name": "Cucian Tilam Queen",
-        "description": "Queen mattress cleaning, priced per mattress.",
-        "pricing_unit": PricingUnit.PER_ITEM,
-        "unit_price": D("140.00"),
-    },
-    {
-        "name": "Cucian Tilam King",
-        "description": "King mattress cleaning, priced per mattress.",
-        "pricing_unit": PricingUnit.PER_ITEM,
-        "unit_price": D("160.00"),
-    },
+    carpet("Karpet Biasa", "Standard carpet", "1.80"),
+    carpet("Karpet Shaggy", "Shaggy (long-pile) carpet", "2.00"),
+    carpet("Karpet Velvet", "Velvet carpet", "0.90"),
+    carpet("Karpet Premium Velvet", "Premium velvet carpet", "1.00"),
+    carpet("Karpet Span", "Span carpet", "0.90"),
+    carpet("Karpet Tatami", "Tatami carpet", "0.90"),
+    carpet("Karpet Handmade", "Handmade carpet", "2.50", price_max="4.00"),
+    on_site("Cucian Sofa", "Sofa", "seat", "60.00"),
+    on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
+    on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),
+    on_site("Cucian Tilam King", "King mattress", "mattress", "160.00"),
     # TODO: Cucian Kereta (car cleaning) by vehicle size (sedan, MPV, ...): waiting for prices.
 ]
 

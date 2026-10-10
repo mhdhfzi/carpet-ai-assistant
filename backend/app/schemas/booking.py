@@ -1,11 +1,11 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Self
+from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from app.db.models import BookingStatus
+from app.db.models import BookingLocation, BookingStatus
 
 _E164 = re.compile(r"^\+[1-9]\d{7,14}$")
 
@@ -46,16 +46,11 @@ class BookingItemIn(BaseModel):
 class BookingCreate(BaseModel):
     customer: CustomerIn
     # AwareDatetime rejects times without a timezone, which would be ambiguous.
+    # The end time is derived from the services' visit durations.
     scheduled_start: AwareDatetime
-    scheduled_end: AwareDatetime
+    location: BookingLocation = BookingLocation.CUSTOMER_HOME
     items: list[BookingItemIn] = Field(min_length=1)
     notes: str | None = None
-
-    @model_validator(mode="after")
-    def _end_after_start(self) -> Self:
-        if self.scheduled_end <= self.scheduled_start:
-            raise ValueError("scheduled_end must be after scheduled_start")
-        return self
 
     @field_validator("items")
     @classmethod
@@ -107,6 +102,7 @@ class BookingRead(BaseModel):
     customer: CustomerRead
     scheduled_start: datetime
     scheduled_end: datetime
+    location: BookingLocation
     status: BookingStatus
     estimated_price: Decimal
     estimated_price_max: Decimal  # equals estimated_price unless an item is priced on inspection
@@ -114,3 +110,8 @@ class BookingRead(BaseModel):
     items: list[BookingItemRead]
     created_at: datetime
     updated_at: datetime
+
+
+class DayAvailability(BaseModel):
+    day: date
+    slots: list[datetime]  # possible visit start times
