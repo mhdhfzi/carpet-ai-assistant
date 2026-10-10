@@ -74,7 +74,7 @@ Work through these phases in order. Tick items off as they are done.
 
 ### Phase 1: Backend and data
 - [x] Project scaffold, pyproject, linting (ruff), formatting
-- [ ] docker-compose with Postgres + pgvector
+- [x] docker-compose with Postgres + pgvector
 - [ ] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
 - [ ] CRUD endpoints for services and bookings
 - [ ] Pricing service (estimate from carpet size/type) with unit tests
