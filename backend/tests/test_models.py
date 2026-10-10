@@ -26,13 +26,16 @@ def make_customer(phone: str = "+60123456789") -> Customer:
     return Customer(name="Aminah", phone=phone, area="Seremban")
 
 
+_SERVICE_FIELDS = {
+    "name": "Carpet shampoo",
+    "pricing_unit": PricingUnit.PER_SQFT,
+    "unit_price": Decimal("1.20"),
+    "minimum_charge": Decimal("80.00"),
+}
+
+
 def make_service() -> Service:
-    return Service(
-        name="Carpet shampoo",
-        pricing_unit=PricingUnit.PER_SQFT,
-        unit_price=Decimal("1.20"),
-        minimum_charge=Decimal("80.00"),
-    )
+    return Service(**_SERVICE_FIELDS)
 
 
 def test_booking_with_items_round_trip(db: Session) -> None:
@@ -42,12 +45,15 @@ def test_booking_with_items_round_trip(db: Session) -> None:
         scheduled_start=START,
         scheduled_end=START + timedelta(hours=2),
         estimated_price=Decimal("120.00"),
+        estimated_price_max=Decimal("120.00"),
         items=[
             BookingItem(
                 service=service,
                 quantity=Decimal("100"),
                 unit_price=Decimal("1.20"),
+                unit_price_max=Decimal("1.20"),
                 line_total=Decimal("120.00"),
+                line_total_max=Decimal("120.00"),
             )
         ],
     )
@@ -80,6 +86,7 @@ def test_booking_must_end_after_it_starts(db: Session) -> None:
             scheduled_start=START,
             scheduled_end=START,
             estimated_price=Decimal("100.00"),
+            estimated_price_max=Decimal("100.00"),
         )
     )
 
@@ -97,10 +104,18 @@ def test_database_rejects_unknown_booking_status(db: Session) -> None:
         db.execute(
             text(
                 "INSERT INTO bookings (customer_id, scheduled_start, scheduled_end, status,"
-                " estimated_price) VALUES (:cid, :start, :end, 'bogus', 100)"
+                " estimated_price, estimated_price_max)"
+                " VALUES (:cid, :start, :end, 'bogus', 100, 100)"
             ),
             {"cid": customer.id, "start": START, "end": START + timedelta(hours=1)},
         )
+
+
+def test_database_rejects_inverted_price_range(db: Session) -> None:
+    db.add(Service(**{**_SERVICE_FIELDS, "unit_price_max": Decimal("1.00")}))
+
+    with pytest.raises(IntegrityError, match="ck_services_unit_price_range"):
+        db.flush()
 
 
 def test_deleting_conversation_deletes_its_messages(db: Session) -> None:
@@ -129,6 +144,7 @@ def test_cannot_delete_customer_with_bookings(db: Session) -> None:
             scheduled_start=START,
             scheduled_end=START + timedelta(hours=1),
             estimated_price=Decimal("100.00"),
+            estimated_price_max=Decimal("100.00"),
         )
     )
     db.flush()

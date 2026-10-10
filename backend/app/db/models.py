@@ -52,6 +52,9 @@ class Service(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("unit_price >= 0", name="unit_price_non_negative"),
         CheckConstraint("minimum_charge >= 0", name="minimum_charge_non_negative"),
+        CheckConstraint(
+            "unit_price_max IS NULL OR unit_price_max >= unit_price", name="unit_price_range"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -59,6 +62,9 @@ class Service(TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, default="")
     pricing_unit: Mapped[PricingUnit] = mapped_column(str_enum(PricingUnit, "pricing_unit"))
     unit_price: Mapped[Decimal] = mapped_column(Money)
+    # Set only when the price varies (e.g. handmade carpet, decided by the owner on
+    # inspection); unit_price is then the lower bound. NULL means a fixed price.
+    unit_price_max: Mapped[Decimal | None] = mapped_column(Money)
     minimum_charge: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
@@ -82,6 +88,7 @@ class Booking(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("scheduled_end > scheduled_start", name="end_after_start"),
         CheckConstraint("estimated_price >= 0", name="estimated_price_non_negative"),
+        CheckConstraint("estimated_price_max >= estimated_price", name="estimated_price_range"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -99,7 +106,9 @@ class Booking(TimestampMixin, Base):
         default=BookingStatus.PENDING,
         server_default=BookingStatus.PENDING.value,
     )
+    # Estimate range; equal when every item has a fixed price. The final price is set on site.
     estimated_price: Mapped[Decimal] = mapped_column(Money)
+    estimated_price_max: Mapped[Decimal] = mapped_column(Money)
     notes: Mapped[str | None] = mapped_column(Text)
 
     customer: Mapped[Customer] = relationship(back_populates="bookings")
@@ -121,6 +130,8 @@ class BookingItem(Base):
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint("unit_price >= 0", name="unit_price_non_negative"),
         CheckConstraint("line_total >= 0", name="line_total_non_negative"),
+        CheckConstraint("unit_price_max >= unit_price", name="unit_price_range"),
+        CheckConstraint("line_total_max >= line_total", name="line_total_range"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -131,8 +142,11 @@ class BookingItem(Base):
         ForeignKey("services.id", ondelete="RESTRICT"), index=True
     )
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2))  # sqft or item count
+    # Snapshots are always a (min, max) pair, equal for fixed-price services.
     unit_price: Mapped[Decimal] = mapped_column(Money)
+    unit_price_max: Mapped[Decimal] = mapped_column(Money)
     line_total: Mapped[Decimal] = mapped_column(Money)
+    line_total_max: Mapped[Decimal] = mapped_column(Money)
 
     booking: Mapped[Booking] = relationship(back_populates="items")
     service: Mapped[Service] = relationship()

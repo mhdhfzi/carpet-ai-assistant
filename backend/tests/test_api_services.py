@@ -67,3 +67,50 @@ def test_delete_deactivates_and_hides_service_from_default_list(client: TestClie
 def test_missing_service_returns_404(client: TestClient) -> None:
     assert client.get("/api/services/999999").status_code == 404
     assert client.patch("/api/services/999999", json={"name": "x"}).status_code == 404
+
+
+def test_service_with_price_range(client: TestClient) -> None:
+    created = create_service(
+        client, name="Karpet Handmade", unit_price="2.50", unit_price_max="4.00"
+    )
+
+    assert (created["unit_price"], created["unit_price_max"]) == ("2.50", "4.00")
+
+
+def test_fixed_price_service_has_no_max(client: TestClient) -> None:
+    assert create_service(client)["unit_price_max"] is None
+
+
+def test_inverted_price_range_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/services", json={**SHAMPOO, "unit_price": "4.00", "unit_price_max": "2.50"}
+    )
+
+    assert response.status_code == 422
+    assert "unit_price_max" in response.json()["detail"]
+
+
+def test_patch_cannot_invert_existing_range(client: TestClient) -> None:
+    created = create_service(client, unit_price="2.50", unit_price_max="4.00")
+
+    response = client.patch(f"/api/services/{created['id']}", json={"unit_price": "5.00"})
+
+    assert response.status_code == 422
+
+
+def test_patch_can_clear_range_back_to_fixed_price(client: TestClient) -> None:
+    created = create_service(client, unit_price="2.50", unit_price_max="4.00")
+
+    response = client.patch(f"/api/services/{created['id']}", json={"unit_price_max": None})
+
+    assert response.status_code == 200
+    assert response.json()["unit_price_max"] is None
+
+
+def test_patch_rejects_null_for_required_fields(client: TestClient) -> None:
+    created = create_service(client)
+
+    response = client.patch(f"/api/services/{created['id']}", json={"name": None})
+
+    assert response.status_code == 422
+    assert "cannot be null: name" in response.text

@@ -95,7 +95,9 @@ class BookingItemRead(BaseModel):
     service: ServiceSummary
     quantity: Decimal
     unit_price: Decimal
+    unit_price_max: Decimal
     line_total: Decimal
+    line_total_max: Decimal
 
 
 class BookingRead(BaseModel):
@@ -107,6 +109,7 @@ class BookingRead(BaseModel):
     scheduled_end: datetime
     status: BookingStatus
     estimated_price: Decimal
+    estimated_price_max: Decimal  # equals estimated_price unless an item is priced on inspection
     notes: str | None
     items: list[BookingItemRead]
     created_at: datetime

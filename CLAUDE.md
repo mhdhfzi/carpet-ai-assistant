@@ -77,7 +77,7 @@ Work through these phases in order. Tick items off as they are done.
 - [x] docker-compose with Postgres + pgvector
 - [x] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
 - [x] CRUD endpoints for services and bookings
-- [ ] Pricing service (estimate from carpet size/type) with unit tests
+- [x] Pricing service (estimate from carpet size/type) with unit tests
 - [ ] Availability service (free slots) with unit tests
 
 ### Phase 2: RAG chatbot

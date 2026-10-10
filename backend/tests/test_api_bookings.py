@@ -137,3 +137,44 @@ def test_list_bookings_filters(client: TestClient, service_id: int) -> None:
 
 def test_missing_booking_returns_404(client: TestClient) -> None:
     assert client.get("/api/bookings/999999").status_code == 404
+
+
+def test_fixed_price_booking_has_equal_min_and_max(client: TestClient, service_id: int) -> None:
+    booking = create_booking(client, service_id)
+
+    assert booking["estimated_price"] == booking["estimated_price_max"] == "120.00"
+
+
+def test_handmade_carpet_booking_stores_price_range(client: TestClient) -> None:
+    handmade = create_service(
+        client, name="Karpet Handmade", unit_price="2.50", unit_price_max="4.00", minimum_charge="0"
+    )
+    sofa = create_service(
+        client, name="Cucian Sofa", pricing_unit="per_item", unit_price="60.00", minimum_charge="0"
+    )
+
+    booking = create_booking(
+        client,
+        handmade["id"],
+        items=[
+            {"service_id": handmade["id"], "quantity": "100"},
+            {"service_id": sofa["id"], "quantity": "3"},
+        ],
+    )
+
+    assert (booking["estimated_price"], booking["estimated_price_max"]) == ("430.00", "580.00")
+    line = booking["items"][0]
+    assert (line["unit_price"], line["unit_price_max"]) == ("2.50", "4.00")
+    assert (line["line_total"], line["line_total_max"]) == ("250.00", "400.00")
+
+
+def test_fractional_quantity_for_per_item_service_is_rejected(client: TestClient) -> None:
+    sofa = create_service(client, name="Cucian Sofa", pricing_unit="per_item", unit_price="60.00")
+
+    response = client.post(
+        "/api/bookings",
+        json=booking_payload(sofa["id"], items=[{"service_id": sofa["id"], "quantity": "2.5"}]),
+    )
+
+    assert response.status_code == 422
+    assert "whole number" in response.json()["detail"]

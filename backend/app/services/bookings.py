@@ -1,7 +1,6 @@
 """Business logic for bookings: creation (with server-side pricing) and status changes."""
 
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -58,24 +57,31 @@ def create_booking(
     """Create a pending booking. Prices come from the catalogue, never from the caller."""
     services = _load_bookable_services(db, {item.service_id for item in data.items})
 
-    items = []
+    items, line_estimates = [], []
     for item in data.items:
         service = services[item.service_id]
+        unit = pricing.unit_price_range(service)
+        line = pricing.estimate_line(service, item.quantity)
+        line_estimates.append(line)
         items.append(
             BookingItem(
                 service=service,
                 quantity=item.quantity,
-                unit_price=service.unit_price,
-                line_total=pricing.line_total(service, item.quantity),
+                unit_price=unit.low,
+                unit_price_max=unit.high,
+                line_total=line.low,
+                line_total_max=line.high,
             )
         )
+    total = pricing.estimate_total(line_estimates)
 
     booking = Booking(
         customer=_find_or_create_customer(db, data.customer),
         conversation_id=conversation_id,
         scheduled_start=data.scheduled_start,
         scheduled_end=data.scheduled_end,
-        estimated_price=sum((i.line_total for i in items), start=Decimal("0")),
+        estimated_price=total.low,
+        estimated_price_max=total.high,
         notes=data.notes,
         items=items,
     )
