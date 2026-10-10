@@ -73,7 +73,7 @@ This is **not** my university final-year project. It is a separate portfolio pie
 Work through these phases in order. Tick items off as they are done.
 
 ### Phase 1: Backend and data
-- [ ] Project scaffold, pyproject, linting (ruff), formatting
+- [x] Project scaffold, pyproject, linting (ruff), formatting
 - [ ] docker-compose with Postgres + pgvector
 - [ ] Models + Alembic migrations for Service, Customer, Booking, Conversation, Message
 - [ ] CRUD endpoints for services and bookings
