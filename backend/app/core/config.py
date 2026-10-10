@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_name: str = "Carpet AI Assistant"
     environment: Literal["local", "test", "production"] = "local"
     debug: bool = False
+    database_url: str = "postgresql+psycopg://carpet:carpet@127.0.0.1:5432/carpet"
 
 
 @lru_cache

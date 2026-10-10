@@ -15,7 +15,8 @@ cd backend
 python -m venv .venv
 .venv/Scripts/activate        # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
+alembic upgrade head           # apply database migrations
 ruff check . && ruff format --check .
-pytest
+pytest                         # needs the database running; uses a separate carpet_test DB
 uvicorn app.main:app --reload  # http://localhost:8000/health
 ```
