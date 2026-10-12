@@ -102,7 +102,7 @@ Work through these phases in order. Tick items off as they are done.
 - [x] Analytics: common questions, chat-to-booking conversion, busy days, unanswered questions
 
 ### Phase 6: Production-grade
-- [ ] GitHub Actions: lint + test on every PR; build and deploy on main
+- [x] GitHub Actions: lint + test on every PR; build and deploy on main
 - [x] Cloud deployment with environment-based config and secrets
 - [x] Rate limiting, structured logging, error handling
 - [ ] README: problem, architecture diagram, screenshots, live link, demo video, "what I'd improve next"
