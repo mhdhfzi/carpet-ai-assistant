@@ -80,7 +80,10 @@ const CONVERSATION: Conversation = {
   ],
 }
 
-const signedIn = { 'GET /api/auth/me': () => ({ body: { id: 1, email: 'o@example.com', name: 'Owner' } }) }
+const signedIn = { 'GET /api/auth/me': () => ({ body: { id: 1, email: 'o@example.com', name: 'Owner', role: 'owner' } }) }
+const signedInAsDemo = {
+  'GET /api/auth/me': () => ({ body: { id: 2, email: 'demo@example.com', name: 'Demo visitor', role: 'demo' } }),
+}
 
 function renderDashboard() {
   sessionStorage.setItem('kilau-admin-token', JSON.stringify({ token: 't', expiresAt: Date.now() + 60_000 }))
@@ -232,5 +235,16 @@ describe('bookings page', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('session has expired')
     expect(screen.getByRole('heading', { name: 'Owner dashboard' })).toBeInTheDocument()
+  })
+
+  it('shows the demo account its read-only state and disables changes', async () => {
+    const calls = mockBackend({ ...signedInAsDemo, 'GET /api/bookings': () => ({ body: [booking()] }) })
+    renderDashboard()
+
+    const card = await screen.findByRole('listitem', { name: /Booking 1/ })
+    expect(screen.getByText('Demo · read-only')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'View details' })).toBeEnabled()
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
 })

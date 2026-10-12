@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.db.models import OwnerRole
+
 
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
@@ -18,3 +20,4 @@ class OwnerRead(BaseModel):
     id: int
     email: str
     name: str
+    role: OwnerRole

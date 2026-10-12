@@ -1,0 +1,15 @@
+# Keep the build context small and secrets out of the image.
+.git
+.github
+.claude
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+backend/.venv
+backend/tests
+frontend/node_modules
+frontend/dist
+**/*.log

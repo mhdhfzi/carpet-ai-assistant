@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-export type Owner = { id: number; email: string; name: string }
+export type Owner = { id: number; email: string; name: string; role: 'owner' | 'demo' }
 
 export type TokenResponse = { access_token: string; token_type: string; expires_in: number }
 

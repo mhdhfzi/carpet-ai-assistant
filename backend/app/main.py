@@ -1,3 +1,6 @@
+import mimetypes
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,6 +18,27 @@ from app.api import (
 )
 from app.api.errors import register_exception_handlers
 from app.core.config import get_settings
+from app.core.logging import configure_logging
+from app.core.middleware import RequestContextMiddleware
+from app.core.static import FrontendFiles
+
+# Python guesses file types from the OS (on Windows, the registry, where .js can be
+# text/plain). Browsers refuse scripts with the wrong type, so pin the ones we serve.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+
+ROUTERS = [
+    auth.router,
+    analytics.router,
+    services.router,
+    bookings.router,
+    availability.router,
+    closed_dates.router,
+    chat.router,
+    conversations.router,
+    unanswered.router,
+    whatsapp.router,
+]
 
 
 def create_app() -> FastAPI:
@@ -22,8 +46,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, debug=settings.debug)
 
     register_exception_handlers(app)
-    app.include_router(auth.router)
-    app.include_router(analytics.router)
+    app.add_middleware(RequestContextMiddleware)
     if settings.cors_origin_list:
         # Only the listed sites may call the API from a visitor's browser (the chat widget).
         app.add_middleware(
@@ -32,20 +55,22 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST"],
             allow_headers=["Content-Type"],
         )
-    app.include_router(services.router)
-    app.include_router(bookings.router)
-    app.include_router(availability.router)
-    app.include_router(closed_dates.router)
-    app.include_router(chat.router)
-    app.include_router(conversations.router)
-    app.include_router(unanswered.router)
-    app.include_router(whatsapp.router)
+    for router in ROUTERS:
+        app.include_router(router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
         return {"status": "ok", "environment": settings.environment}
 
+    # The built frontend, served from the same origin as the API: one deploy, one URL, and
+    # no CORS needed between the demo pages and the API. Mounted last, so /api/* and
+    # /health always win over files.
+    if settings.static_dir and Path(settings.static_dir).is_dir():
+        app.mount("/", FrontendFiles(directory=settings.static_dir, html=True), name="frontend")
+
     return app
 
 
+_settings = get_settings()
+configure_logging(json_logs=_settings.json_logs, level=_settings.log_level)
 app = create_app()

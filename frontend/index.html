@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="ms">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Chat widget demo</title>
+    <title>Kilau AI Assistant</title>
+    <meta
+      name="description"
+      content="A portfolio project: an AI customer assistant for a small carpet-cleaning business. RAG with citations, tool calling, bookings, WhatsApp and an owner dashboard."
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,31 +15,144 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     />
-    <style>
-      /* A rough stand-in for the host website, to check the widget's look and placement. */
-      body { margin: 0; font-family: "Plus Jakarta Sans", sans-serif; background: #fafafa; color: #0a0a0a; }
-      main { max-width: 40rem; margin: 0 auto; padding: 4rem 1.5rem 12rem; line-height: 1.6; }
-      h1 { font-family: "Bricolage Grotesque", sans-serif; font-size: 2.5rem; line-height: 1.1; }
-      .lang { display: inline-flex; gap: .5rem; margin-bottom: 2rem; }
-      .lang button { border: 1px solid #e5e5e5; background: #fff; border-radius: 999px; padding: .4rem 1rem; cursor: pointer; }
-      /* A typical floating WhatsApp button, to check the widget sits neatly above it. */
-      .fake-whatsapp { position: fixed; right: 1rem; bottom: 1rem; width: 4rem; height: 4rem; border-radius: 50%; background: #25d366; color: #fff; display: grid; place-items: center; font-weight: 700; box-shadow: 0 10px 20px -6px rgb(37 211 102 / .5); }
-      @media (min-width: 640px) { .fake-whatsapp { right: 1.5rem; } }
-    </style>
   </head>
   <body>
-    <main>
-      <div class="lang">
-        <button type="button" onclick="document.documentElement.lang='ms'">BM</button>
-        <button type="button" onclick="document.documentElement.lang='en'">EN</button>
+    <header class="border-b border-line bg-white">
+      <div class="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
+        <p class="font-display text-lg font-bold">Kilau <span class="text-brand-ink">AI Assistant</span></p>
+        <div class="ml-auto flex items-center gap-2 text-sm">
+          <span class="hidden text-ink-soft sm:inline">Widget language</span>
+          <div class="flex rounded-full p-1 ring-1 ring-line" role="group" aria-label="Widget language">
+            <button type="button" data-lang="en" class="lang-btn rounded-full px-3 py-1 font-semibold">EN</button>
+            <button type="button" data-lang="ms" class="lang-btn rounded-full px-3 py-1 font-semibold">BM</button>
+          </div>
+          <a
+            href="https://github.com/mhdhfzi/carpet-ai-assistant"
+            class="rounded-full px-4 py-2 font-semibold ring-1 ring-line hover:bg-foam"
+            >Source on GitHub</a
+          >
+        </div>
       </div>
-      <h1>Karpet bersih, rumah lebih nyaman.</h1>
-      <p>
-        Demo page for the chat widget. The widget follows this page's language (try the BM / EN
-        buttons) and sits above a floating WhatsApp button, as it would on a business site.
-      </p>
+    </header>
+
+    <main class="mx-auto max-w-5xl space-y-16 px-4 pt-12 pb-40 sm:pt-16">
+      <section class="max-w-3xl space-y-5">
+        <p class="text-sm font-semibold text-brand-ink">Portfolio project · live demo</p>
+        <h1 class="font-display text-4xl leading-tight font-bold sm:text-5xl">
+          An AI assistant that answers, quotes and books jobs for a small cleaning business.
+        </h1>
+        <p class="text-lg text-ink-soft">
+          Customers chat on the website or WhatsApp in English or Bahasa Melayu. The assistant answers from the
+          business's own documents with citations, prices jobs from the real price list, checks free slots and books
+          them after the customer confirms. The owner sees every booking and what customers ask in a dashboard.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <button
+            type="button"
+            data-ask=""
+            class="rounded-full bg-brand px-6 py-3 font-semibold hover:bg-brand-hover"
+          >
+            Chat with the assistant
+          </button>
+          <a href="/admin.html" class="rounded-full px-6 py-3 font-semibold ring-1 ring-ink/20 hover:bg-white"
+            >Open the owner dashboard</a
+          >
+        </div>
+        <p class="rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-line">
+          <strong>Kilau Carpet Care is fictional</strong> (based in Seremban, Malaysia). Data resets every night, and
+          the demo dashboard login is public, so please don't type real personal details into the chat.
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h2 class="font-display text-2xl font-bold">Try asking</h2>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-ask="How much to clean a 5 x 8 ft shaggy carpet?" class="ask">
+            How much to clean a 5 x 8 ft shaggy carpet?
+          </button>
+          <button type="button" data-ask="Boleh cuci sofa 3 seater minggu depan?" class="ask">
+            Boleh cuci sofa 3 seater minggu depan?
+          </button>
+          <button type="button" data-ask="Do you open on Fridays?" class="ask">Do you open on Fridays?</button>
+          <button type="button" data-ask="Can you clean my office carpet? It's about 2,000 sq ft." class="ask">
+            Can you clean my office carpet? It's about 2,000 sq ft.
+          </button>
+          <button type="button" data-ask="Saya nak buat tempahan cuci tilam queen." class="ask">
+            Saya nak buat tempahan cuci tilam queen.
+          </button>
+        </div>
+        <p class="text-sm text-ink-soft">
+          Clicking a question opens the chat with it typed in. The office question is out of scope on purpose: the
+          assistant should hand it to the owner instead of guessing a price.
+        </p>
+      </section>
+
+      <section class="grid gap-4 sm:grid-cols-2">
+        <article class="card">
+          <h3 class="card-title">Answers with sources (RAG)</h3>
+          <p>
+            Business documents are chunked, embedded with Voyage AI and stored in Postgres with pgvector. Claude answers
+            only from the retrieved passages and cites them; the owner sees the citations for every reply.
+          </p>
+        </article>
+        <article class="card">
+          <h3 class="card-title">Tool calling, with a confirmation step</h3>
+          <p>
+            Prices, availability and bookings come from tools backed by tested business logic, never from the model's
+            memory. A booking is only created after the customer confirms the summary in a later message.
+          </p>
+        </article>
+        <article class="card">
+          <h3 class="card-title">Knows when to hand off</h3>
+          <p>
+            Low-confidence answers, upset customers and out-of-scope requests go to the owner, and every question the
+            assistant couldn't answer is logged so the knowledge base can be improved.
+          </p>
+        </article>
+        <article class="card">
+          <h3 class="card-title">Built like a production service</h3>
+          <p>
+            Owner login with Argon2 and JWT, rate limits, a daily AI cost cap, structured logs with request IDs, and
+            CI/CD that tests every change and deploys main to Google Cloud Run.
+          </p>
+        </article>
+      </section>
+
+      <section class="space-y-4">
+        <h2 class="font-display text-2xl font-bold">Owner dashboard</h2>
+        <p class="max-w-3xl text-ink-soft">
+          Bookings with the chat that led to each one, plus analytics: common questions, chat-to-booking conversion,
+          busy days and unanswered questions. Sign in with the read-only demo account: you can look at everything,
+          and the server refuses any change.
+        </p>
+        <dl class="grid max-w-md grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-2xl bg-white p-4 text-sm ring-1 ring-line">
+          <dt class="font-semibold">Email</dt>
+          <dd><code>demo@example.com</code></dd>
+          <dt class="font-semibold">Password</dt>
+          <dd><code>kilau-demo-2026</code></dd>
+        </dl>
+        <a href="/admin.html" class="inline-block rounded-full bg-ink px-6 py-3 font-semibold text-white hover:bg-ink/85"
+          >Open the dashboard</a
+        >
+      </section>
+
+      <section class="space-y-4">
+        <h2 class="font-display text-2xl font-bold">Stack</h2>
+        <ul class="flex flex-wrap gap-2 text-sm">
+          <li class="tag">Python 3.12 · FastAPI</li>
+          <li class="tag">SQLAlchemy · Alembic</li>
+          <li class="tag">PostgreSQL · pgvector</li>
+          <li class="tag">Claude (tool calling, citations)</li>
+          <li class="tag">Voyage AI embeddings</li>
+          <li class="tag">React · TypeScript · Tailwind</li>
+          <li class="tag">WhatsApp Cloud API</li>
+          <li class="tag">Docker · GitHub Actions</li>
+          <li class="tag">Google Cloud Run · Neon</li>
+          <li class="tag">pytest · Vitest</li>
+        </ul>
+      </section>
     </main>
-    <div class="fake-whatsapp" aria-hidden="true">WA</div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

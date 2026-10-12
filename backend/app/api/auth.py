@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.deps import CurrentOwner, DbSession
+from app.core.rate_limit import login_limiter
 from app.core.security import create_access_token
 from app.db.models import Owner
 from app.schemas.auth import LoginRequest, OwnerRead, TokenResponse
@@ -9,7 +10,8 @@ from app.services import owners
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=TokenResponse)
+# Rate-limited per IP: slows password guessing to a crawl.
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_limiter)])
 def login(data: LoginRequest, db: DbSession) -> TokenResponse:
     """Exchange the owner's email and password for an access token."""
     owner = owners.authenticate(db, data.email, data.password)

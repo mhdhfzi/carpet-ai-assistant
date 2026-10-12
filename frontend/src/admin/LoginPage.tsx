@@ -2,6 +2,11 @@ import { type FormEvent, useState } from 'react'
 import { ApiError } from './api'
 import { useAuth } from './auth'
 
+// The public, read-only demo login (created by python -m app.seed_demo). Published on
+// purpose: the server refuses every change from this account.
+export const DEMO_EMAIL = 'demo@example.com'
+export const DEMO_PASSWORD = 'kilau-demo-2026'
+
 export function LoginPage({ notice }: { notice?: string }) {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
@@ -11,6 +16,10 @@ export function LoginPage({ notice }: { notice?: string }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    await attempt(email, password)
+  }
+
+  const attempt = async (email: string, password: string) => {
     setBusy(true)
     setError(null)
     try {
@@ -73,6 +82,17 @@ export function LoginPage({ notice }: { notice?: string }) {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        <div className="space-y-2 border-t border-line pt-5 text-center">
+          <p className="text-sm text-ink-soft">Just looking? The demo account can see everything but change nothing.</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => attempt(DEMO_EMAIL, DEMO_PASSWORD)}
+            className="w-full rounded-full py-3 font-semibold ring-1 ring-line hover:bg-foam disabled:opacity-50"
+          >
+            Try the demo account
+          </button>
+        </div>
       </form>
     </main>
   )

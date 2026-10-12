@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import "./styles/theme.css";
+
+/* The demo landing page (index.html). The widget has its own CSS inside its shadow root. */
+@layer base {
+  body {
+    @apply bg-mist font-sans text-ink antialiased;
+  }
+}
+
+@layer components {
+  .ask {
+    @apply rounded-full bg-white px-4 py-2 text-left text-sm font-medium ring-1 ring-line hover:ring-ink/30;
+  }
+  .card {
+    @apply space-y-2 rounded-3xl bg-white p-6 text-ink-soft ring-1 ring-line;
+  }
+  .card-title {
+    @apply font-display text-lg font-bold text-ink;
+  }
+  .tag {
+    @apply rounded-full bg-white px-3 py-1.5 ring-1 ring-line;
+  }
+  .lang-btn[aria-pressed="true"] {
+    @apply bg-ink text-white;
+  }
+}

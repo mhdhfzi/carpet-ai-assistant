@@ -54,6 +54,11 @@ class Channel(StrEnum):
     WHATSAPP = "whatsapp"
 
 
+class OwnerRole(StrEnum):
+    OWNER = "owner"  # full access
+    DEMO = "demo"  # the public demo login: can see everything, change nothing
+
+
 class MessageRole(StrEnum):
     CUSTOMER = "customer"
     ASSISTANT = "assistant"
@@ -246,6 +251,11 @@ class Owner(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100))
     # Argon2 hash (includes its own salt and parameters); the password itself is never stored.
     password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[OwnerRole] = mapped_column(
+        str_enum(OwnerRole, "owner_role"),
+        default=OwnerRole.OWNER,
+        server_default=OwnerRole.OWNER.value,
+    )
 
 
 class ClosedDate(Base):

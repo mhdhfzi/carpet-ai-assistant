@@ -18,5 +18,21 @@ services:
       timeout: 5s
       retries: 10
 
+  # The production image, for trying the whole stack locally:
+  #   docker compose --profile app up --build
+  # then open http://localhost:8080 (run migrations first:
+  #   docker compose --profile app run --rm app alembic upgrade head)
+  app:
+    profiles: ["app"]
+    build: .
+    env_file: backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-carpet}:${POSTGRES_PASSWORD:-carpet}@db:5432/${POSTGRES_DB:-carpet}
+    ports:
+      - "127.0.0.1:8080:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:

@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Depends, Path
 
 from app.api.deps import ChatModelDep, DbSession, EmbedderDep
+from app.core.rate_limit import chat_limiter, history_limiter
 from app.schemas.chat import ChatHistory, ChatMessageRead, ChatRequest, ChatResponse
 from app.services import chat
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse, dependencies=[Depends(chat_limiter)])
 def send_message(
     data: ChatRequest, db: DbSession, embedder: EmbedderDep, llm: ChatModelDep
 ) -> ChatResponse:
@@ -20,7 +21,7 @@ def send_message(
     )
 
 
-@router.get("/{session_id}", response_model=ChatHistory)
+@router.get("/{session_id}", response_model=ChatHistory, dependencies=[Depends(history_limiter)])
 def get_history(session_id: str = Path(max_length=100), *, db: DbSession) -> ChatHistory:
     """Messages of a web conversation, so the widget can restore it after a page reload.
 

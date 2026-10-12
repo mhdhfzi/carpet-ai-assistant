@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import AuthError, hash_password, verify_password
-from app.db.models import Owner
+from app.db.models import Owner, OwnerRole
 from app.services.errors import ConflictError
 
 MIN_PASSWORD_LENGTH = 10
@@ -23,7 +23,9 @@ def authenticate(db: Session, email: str, password: str) -> Owner:
     return owner
 
 
-def create_owner(db: Session, email: str, name: str, password: str) -> Owner:
+def create_owner(
+    db: Session, email: str, name: str, password: str, *, role: OwnerRole = OwnerRole.OWNER
+) -> Owner:
     email = normalize_email(email)
     if "@" not in email:
         raise ValueError("Enter a valid email address")
@@ -31,7 +33,7 @@ def create_owner(db: Session, email: str, name: str, password: str) -> Owner:
         raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
     if db.scalar(select(Owner.id).where(Owner.email == email)):
         raise ConflictError(f"An owner with email {email} already exists")
-    owner = Owner(email=email, name=name.strip(), password_hash=hash_password(password))
+    owner = Owner(email=email, name=name.strip(), password_hash=hash_password(password), role=role)
     db.add(owner)
     db.commit()
     return owner

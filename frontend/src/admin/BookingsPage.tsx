@@ -111,7 +111,7 @@ function BookingCard({
   onUpdated: (booking: Booking) => void
   onOpen: () => void
 }) {
-  const { request } = useAuth()
+  const { request, readOnly } = useAuth()
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -163,7 +163,8 @@ function BookingCard({
           <button
             key={next}
             type="button"
-            disabled={busy}
+            disabled={busy || readOnly}
+            title={readOnly ? 'The demo account is read-only' : undefined}
             onClick={() => change(next)}
             className={
               next === 'cancelled'
