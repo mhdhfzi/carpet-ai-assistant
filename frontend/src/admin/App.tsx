@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { AnalyticsPage } from './AnalyticsPage'
 import { useAuth } from './auth'
 import { BookingsPage } from './BookingsPage'
 import { LoginPage } from './LoginPage'
@@ -20,7 +21,7 @@ export function App() {
 
   return (
     <Layout route={route}>
-      {route === 'analytics' ? <Placeholder title="Analytics" /> : <BookingsPage />}
+      {route === 'analytics' ? <AnalyticsPage /> : <BookingsPage />}
     </Layout>
   )
 }
@@ -62,14 +63,5 @@ function Layout({ route, children }: { route: Route; children: ReactNode }) {
       </header>
       <main className="mx-auto max-w-6xl p-4 sm:p-6">{children}</main>
     </div>
-  )
-}
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <section>
-      <h1 className="font-display text-2xl font-bold">{title}</h1>
-      <p className="mt-2 text-ink-soft">Coming soon.</p>
-    </section>
   )
 }

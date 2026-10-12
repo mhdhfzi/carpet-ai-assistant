@@ -99,7 +99,7 @@ Work through these phases in order. Tick items off as they are done.
 ### Phase 5: Admin dashboard
 - [x] Owner login (JWT auth)
 - [x] Bookings list and status updates
-- [ ] Analytics: common questions, chat-to-booking conversion, busy days, unanswered questions
+- [x] Analytics: common questions, chat-to-booking conversion, busy days, unanswered questions
 
 ### Phase 6: Production-grade
 - [ ] GitHub Actions: lint + test on every PR; build and deploy on main

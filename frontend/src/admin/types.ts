@@ -53,3 +53,31 @@ export const NEXT_STATUSES: Record<BookingStatus, BookingStatus[]> = {
   done: [],
   cancelled: [],
 }
+
+export type UnansweredReason = 'no_answer' | 'handed_off' | 'gave_up'
+
+export type AnalyticsSummary = {
+  days: number
+  start: string
+  end: string
+  conversations: number
+  handed_off: number
+  bookings: number
+  conversion_rate: number | null
+  conversion: { channel: 'web' | 'whatsapp'; conversations: number; converted: number; rate: number | null }[]
+  busy_days: { weekday: string; bookings: number }[]
+  top_topics: { title: string; heading: string; count: number }[]
+  open_unanswered: Record<UnansweredReason, number>
+}
+
+export type UnansweredQuestion = {
+  id: number
+  conversation_id: number
+  message_id: number
+  reason: UnansweredReason
+  question: string
+  detail: string | null
+  top_score: number | null
+  resolved: boolean
+  created_at: string
+}

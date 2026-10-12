@@ -12,5 +12,9 @@
   --color-brand-hover: #eab308;
   --color-brand-ink: #854d0e; /* gold text on white, 7.4:1 contrast */
   --color-danger: #b91c1c;
+  /* Data marks: the brand yellow (#facc15) is only 1.5:1 on white, so charts use a deeper
+     step of the same ramp, validated at >= 3:1 (dataviz validate_palette.js). */
+  --color-chart: #a16207;
+  --color-chart-track: #fef3c7;
   --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 20px 48px -16px rgb(0 0 0 / 0.28);
 }
