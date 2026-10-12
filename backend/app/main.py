@@ -3,7 +3,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api import (
     analytics,
@@ -21,6 +20,7 @@ from app.api.errors import register_exception_handlers
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.static import FrontendFiles
 
 # Python guesses file types from the OS (on Windows, the registry, where .js can be
 # text/plain). Browsers refuse scripts with the wrong type, so pin the ones we serve.
@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     # no CORS needed between the demo pages and the API. Mounted last, so /api/* and
     # /health always win over files.
     if settings.static_dir and Path(settings.static_dir).is_dir():
-        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="frontend")
+        app.mount("/", FrontendFiles(directory=settings.static_dir, html=True), name="frontend")
 
     return app
 

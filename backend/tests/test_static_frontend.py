@@ -14,6 +14,8 @@ def static_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (tmp_path / "index.html").write_text("<h1>demo</h1>", encoding="utf-8")
     (tmp_path / "admin.html").write_text("<h1>dashboard</h1>", encoding="utf-8")
     (tmp_path / "widget.js").write_text("console.log('widget')", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "admin-3f9a1c.js").write_text("app()", encoding="utf-8")
     monkeypatch.setenv("STATIC_DIR", str(tmp_path))
     get_settings.cache_clear()
     with TestClient(create_app()) as client:
@@ -34,3 +36,11 @@ def test_api_routes_take_priority_over_files(static_client: TestClient) -> None:
 
 def test_no_static_files_without_static_dir() -> None:
     assert TestClient(create_app()).get("/").status_code == 404
+
+
+def test_pages_are_revalidated_and_hashed_assets_cached_for_good(
+    static_client: TestClient,
+) -> None:
+    for path in ("/", "/admin.html", "/widget.js"):
+        assert static_client.get(path).headers["cache-control"] == "no-cache", path
+    assert "immutable" in static_client.get("/assets/admin-3f9a1c.js").headers["cache-control"]
