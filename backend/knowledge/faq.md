@@ -39,13 +39,13 @@ time, and the booking is confirmed once you agree.
 
 ## Do you charge for pickup and delivery?
 
-Pickup and delivery are free within 15 km of our shop in Senawang. Beyond 15 km, there is an
+Pickup and delivery are free within 15 km of our shop in Seremban. Beyond 15 km, there is an
 extra transport charge, which the owner confirms.
 
 ## Where is your shop?
 
-89-G, Jalan Bandar Senawang 5, Taipan 2, Pusat Bandar Senawang, 70450 Seremban, Negeri
-Sembilan. You can also WhatsApp or call us at 019-276 2890.
+Lot 12, Jalan Contoh 3, Taman Demo, 70200 Seremban, Negeri Sembilan. This is a portfolio
+demo, so the address and phone number (012-000 0000) are not real.
 
 ## How much does mosque or office carpet cleaning cost?
 
@@ -57,3 +57,9 @@ carpet there is, and your name and phone number, and the owner will arrange the 
 
 Yes. We clean fabric car seats, car carpet and the dashboard, usually at your home. The
 price depends on the size of the car, and the owner confirms it.
+
+## Is this a real business?
+
+No. This assistant is a portfolio demo and Kilau Carpet Care is fictional. Prices, services
+and opening hours are realistic, but bookings made here are not real and nobody will contact
+you.

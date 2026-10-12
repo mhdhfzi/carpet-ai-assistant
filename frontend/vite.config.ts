@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => ({
     // website can embed with a <script> tag, without a build step on the host site.
     lib: {
       entry: 'src/chat/embed.tsx',
-      name: 'CuciChat',
+      name: 'KilauChat',
       formats: ['iife'],
       fileName: () => 'widget.js',
     },

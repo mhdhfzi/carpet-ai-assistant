@@ -11,7 +11,7 @@ import { createRoot } from 'react-dom/client'
 import { ChatWidget, type WidgetOptions } from './ChatWidget'
 import css from './widget.css?inline'
 
-const HOST_ID = 'cuci-chat-widget'
+const HOST_ID = 'kilau-chat-widget'
 
 export function mountChatWidget(options: WidgetOptions): () => void {
   document.getElementById(HOST_ID)?.remove() // never mount twice

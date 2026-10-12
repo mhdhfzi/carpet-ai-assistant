@@ -4,7 +4,7 @@ title: Services we offer
 
 # Services we offer
 
-Cuci-Cuci Senawang cleans carpets (for homes, mosques, surau, halls and offices), mattresses,
+Kilau Carpet Care cleans carpets (for homes, mosques, surau, halls and offices), mattresses,
 sofas and car seats, serving all of Negeri Sembilan.
 
 ## Carpet cleaning (cuci karpet)

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     debug: bool = False
     database_url: str = "postgresql+psycopg://carpet:carpet@127.0.0.1:5432/carpet"
     # Websites allowed to call the API from a browser (the chat widget), comma-separated,
-    # e.g. "https://cucicucisenawang.com,https://www.cucicucisenawang.com". Empty = none.
+    # e.g. "https://demo.example.com,https://www.example.com". Empty = none.
     cors_origins: str = ""
 
     # Embeddings for RAG. SecretStr keeps the key out of logs and error messages.

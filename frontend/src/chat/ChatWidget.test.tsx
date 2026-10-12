@@ -41,8 +41,8 @@ describe('ChatWidget', () => {
     mockApi()
     await openChat()
 
-    expect(screen.getByRole('dialog', { name: 'Pembantu Cuci-Cuci' })).toBeInTheDocument()
-    expect(screen.getByText(/pembantu AI Cuci-Cuci Senawang/)).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Pembantu Kilau' })).toBeInTheDocument()
+    expect(screen.getByText(/pembantu AI Kilau Carpet Care/)).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveFocus()
   })
 
@@ -71,11 +71,11 @@ describe('ChatWidget', () => {
     await screen.findByText('RM60 per seat.')
 
     expect(calls[1].body).toEqual({ session_id: 'session-abc', message: 'Sofa price?' })
-    expect(localStorage.getItem('cuci-chat-session')).toBe('session-abc')
+    expect(localStorage.getItem('kilau-chat-session')).toBe('session-abc')
   })
 
   it('restores the conversation from the server when reopened later', async () => {
-    localStorage.setItem('cuci-chat-session', 'session-abc')
+    localStorage.setItem('kilau-chat-session', 'session-abc')
     const calls = mockApi({
       body: {
         session_id: 'session-abc',
@@ -94,16 +94,16 @@ describe('ChatWidget', () => {
   })
 
   it('starts fresh if the server no longer knows the session', async () => {
-    localStorage.setItem('cuci-chat-session', 'expired')
+    localStorage.setItem('kilau-chat-session', 'expired')
     mockApi({ status: 404 })
 
     await openChat()
 
-    await waitFor(() => expect(localStorage.getItem('cuci-chat-session')).toBeNull())
+    await waitFor(() => expect(localStorage.getItem('kilau-chat-session')).toBeNull())
   })
 
   it('does not call the API until the chat is opened', () => {
-    localStorage.setItem('cuci-chat-session', 'session-abc')
+    localStorage.setItem('kilau-chat-session', 'session-abc')
     mockApi()
 
     render(<ChatWidget apiBase="" bottomOffset={16} />)
@@ -166,7 +166,7 @@ describe('ChatWidget', () => {
       document.documentElement.lang = 'en'
     })
 
-    expect(await screen.findByRole('dialog', { name: 'Cuci-Cuci Assistant' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Kilau Assistant' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Type a message…')
   })
 })

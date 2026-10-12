@@ -5,7 +5,7 @@ import { type ChatMessage, useChat } from './useChat'
 import { useHostLang } from './useHostLang'
 
 export type WidgetOptions = {
-  /** Backend base URL, e.g. "https://api.cucicucisenawang.com"; "" means same origin. */
+  /** Backend base URL, e.g. "https://api.example.com"; "" means same origin. */
   apiBase: string
   /** Distance from the bottom of the screen in px, e.g. to sit above a WhatsApp button. */
   bottomOffset: number
@@ -135,11 +135,11 @@ function ChatPanel({ t, chat, bottom, onClose }: PanelProps) {
 
       <form className="border-t border-line bg-white p-3" onSubmit={submit}>
         <div className="flex items-end gap-2">
-          <label className="sr-only" htmlFor="cuci-chat-input">
+          <label className="sr-only" htmlFor="kilau-chat-input">
             {t.placeholder}
           </label>
           <textarea
-            id="cuci-chat-input"
+            id="kilau-chat-input"
             ref={input}
             rows={1}
             value={draft}

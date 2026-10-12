@@ -1,41 +1,37 @@
 ---
-title: About Cuci-Cuci Senawang
+title: About Kilau Carpet Care
 ---
 
-# About Cuci-Cuci Senawang
+# About Kilau Carpet Care
 
-## Business name and background
+## Demo notice (notis demo)
 
-Cuci-Cuci Senawang (also known as Dobi Karpet Xpress) is a professional carpet cleaning
-business under the company Rizqiman Gemilang Legacy, registered with SSM. It has operated
-from Taipan 2, Pusat Bandar Senawang since September 2019, and is run by Herman and Rizah.
-Encik Herman served 22 years in the Royal Malaysian Air Force (TUDM) as an aircraft
-technician.
+This assistant is a portfolio demo. Kilau Carpet Care is a fictional business, modelled on a
+real family-run carpet cleaning business in Negeri Sembilan. Bookings made here are not real,
+and nobody will contact you or come to collect anything.
+
+## Business background
+
+Kilau Carpet Care is a family-run carpet cleaning business in Seremban, operating since 2019.
+We clean carpets for homes, mosques, surau, halls and offices, as well as mattresses, sofas
+and car seats.
 
 ## Shop address and contact (alamat dan hubungi)
 
-Shop address: 89-G, Jalan Bandar Senawang 5, Taipan 2, Pusat Bandar Senawang, 70450
-Seremban, Negeri Sembilan. Phone and WhatsApp: 019-276 2890. Email:
-cucicucisenawang@gmail.com. Website: cucicucisenawang.com.
+Shop address: Lot 12, Jalan Contoh 3, Taman Demo, 70200 Seremban, Negeri Sembilan. Phone and
+WhatsApp: 012-000 0000 (demo number). Email: hello@example.com.
 
 ## Service area (kawasan servis)
 
-We serve all of Negeri Sembilan, including Seremban, Senawang, Nilai, Port Dickson, Rembau,
-Tampin, Kuala Pilah, Jempol and Jelebu.
+We serve all of Negeri Sembilan, including Seremban, Nilai, Port Dickson, Rembau, Tampin,
+Kuala Pilah, Jempol and Jelebu.
 
 ## Pickup and delivery charges (caj ambil dan hantar)
 
-Pickup and delivery are free within 15 km of our shop in Senawang. Beyond 15 km, an extra
+Pickup and delivery are free within 15 km of our shop in Seremban. Beyond 15 km, an extra
 transport charge applies; the owner confirms the amount.
-
-## Awards and certificates (anugerah dan sijil)
-
-We received the Kärcher Excellence in Cleaning Services Award in October 2024. The team has
-completed a basic carpet cleaning course (2020), a Kärcher cleaning machines course, and a
-Sertu theory and practical workshop by MISDEC (JAKIM). The business is registered with SSM
-and is tax compliant (LHDN).
 
 ## Equipment (peralatan)
 
-We use professional cleaning machines, including Kärcher extractors and steam cleaners,
-with cleaning products suited to each type of fabric.
+We use professional cleaning machines, including carpet extractors and steam cleaners, with
+cleaning products suited to each type of fabric.

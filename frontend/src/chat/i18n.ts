@@ -6,12 +6,12 @@ export type Lang = 'ms' | 'en'
 export const strings = {
   ms: {
     open: 'Tanya kami',
-    openLabel: 'Buka chat dengan pembantu Cuci-Cuci',
+    openLabel: 'Buka chat dengan pembantu Kilau',
     close: 'Tutup chat',
-    title: 'Pembantu Cuci-Cuci',
+    title: 'Pembantu Kilau',
     subtitle: 'Biasanya membalas dalam beberapa saat',
     greeting:
-      'Hai! Saya pembantu AI Cuci-Cuci Senawang. Tanya tentang harga, servis atau buat tempahan.',
+      'Hai! Saya pembantu AI Kilau Carpet Care. Tanya tentang harga, servis atau buat tempahan.',
     placeholder: 'Taip mesej…',
     send: 'Hantar',
     typing: 'Sedang menaip…',
@@ -22,12 +22,12 @@ export const strings = {
   },
   en: {
     open: 'Ask us',
-    openLabel: 'Open chat with the Cuci-Cuci assistant',
+    openLabel: 'Open chat with the Kilau assistant',
     close: 'Close chat',
-    title: 'Cuci-Cuci Assistant',
+    title: 'Kilau Assistant',
     subtitle: 'Usually replies in seconds',
     greeting:
-      "Hi! I'm Cuci-Cuci Senawang's AI assistant. Ask about prices, services or make a booking.",
+      "Hi! I'm Kilau Carpet Care's AI assistant. Ask about prices, services or make a booking.",
     placeholder: 'Type a message…',
     send: 'Send',
     typing: 'Typing…',

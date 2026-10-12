@@ -242,12 +242,12 @@ def preflight(client: TestClient, origin: str):
 
 
 def test_cors_allows_only_listed_sites(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    client = cors_client(db, monkeypatch, "https://cucicucisenawang.com/, https://example.org")
+    client = cors_client(db, monkeypatch, "https://demo.example.com/, https://example.org")
 
-    allowed = preflight(client, "https://cucicucisenawang.com")
+    allowed = preflight(client, "https://demo.example.com")
     blocked = preflight(client, "https://evil.example")
 
-    assert allowed.headers["access-control-allow-origin"] == "https://cucicucisenawang.com"
+    assert allowed.headers["access-control-allow-origin"] == "https://demo.example.com"
     assert "access-control-allow-origin" not in blocked.headers
 
 

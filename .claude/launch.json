@@ -12,12 +12,6 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "preview", "--", "--port", "4173", "--strictPort"],
       "port": 4173
-    },
-    {
-      "name": "website",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "../cuci-cuci-website", "run", "dev", "--", "--port", "5174", "--strictPort"],
-      "port": 5174
     }
   ]
 }

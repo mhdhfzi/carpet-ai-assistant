@@ -8,7 +8,7 @@ export type ChatStatus = 'idle' | 'loading' | 'sending' | 'error'
 // The session token is the only link between this browser and its conversation. It lives
 // in localStorage so a page reload keeps the conversation; the messages themselves are
 // fetched from the server, which stays the source of truth.
-const SESSION_KEY = 'cuci-chat-session'
+const SESSION_KEY = 'kilau-chat-session'
 
 function readSession(): string | null {
   try {

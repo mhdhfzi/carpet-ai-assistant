@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Matches cucicucisenawang.com: Plus Jakarta Sans / Bricolage Grotesque, near-black ink,
+/* Brand: Plus Jakarta Sans / Bricolage Grotesque, near-black ink,
    yellow brand. The fonts are loaded by the host page; shadow DOM content can use them. */
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;

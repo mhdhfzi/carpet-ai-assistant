@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { mountChatWidget, optionsFromScript } from './embed'
 
 function shadow(): ShadowRoot {
-  const host = document.getElementById('cuci-chat-widget')
+  const host = document.getElementById('kilau-chat-widget')
   if (!host?.shadowRoot) throw new Error('widget not mounted')
   return host.shadowRoot
 }
@@ -26,11 +26,11 @@ describe('mountChatWidget', () => {
       mountChatWidget({ apiBase: '', bottomOffset: 16 })
       unmount = mountChatWidget({ apiBase: '', bottomOffset: 16 })
     })
-    expect(document.querySelectorAll('#cuci-chat-widget')).toHaveLength(1)
+    expect(document.querySelectorAll('#kilau-chat-widget')).toHaveLength(1)
 
     act(() => unmount())
 
-    expect(document.getElementById('cuci-chat-widget')).toBeNull()
+    expect(document.getElementById('kilau-chat-widget')).toBeNull()
   })
 })
 
