@@ -22,3 +22,22 @@ def test_api_key_is_kept_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.anthropic_api_key is not None
     assert settings.anthropic_api_key.get_secret_value() == "sk-secret"
     assert "sk-secret" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        (
+            "postgresql://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/db?sslmode=require",
+            "postgresql+psycopg://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/db?sslmode=require",
+        ),
+        ("postgres://u:p@host/db", "postgresql+psycopg://u:p@host/db"),
+        ("postgresql+psycopg://u:p@host/db", "postgresql+psycopg://u:p@host/db"),
+    ],
+)
+def test_database_url_gets_the_psycopg_driver(
+    monkeypatch: pytest.MonkeyPatch, given: str, expected: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", given)
+
+    assert Settings(_env_file=None).database_url == expected

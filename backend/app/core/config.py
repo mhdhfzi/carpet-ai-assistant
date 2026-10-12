@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str | None = None
     whatsapp_api_version: str = "v23.0"
 
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg_driver(cls, value: str) -> str:
+        # Hosted Postgres providers (e.g. Neon) hand out postgresql:// or postgres:// URLs;
+        # SQLAlchemy needs the driver named, so accept those as-is and add it.
+        for prefix in ("postgresql://", "postgres://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value.removeprefix(prefix)
+        return value
+
     @field_validator(
         "jwt_secret",
         "voyage_api_key",
