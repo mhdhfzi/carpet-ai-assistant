@@ -10,10 +10,16 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch or PR cancels the run still in progress.
+# A newer push to a PR cancels the run still in progress. Runs on main queue instead,
+# so a deploy is never cut off halfway.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PROJECT_ID: kilau-assistant
+  REGION: asia-southeast1
+  IMAGE: asia-southeast1-docker.pkg.dev/kilau-assistant/kilau/app
 
 jobs:
   backend:
@@ -81,10 +87,46 @@ jobs:
         run: npm run build
 
   docker:
-    name: Production image
+    name: Production image (deploy on main)
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets the job ask GitHub for an OIDC token to exchange with Google
+    env:
+      DEPLOY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v5
-      - name: Build the image (not pushed)
-        run: docker build -t carpet-ai-assistant:ci .
+      - name: Build the image
+        run: docker build -t "$IMAGE:$GITHUB_SHA" .
+
+      # Everything below runs only on main, after every test above has passed.
+      # Keyless: Workload Identity Federation swaps GitHub's short-lived OIDC token for
+      # Google credentials. No service account key is stored in GitHub, and Google only
+      # accepts tokens from this repository.
+      - name: Authenticate to Google Cloud
+        if: env.DEPLOY == 'true'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/918469824880/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deployer@kilau-assistant.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+        if: env.DEPLOY == 'true'
+      - name: Push the image to Artifact Registry
+        if: env.DEPLOY == 'true'
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker push "$IMAGE:$GITHUB_SHA"
+      # Migrate before the new code goes live: migrations must stay compatible with the
+      # code that is still serving (add columns first, drop them in a later release).
+      - name: Run database migrations
+        if: env.DEPLOY == 'true'
+        run: |
+          gcloud run jobs update migrate --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
+          gcloud run jobs execute migrate --region "$REGION" --project "$PROJECT_ID" --wait
+      # Only the image changes here; env vars, secrets and scaling are the service's own
+      # config (set once, see README) and carry over to the new revision.
+      - name: Deploy to Cloud Run
+        if: env.DEPLOY == 'true'
+        run: |
+          gcloud run deploy kilau --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
