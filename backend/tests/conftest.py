@@ -1,5 +1,6 @@
 import os
 from collections.abc import Iterator
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -11,11 +12,22 @@ from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
-from app.api.deps import chat_model_dependency, embedder_dependency
+from app.api.deps import (
+    WhatsAppConfig,
+    chat_model_dependency,
+    embedder_dependency,
+    session_factory_dependency,
+    whatsapp_client_dependency,
+    whatsapp_config_dependency,
+)
 from app.core import clock
 from app.db.session import get_db
 from app.main import create_app
-from tests.fakes import FakeChatModel, FakeEmbedder
+from tests.fakes import FakeChatModel, FakeEmbedder, FakeWhatsAppClient
+
+WHATSAPP_TEST_CONFIG = WhatsAppConfig(
+    verify_token="test-verify-token", app_secret="test-app-secret"
+)
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -91,16 +103,29 @@ def fake_llm() -> FakeChatModel:
 
 
 @pytest.fixture
+def fake_whatsapp() -> FakeWhatsAppClient:
+    return FakeWhatsAppClient()
+
+
+@pytest.fixture
 def client(
-    db: Session, fake_embedder: FakeEmbedder, fake_llm: FakeChatModel
+    db: Session,
+    fake_embedder: FakeEmbedder,
+    fake_llm: FakeChatModel,
+    fake_whatsapp: FakeWhatsAppClient,
 ) -> Iterator[TestClient]:
     """An API client whose requests use the per-test session, so they're rolled back too.
 
-    AI providers are always replaced with fakes, so no test can call a paid API.
+    AI providers and WhatsApp are always replaced with fakes, so no test can call a paid or
+    external API.
     """
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[embedder_dependency] = lambda: fake_embedder
     app.dependency_overrides[chat_model_dependency] = lambda: fake_llm
+    app.dependency_overrides[whatsapp_client_dependency] = lambda: fake_whatsapp
+    app.dependency_overrides[whatsapp_config_dependency] = lambda: WHATSAPP_TEST_CONFIG
+    # Background tasks reuse the test's session (wrapped so they can't close it).
+    app.dependency_overrides[session_factory_dependency] = lambda: lambda: nullcontext(db)
     with TestClient(app) as client:
         yield client

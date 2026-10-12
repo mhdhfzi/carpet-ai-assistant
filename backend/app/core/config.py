@@ -26,7 +26,23 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     chat_model: str = "claude-opus-5-5"
 
-    @field_validator("voyage_api_key", "anthropic_api_key", mode="before")
+    # WhatsApp Business Cloud API. All optional: without the app secret the webhook refuses
+    # every request, so unsigned (forged) messages are never processed.
+    whatsapp_verify_token: SecretStr | None = None  # chosen by us, entered in Meta's dashboard
+    whatsapp_app_secret: SecretStr | None = None  # signs every webhook request
+    whatsapp_access_token: SecretStr | None = None  # for sending replies
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_api_version: str = "v23.0"
+
+    @field_validator(
+        "voyage_api_key",
+        "anthropic_api_key",
+        "whatsapp_verify_token",
+        "whatsapp_app_secret",
+        "whatsapp_access_token",
+        "whatsapp_phone_number_id",
+        mode="before",
+    )
     @classmethod
     def _blank_key_means_unset(cls, value: object) -> object:
         # .env.example ships `KEY=` lines; an empty value must count as missing,

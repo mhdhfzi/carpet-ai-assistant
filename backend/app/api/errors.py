@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.ai.embeddings import EmbeddingError
 from app.ai.llm import LLMError
 from app.services.errors import BusinessRuleError, ConflictError, DomainError, NotFoundError
+from app.services.whatsapp import WhatsAppError
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ _STATUS_CODES: dict[type[DomainError], int] = {
 def register_exception_handlers(app: FastAPI) -> None:
     for exc_class, status_code in _STATUS_CODES.items():
         app.add_exception_handler(exc_class, _handler(status_code))
-    for exc_class in (EmbeddingError, LLMError):
+    for exc_class in (EmbeddingError, LLMError, WhatsAppError):
         app.add_exception_handler(exc_class, _ai_unavailable)
 
 
@@ -38,7 +39,7 @@ def _handler(status_code: int):
 async def _ai_unavailable(_: Request, exc: Exception) -> JSONResponse:
     # The real cause (missing key, provider outage) goes to the server log; the customer
     # gets a generic message, never provider error details.
-    logger.error("AI provider error: %s", exc)
+    logger.error("External provider error: %s", exc)
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={"detail": "The assistant is temporarily unavailable. Please try again later."},

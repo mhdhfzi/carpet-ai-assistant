@@ -94,7 +94,7 @@ Work through these phases in order. Tick items off as they are done.
 
 ### Phase 4: Channels
 - [x] React web chat widget (embeddable `widget.js`)
-- [ ] WhatsApp webhook (verify signature, handle incoming/outgoing messages)
+- [x] WhatsApp webhook (verify signature, handle incoming/outgoing messages)
 
 ### Phase 5: Admin dashboard
 - [ ] Owner login (JWT auth)

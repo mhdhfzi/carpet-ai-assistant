@@ -76,3 +76,13 @@ class FakeEmbedder:
             vector[bucket] += 1.0
         norm = math.sqrt(sum(v * v for v in vector)) or 1.0
         return [v / norm for v in vector]
+
+
+class FakeWhatsAppClient:
+    """Records messages instead of sending them through Meta's API."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    def send_text(self, to: str, body: str) -> None:
+        self.sent.append((to, body))

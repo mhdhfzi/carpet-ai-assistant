@@ -1,7 +1,7 @@
 """Customer conversations: store messages and generate the assistant's reply.
 
-`reply` is channel-independent; the web endpoint uses it now and the WhatsApp webhook will
-reuse it. Conversations are stored so the owner can review them and take over.
+`reply` is channel-independent: the web chat and the WhatsApp webhook both use it.
+Conversations are stored so the owner can review them and take over.
 """
 
 import secrets
@@ -37,13 +37,21 @@ def handle_web_message(
 
 
 def reply(
-    db: Session, embedder: Embedder, llm: ChatModel, conversation: Conversation, text: str
+    db: Session,
+    embedder: Embedder,
+    llm: ChatModel,
+    conversation: Conversation,
+    text: str,
+    *,
+    external_id: str | None = None,
 ) -> ChatResult:
     history = _recent_turns(db, conversation)
 
     # Save the customer's message first, in its own transaction: if the AI call fails,
     # the owner still sees what the customer asked.
-    customer_message = Message(conversation=conversation, role=MessageRole.CUSTOMER, content=text)
+    customer_message = Message(
+        conversation=conversation, role=MessageRole.CUSTOMER, content=text, external_id=external_id
+    )
     db.add(customer_message)
     db.commit()
 
