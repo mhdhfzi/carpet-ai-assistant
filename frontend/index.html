@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ms">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Chat widget demo</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    />
+    <style>
+      /* A rough stand-in for the host website, to check the widget's look and placement. */
+      body { margin: 0; font-family: "Plus Jakarta Sans", sans-serif; background: #fafafa; color: #0a0a0a; }
+      main { max-width: 40rem; margin: 0 auto; padding: 4rem 1.5rem 12rem; line-height: 1.6; }
+      h1 { font-family: "Bricolage Grotesque", sans-serif; font-size: 2.5rem; line-height: 1.1; }
+      .lang { display: inline-flex; gap: .5rem; margin-bottom: 2rem; }
+      .lang button { border: 1px solid #e5e5e5; background: #fff; border-radius: 999px; padding: .4rem 1rem; cursor: pointer; }
+      /* Same size and position as the floating WhatsApp button on cucicucisenawang.com. */
+      .fake-whatsapp { position: fixed; right: 1rem; bottom: 1rem; width: 4rem; height: 4rem; border-radius: 50%; background: #25d366; color: #fff; display: grid; place-items: center; font-weight: 700; box-shadow: 0 10px 20px -6px rgb(37 211 102 / .5); }
+      @media (min-width: 640px) { .fake-whatsapp { right: 1.5rem; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="lang">
+        <button type="button" onclick="document.documentElement.lang='ms'">BM</button>
+        <button type="button" onclick="document.documentElement.lang='en'">EN</button>
+      </div>
+      <h1>Karpet bersih, rumah lebih nyaman.</h1>
+      <p>
+        Demo page for the chat widget. The widget follows this page's language (try the BM / EN
+        buttons) and sits above the WhatsApp button, like on cucicucisenawang.com.
+      </p>
+    </main>
+    <div class="fake-whatsapp" aria-hidden="true">WA</div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
