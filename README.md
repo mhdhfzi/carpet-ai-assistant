@@ -42,3 +42,12 @@ Embed the widget on any site:
 ```html
 <script src="https://<host>/widget.js" data-api="https://<backend>" data-offset-bottom="92" defer></script>
 ```
+
+## Production image
+
+One Docker image runs the API and serves the built frontend (demo page, dashboard, `widget.js`) from the same origin:
+
+```bash
+docker compose --profile app run --rm app alembic upgrade head   # migrations
+docker compose --profile app up --build                          # http://localhost:8080
+```

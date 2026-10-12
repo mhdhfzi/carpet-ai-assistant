@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Websites allowed to call the API from a browser (the chat widget), comma-separated,
     # e.g. "https://demo.example.com,https://www.example.com". Empty = none.
     cors_origins: str = ""
+    # Built frontend (demo page, dashboard, widget.js) to serve from the same origin as the
+    # API. Set in the Docker image; unset in development, where Vite serves the frontend.
+    static_dir: str | None = None
 
     # Owner login. Tokens are signed with this secret: long, random, never committed.
     jwt_secret: SecretStr | None = None
