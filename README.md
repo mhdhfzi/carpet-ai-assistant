@@ -51,3 +51,26 @@ One Docker image runs the API and serves the built frontend (demo page, dashboar
 docker compose --profile app run --rm app alembic upgrade head   # migrations
 docker compose --profile app up --build                          # http://localhost:8080
 ```
+
+## Deployment (Google Cloud Run + Neon)
+
+Live: https://kilau-918469824880.asia-southeast1.run.app
+
+| Piece | Where |
+|---|---|
+| App (API + frontend) | Cloud Run service `kilau`, `asia-southeast1`, 0–2 instances (scales to zero) |
+| Database | Neon Postgres (Singapore), pooled connection, pgvector |
+| Images | Artifact Registry `asia-southeast1-docker.pkg.dev/kilau-assistant/kilau/app:<git sha>` |
+| Secrets | Secret Manager: `database-url`, `jwt-secret`, `voyage-api-key`, `anthropic-api-key` |
+| Migrations / one-off commands | Cloud Run jobs `migrate` (`alembic upgrade head`) and `manage` (`python -m ...`) |
+
+**Continuous deployment.** On every push to `main`, CI runs the tests, then builds the image, pushes it, runs the `migrate` job and rolls Cloud Run onto the new image. GitHub authenticates through Workload Identity Federation (no stored key; only this repository is trusted) as `github-deployer`, which can push images and deploy but not read secrets. The app runs as `kilau-run`, which can only read its secrets.
+
+Env vars, secrets and scaling belong to the service and carry over between deploys. To change them, or to run a one-off command against production:
+
+```bash
+gcloud run services update kilau --region asia-southeast1 --update-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest
+gcloud run jobs execute manage --region asia-southeast1 --args=-m,app.seed_demo --wait
+```
+
+Neon runs Postgres 18; CI tests against 16. The app uses nothing that differs between them.
