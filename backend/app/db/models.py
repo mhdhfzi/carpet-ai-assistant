@@ -188,6 +188,12 @@ class Conversation(TimestampMixin, Base):
         ForeignKey("customers.id", ondelete="SET NULL"), index=True
     )
     handed_off: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    handoff_reason: Mapped[str | None] = mapped_column(Text)  # why the AI handed over
+    # A booking the assistant has summarised to the customer but not yet created, and the
+    # customer message it was prepared in reply to. create_booking only runs once a newer
+    # customer message exists, i.e. the customer has seen the summary and answered.
+    booking_draft: Mapped[dict | None] = mapped_column(JSONB)
+    booking_draft_after_message_id: Mapped[int | None] = mapped_column(Integer)
 
     customer: Mapped[Customer | None] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(

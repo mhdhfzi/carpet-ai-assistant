@@ -1,12 +1,14 @@
 """Business logic for bookings: creation (with server-side pricing) and status changes."""
 
+from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Booking, BookingItem, BookingStatus, Customer
+from app.db.models import Booking, BookingItem, BookingStatus, Customer, Service
 from app.schemas.booking import BookingCreate, BookingUpdate, CustomerIn
 from app.services import availability, catalog, pricing
 from app.services.errors import ConflictError, InvalidStatusTransitionError, NotFoundError
@@ -52,6 +54,52 @@ def get_booking(db: Session, booking_id: int) -> Booking:
     return booking
 
 
+@dataclass(frozen=True)
+class QuoteLine:
+    service: Service
+    quantity: Decimal
+    unit_price: pricing.PriceRange
+    line_total: pricing.PriceRange
+
+
+@dataclass(frozen=True)
+class BookingQuote:
+    """Everything a booking would contain, computed without saving anything."""
+
+    scheduled_start: datetime
+    scheduled_end: datetime
+    lines: list[QuoteLine]
+    total: pricing.PriceRange
+
+
+def quote_booking(db: Session, data: BookingCreate) -> BookingQuote:
+    """Validate a booking request, check the slot is free, and price it. Saves nothing.
+
+    Used both to create bookings and to show the customer a summary to confirm first.
+    """
+    services = catalog.get_bookable_services(db, {item.service_id for item in data.items})
+    duration = availability.visit_duration(services.values())
+    availability.ensure_slot_available(db, data.scheduled_start, duration, location=data.location)
+
+    lines = []
+    for item in data.items:
+        service = services[item.service_id]
+        lines.append(
+            QuoteLine(
+                service=service,
+                quantity=item.quantity,
+                unit_price=pricing.unit_price_range(service),
+                line_total=pricing.estimate_line(service, item.quantity),
+            )
+        )
+    return BookingQuote(
+        scheduled_start=data.scheduled_start,
+        scheduled_end=data.scheduled_start + duration,
+        lines=lines,
+        total=pricing.estimate_total(line.line_total for line in lines),
+    )
+
+
 def create_booking(
     db: Session, data: BookingCreate, *, conversation_id: int | None = None
 ) -> Booking:
@@ -59,38 +107,27 @@ def create_booking(
 
     Prices and the visit's end time come from the catalogue, never from the caller.
     """
-    services = catalog.get_bookable_services(db, {item.service_id for item in data.items})
-    duration = availability.visit_duration(services.values())
-    availability.ensure_slot_available(db, data.scheduled_start, duration, location=data.location)
-
-    items, line_estimates = [], []
-    for item in data.items:
-        service = services[item.service_id]
-        unit = pricing.unit_price_range(service)
-        line = pricing.estimate_line(service, item.quantity)
-        line_estimates.append(line)
-        items.append(
-            BookingItem(
-                service=service,
-                quantity=item.quantity,
-                unit_price=unit.low,
-                unit_price_max=unit.high,
-                line_total=line.low,
-                line_total_max=line.high,
-            )
-        )
-    total = pricing.estimate_total(line_estimates)
-
+    quote = quote_booking(db, data)
     booking = Booking(
         customer=_find_or_create_customer(db, data.customer),
         conversation_id=conversation_id,
-        scheduled_start=data.scheduled_start,
-        scheduled_end=data.scheduled_start + duration,
+        scheduled_start=quote.scheduled_start,
+        scheduled_end=quote.scheduled_end,
         location=data.location,
-        estimated_price=total.low,
-        estimated_price_max=total.high,
+        estimated_price=quote.total.low,
+        estimated_price_max=quote.total.high,
         notes=data.notes,
-        items=items,
+        items=[
+            BookingItem(
+                service=line.service,
+                quantity=line.quantity,
+                unit_price=line.unit_price.low,
+                unit_price_max=line.unit_price.high,
+                line_total=line.line_total.low,
+                line_total_max=line.line_total.high,
+            )
+            for line in quote.lines
+        ],
     )
     db.add(booking)
     try:
