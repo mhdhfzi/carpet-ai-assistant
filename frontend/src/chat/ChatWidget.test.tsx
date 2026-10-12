@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ChatWidget } from './ChatWidget'
+import { ChatWidget, OPEN_EVENT } from './ChatWidget'
 
 type Reply = { status?: number; body?: unknown }
 
@@ -37,6 +37,24 @@ afterEach(() => {
 })
 
 describe('ChatWidget', () => {
+  it('opens from the host page with a question typed in, without sending it', async () => {
+    const calls = mockApi()
+    render(<ChatWidget apiBase="https://api.test" bottomOffset={16} />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { message: 'Harga karpet shaggy?' } }))
+    })
+
+    expect(screen.getByRole('dialog', { name: 'Pembantu Kilau' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Harga karpet shaggy?')
+    expect(calls).toHaveLength(0) // the visitor still presses send
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_EVENT))
+    })
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
   it('opens with a greeting and focuses the input', async () => {
     mockApi()
     await openChat()

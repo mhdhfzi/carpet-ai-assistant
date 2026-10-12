@@ -27,7 +27,7 @@ export function App() {
 }
 
 function Layout({ route, children }: { route: Route; children: ReactNode }) {
-  const { state, signOut } = useAuth()
+  const { state, signOut, readOnly } = useAuth()
   const owner = state.status === 'signed-in' ? state.owner : null
 
   return (
@@ -50,6 +50,11 @@ function Layout({ route, children }: { route: Route; children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            {readOnly && (
+              <span className="rounded-full bg-brand px-3 py-1 text-xs font-bold text-ink" title="You can look around, but changes are turned off">
+                Demo · read-only
+              </span>
+            )}
             <span className="text-white/70">{owner?.name}</span>
             <button
               type="button"

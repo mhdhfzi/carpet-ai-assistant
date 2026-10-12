@@ -13,21 +13,50 @@ export type WidgetOptions = {
 
 const MAX_LENGTH = 2000 // same limit as the backend
 
+/**
+ * The host page can open the chat from its own buttons, optionally with a question typed in:
+ *   window.dispatchEvent(new CustomEvent('kilau-chat:open', { detail: { message: '...' } }))
+ */
+export const OPEN_EVENT = 'kilau-chat:open'
+
 export function ChatWidget({ apiBase, bottomOffset }: WidgetOptions) {
   const t = strings[useHostLang()]
   const [open, setOpen] = useState(false)
+  const [prefill, setPrefill] = useState({ text: '', version: 0 })
   const chat = useChat(apiBase)
   const bottom = `max(${bottomOffset}px, env(safe-area-inset-bottom))`
+  const { loadHistory } = chat
 
   const openChat = () => {
     setOpen(true)
-    void chat.loadHistory()
+    void loadHistory()
   }
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: unknown } | null>).detail?.message
+      // A new version remounts the panel, so its draft starts as this message.
+      setPrefill((p) => ({ text: typeof message === 'string' ? message.slice(0, MAX_LENGTH) : '', version: p.version + 1 }))
+      setOpen(true)
+      void loadHistory()
+    }
+    window.addEventListener(OPEN_EVENT, onOpen)
+    return () => {
+      window.removeEventListener(OPEN_EVENT, onOpen)
+    }
+  }, [loadHistory])
 
   return (
     <div className="font-sans text-[15px] leading-normal text-ink antialiased">
       {open ? (
-        <ChatPanel t={t} chat={chat} bottom={bottom} onClose={() => setOpen(false)} />
+        <ChatPanel
+          key={prefill.version}
+          t={t}
+          chat={chat}
+          bottom={bottom}
+          initialDraft={prefill.text}
+          onClose={() => setOpen(false)}
+        />
       ) : (
         <button
           type="button"
@@ -48,11 +77,12 @@ type PanelProps = {
   t: Strings
   chat: ReturnType<typeof useChat>
   bottom: string
+  initialDraft: string
   onClose: () => void
 }
 
-function ChatPanel({ t, chat, bottom, onClose }: PanelProps) {
-  const [draft, setDraft] = useState('')
+function ChatPanel({ t, chat, bottom, initialDraft, onClose }: PanelProps) {
+  const [draft, setDraft] = useState(initialDraft)
   const input = useRef<HTMLTextAreaElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const busy = chat.status === 'sending' || chat.status === 'loading'

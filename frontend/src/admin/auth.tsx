@@ -34,6 +34,8 @@ type AuthContextValue = {
   state: AuthState
   signIn: (email: string, password: string) => Promise<void>
   signOut: (notice?: string) => void
+  /** The public demo login: it can look but not change anything (the server enforces this). */
+  readOnly: boolean
   /** Calls the API as the logged-in owner; a 401 signs the owner out. */
   request: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
 }
@@ -86,7 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [token, signOut],
   )
 
-  const value = useMemo(() => ({ state, signIn, signOut, request }), [state, signIn, signOut, request])
+  const readOnly = state.status === 'signed-in' && state.owner.role === 'demo'
+  const value = useMemo(
+    () => ({ state, signIn, signOut, request, readOnly }),
+    [state, signIn, signOut, request, readOnly],
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

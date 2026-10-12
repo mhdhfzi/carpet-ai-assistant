@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { AuthProvider } from './auth'
+import { DEMO_EMAIL, DEMO_PASSWORD } from './LoginPage'
 
-const OWNER = { id: 1, email: 'owner@example.com', name: 'Owner Name' }
+const OWNER = { id: 1, email: 'owner@example.com', name: 'Owner Name', role: 'owner' }
 const TOKEN_KEY = 'kilau-admin-token'
 
 type Handler = (init: RequestInit | undefined) => { status: number; body?: unknown }
@@ -72,6 +73,23 @@ describe('owner dashboard', () => {
     expect(screen.getByRole('heading', { name: 'Bookings' })).toBeInTheDocument()
     expect(requests.find((r) => r.key === 'GET /api/auth/me')?.auth).toBe('Bearer tok-123')
     expect(JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? '{}').token).toBe('tok-123')
+  })
+
+  it('signs in to the demo account with one click', async () => {
+    let sent: unknown
+    mockBackend({
+      'POST /api/auth/login': (init) => {
+        sent = JSON.parse(String(init?.body))
+        return loginOk(init)
+      },
+      'GET /api/auth/me': () => ({ status: 200, body: { ...OWNER, name: 'Demo visitor', role: 'demo' } }),
+    })
+    renderApp()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Try the demo account' }))
+
+    expect(await screen.findByText('Demo · read-only')).toBeInTheDocument()
+    expect(sent).toEqual({ email: DEMO_EMAIL, password: DEMO_PASSWORD })
   })
 
   it('shows a clear error for wrong credentials', async () => {
