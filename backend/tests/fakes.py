@@ -5,30 +5,49 @@ import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
-from app.ai.llm import ChatTurn, Document, LLMAnswer
+from app.ai.llm import ChatTurn, Document, Exchange, ModelTurn, ToolCall
 from app.db.models import EMBEDDING_DIMENSIONS
 
 
 @dataclass
 class ChatCall:
     system: str
+    context: str
     documents: list[Document]
     messages: list[ChatTurn]
+    tools: list[dict[str, Any]]
+    exchanges: list[Exchange]
 
 
 class FakeChatModel:
-    """Returns a scripted answer and records what it was asked."""
+    """Returns scripted turns in order (then a default reply) and records every request."""
 
-    def __init__(self, answer: LLMAnswer) -> None:
-        self.next_answer = answer
+    def __init__(self, *script: ModelTurn, default: str = "Hello from the fake model.") -> None:
+        self.script = list(script)
+        self.default = ModelTurn(default)
         self.calls: list[ChatCall] = []
 
-    def answer(
-        self, *, system: str, documents: Sequence[Document], messages: Sequence[ChatTurn]
-    ) -> LLMAnswer:
-        self.calls.append(ChatCall(system, list(documents), list(messages)))
-        return self.next_answer
+    def respond(
+        self,
+        *,
+        system: str,
+        context: str,
+        documents: Sequence[Document],
+        messages: Sequence[ChatTurn],
+        tools: Sequence[dict[str, Any]],
+        exchanges: Sequence[Exchange],
+    ) -> ModelTurn:
+        self.calls.append(
+            ChatCall(system, context, list(documents), list(messages), list(tools), list(exchanges))
+        )
+        return self.script.pop(0) if self.script else self.default
+
+
+def tool_turn(name: str, call_id: str = "call_1", **tool_input: Any) -> ModelTurn:
+    """A scripted model turn that calls one tool."""
+    return ModelTurn(text="", tool_calls=[ToolCall(call_id, name, tool_input)])
 
 
 class FakeEmbedder:

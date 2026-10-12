@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
-from app.ai.llm import LLMAnswer
 from app.api.deps import chat_model_dependency, embedder_dependency
 from app.core import clock
 from app.db.session import get_db
@@ -88,7 +87,7 @@ def fake_embedder() -> FakeEmbedder:
 
 @pytest.fixture
 def fake_llm() -> FakeChatModel:
-    return FakeChatModel(LLMAnswer("Hello from the fake model."))
+    return FakeChatModel()
 
 
 @pytest.fixture

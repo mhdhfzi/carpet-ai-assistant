@@ -10,10 +10,12 @@ from dataclasses import asdict, dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai import rag
+from app.ai import agent
 from app.ai.embeddings import Embedder
 from app.ai.llm import ChatModel, ChatTurn
-from app.db.models import Channel, Conversation, Message, MessageRole
+from app.ai.tools import ToolContext
+from app.db.models import Channel, Conversation, Message, MessageRole, UnansweredReason
+from app.services import unanswered
 
 # How many earlier messages the model sees. Enough for follow-up questions while keeping
 # each request small (cost and latency grow with history).
@@ -40,13 +42,15 @@ def reply(
 
     # Save the customer's message first, in its own transaction: if the AI call fails,
     # the owner still sees what the customer asked.
-    db.add(Message(conversation=conversation, role=MessageRole.CUSTOMER, content=text))
+    customer_message = Message(conversation=conversation, role=MessageRole.CUSTOMER, content=text)
+    db.add(customer_message)
     db.commit()
 
     if conversation.handed_off:
         return ChatResult(conversation, reply=None)
 
-    answer = rag.answer(db, embedder, llm, [*history, ChatTurn("user", text)])
+    ctx = ToolContext(db=db, conversation=conversation, customer_message_id=customer_message.id)
+    answer = agent.run(ctx, embedder, llm, [*history, ChatTurn("user", text)])
     db.add(
         Message(
             conversation=conversation,
@@ -56,6 +60,14 @@ def reply(
             grounded=answer.grounded,
         )
     )
+    if answer.gave_up:
+        unanswered.log_question(
+            db,
+            conversation,
+            customer_message.id,
+            UnansweredReason.GAVE_UP,
+            top_score=ctx.top_score,
+        )
     db.commit()
     return ChatResult(conversation, reply=answer.text)
 
