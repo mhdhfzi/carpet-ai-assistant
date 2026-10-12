@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.ai.embeddings import EmbeddingError
 from app.ai.llm import LLMError
+from app.core.rate_limit import RateLimitExceeded
 from app.core.security import AuthError, AuthNotConfiguredError
 from app.services.errors import BusinessRuleError, ConflictError, DomainError, NotFoundError
 from app.services.whatsapp import WhatsAppError
@@ -29,6 +30,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     for exc_class in (EmbeddingError, LLMError, WhatsAppError, AuthNotConfiguredError):
         app.add_exception_handler(exc_class, _ai_unavailable)
     app.add_exception_handler(AuthError, _unauthorized)
+    app.add_exception_handler(RateLimitExceeded, _rate_limited)
 
 
 def _handler(status_code: int):
@@ -53,4 +55,13 @@ async def _unauthorized(_: Request, exc: Exception) -> JSONResponse:
         status_code=status.HTTP_401_UNAUTHORIZED,
         content={"detail": str(exc)},
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _rate_limited(_: Request, exc: Exception) -> JSONResponse:
+    retry_after = exc.retry_after if isinstance(exc, RateLimitExceeded) else 60
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": str(exc)},
+        headers={"Retry-After": str(retry_after)},
     )

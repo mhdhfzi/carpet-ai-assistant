@@ -4,23 +4,35 @@
 Conversations are stored so the owner can review them and take over.
 """
 
+import logging
 import secrets
 from dataclasses import asdict, dataclass
+from datetime import datetime, time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai import agent
 from app.ai.embeddings import Embedder
 from app.ai.llm import ChatModel, ChatTurn
 from app.ai.tools import ToolContext
+from app.core import clock
+from app.core.config import get_settings
 from app.db.models import Channel, Conversation, Message, MessageRole, UnansweredReason
 from app.services import unanswered
+from app.services.availability import HOURS
 from app.services.errors import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 # How many earlier messages the model sees. Enough for follow-up questions while keeping
 # each request small (cost and latency grow with history).
 HISTORY_LIMIT = 10
+
+DAILY_LIMIT_REPLY = (
+    "Maaf, pembantu demo ini telah mencapai had harian. Sila cuba lagi esok. / "
+    "Sorry, this demo assistant has reached its daily limit. Please try again tomorrow."
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +70,18 @@ def reply(
     if conversation.handed_off:
         return ChatResult(conversation, reply=None)
 
+    if _daily_ai_limit_reached(db):
+        # Cost guard for the public demo: answer politely without calling the AI. Stored
+        # with grounded=None, like other fixed replies, so it isn't counted as AI output.
+        logger.warning("Daily AI reply limit reached; sending the fixed reply")
+        db.add(
+            Message(
+                conversation=conversation, role=MessageRole.ASSISTANT, content=DAILY_LIMIT_REPLY
+            )
+        )
+        db.commit()
+        return ChatResult(conversation, reply=DAILY_LIMIT_REPLY)
+
     ctx = ToolContext(db=db, conversation=conversation, customer_message_id=customer_message.id)
     answer = agent.run(ctx, embedder, llm, [*history, ChatTurn("user", text)])
     db.add(
@@ -79,6 +103,24 @@ def reply(
         )
     db.commit()
     return ChatResult(conversation, reply=answer.text)
+
+
+def _daily_ai_limit_reached(db: Session) -> bool:
+    """Counted in the database, so the cap holds across all server instances. AI replies
+    are the assistant messages with a grounded value; fixed replies leave it unset."""
+    limit = get_settings().ai_daily_reply_limit
+    if limit <= 0:
+        return False
+    today = clock.now().astimezone(HOURS.timezone).date()
+    since = datetime.combine(today, time.min, HOURS.timezone)
+    replies = db.scalar(
+        select(func.count(Message.id)).where(
+            Message.role == MessageRole.ASSISTANT,
+            Message.grounded.is_not(None),
+            Message.created_at >= since,
+        )
+    )
+    return (replies or 0) >= limit
 
 
 def _find_web_conversation(db: Session, session_id: str | None) -> Conversation | None:

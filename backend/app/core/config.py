@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     app_name: str = "Carpet AI Assistant"
     environment: Literal["local", "test", "production"] = "local"
     debug: bool = False
+    log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://carpet:carpet@127.0.0.1:5432/carpet"
     # Websites allowed to call the API from a browser (the chat widget), comma-separated,
     # e.g. "https://demo.example.com,https://www.example.com". Empty = none.
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
     # Chat model (Claude). Swap to a cheaper model here if cost matters more than quality.
     anthropic_api_key: SecretStr | None = None
     chat_model: str = "claude-opus-5-5"
+    # Most AI replies per day (Malaysia time) across all customers: a cost guard for the
+    # public demo. Beyond it customers get a polite fixed reply. 0 = no limit.
+    ai_daily_reply_limit: int = 300
 
     # WhatsApp Business Cloud API. All optional: without the app secret the webhook refuses
     # every request, so unsigned (forged) messages are never processed.
@@ -56,6 +60,10 @@ class Settings(BaseSettings):
         # .env.example ships `KEY=` lines; an empty value must count as missing,
         # not as a key made of an empty string.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @property
+    def json_logs(self) -> bool:
+        return self.environment == "production"
 
     @property
     def cors_origin_list(self) -> list[str]:

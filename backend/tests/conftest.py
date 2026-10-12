@@ -23,6 +23,7 @@ from app.api.deps import (
 )
 from app.core import clock
 from app.core.config import get_settings
+from app.core.rate_limit import ALL_LIMITERS
 from app.core.security import create_access_token, hash_password
 from app.db.models import Owner
 from app.db.session import get_db
@@ -61,6 +62,14 @@ def alembic_config(url: URL) -> Config:
 # Saturday 10 Oct 2026, 10:00 in Malaysia. With 2 days' notice, Monday 12 Oct is the earliest
 # bookable day. Freezing time keeps date-based tests from breaking as the calendar moves on.
 FROZEN_NOW = datetime(2026, 10, 10, 10, 0, tzinfo=ZoneInfo("Asia/Kuala_Lumpur"))
+
+
+@pytest.fixture(autouse=True)
+def fresh_rate_limits() -> Iterator[None]:
+    """Rate limiters live for the whole process; each test starts with empty counters."""
+    for limiter in ALL_LIMITERS:
+        limiter.reset()
+    yield
 
 
 @pytest.fixture(autouse=True)

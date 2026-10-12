@@ -19,6 +19,8 @@ from app.api import (
 )
 from app.api.errors import register_exception_handlers
 from app.core.config import get_settings
+from app.core.logging import configure_logging
+from app.core.middleware import RequestContextMiddleware
 
 # Python guesses file types from the OS (on Windows, the registry, where .js can be
 # text/plain). Browsers refuse scripts with the wrong type, so pin the ones we serve.
@@ -44,6 +46,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, debug=settings.debug)
 
     register_exception_handlers(app)
+    app.add_middleware(RequestContextMiddleware)
     if settings.cors_origin_list:
         # Only the listed sites may call the API from a visitor's browser (the chat widget).
         app.add_middleware(
@@ -68,4 +71,6 @@ def create_app() -> FastAPI:
     return app
 
 
+_settings = get_settings()
+configure_logging(json_logs=_settings.json_logs, level=_settings.log_level)
 app = create_app()
