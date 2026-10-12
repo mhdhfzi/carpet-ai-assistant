@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, str_enum
@@ -210,6 +211,10 @@ class Message(Base):
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     role: Mapped[MessageRole] = mapped_column(str_enum(MessageRole, "message_role"))
     content: Mapped[str] = mapped_column(Text)
+    # Assistant replies only: the knowledge chunks the reply cited (shown in the admin view),
+    # and whether it cited any. An ungrounded reply means the knowledge base had no answer.
+    sources: Mapped[list[dict] | None] = mapped_column(JSONB)
+    grounded: Mapped[bool | None] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

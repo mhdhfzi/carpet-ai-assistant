@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api import availability, bookings, closed_dates, services
+from app.api import availability, bookings, chat, closed_dates, services
 from app.api.errors import register_exception_handlers
 from app.core.config import get_settings
 
@@ -14,6 +14,7 @@ def create_app() -> FastAPI:
     app.include_router(bookings.router)
     app.include_router(availability.router)
     app.include_router(closed_dates.router)
+    app.include_router(chat.router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
