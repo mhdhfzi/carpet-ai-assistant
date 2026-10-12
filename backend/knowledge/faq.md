@@ -36,3 +36,24 @@ No. We are closed every Friday. We are open the other six days from 9:00 am to 5
 
 No. Your booking is recorded as pending first. The owner will contact you to agree on the
 time, and the booking is confirmed once you agree.
+
+## Do you charge for pickup and delivery?
+
+Pickup and delivery are free within 15 km of our shop in Senawang. Beyond 15 km, there is an
+extra transport charge, which the owner confirms.
+
+## Where is your shop?
+
+89-G, Jalan Bandar Senawang 5, Taipan 2, Pusat Bandar Senawang, 70450 Seremban, Negeri
+Sembilan. You can also WhatsApp or call us at 019-276 2890.
+
+## How much does mosque or office carpet cleaning cost?
+
+There is no fixed price for mosque, surau, hall, office or shop carpets. The owner visits
+the site first and then gives a quote through WhatsApp. Share the location, roughly how much
+carpet there is, and your name and phone number, and the owner will arrange the visit.
+
+## Do you clean car seats?
+
+Yes. We clean fabric car seats, car carpet and the dashboard, usually at your home. The
+price depends on the size of the car, and the owner confirms it.

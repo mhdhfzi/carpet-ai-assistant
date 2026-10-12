@@ -64,7 +64,9 @@ SERVICES: list[dict] = [
     on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
     on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),
     on_site("Cucian Tilam King", "King mattress", "mattress", "160.00"),
-    # TODO: Cucian Kereta (car cleaning) by vehicle size (sedan, MPV, ...): waiting for prices.
+    # TODO: Cucian Seat Kereta (car seats, car carpet, dashboard) by car size (sedan, MPV,
+    # ...): waiting for prices. Mosque/surau/office carpets are quoted after a site visit,
+    # so they have no catalogue price (the assistant hands those requests to the owner).
 ]
 
 
