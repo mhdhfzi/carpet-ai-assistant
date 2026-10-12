@@ -5,11 +5,11 @@ from datetime import date
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, RequireOwner
 from app.db.models import ClosedDate
 from app.schemas.closed_date import ClosedDateIn, ClosedDateRead
 
-router = APIRouter(prefix="/api/closed-dates", tags=["availability"])
+router = APIRouter(prefix="/api/closed-dates", tags=["availability"], dependencies=[RequireOwner])
 
 
 @router.get("", response_model=list[ClosedDateRead])

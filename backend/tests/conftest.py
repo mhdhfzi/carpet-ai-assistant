@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
@@ -21,6 +22,9 @@ from app.api.deps import (
     whatsapp_config_dependency,
 )
 from app.core import clock
+from app.core.config import get_settings
+from app.core.security import create_access_token, hash_password
+from app.db.models import Owner
 from app.db.session import get_db
 from app.main import create_app
 from tests.fakes import FakeChatModel, FakeEmbedder, FakeWhatsAppClient
@@ -107,25 +111,77 @@ def fake_whatsapp() -> FakeWhatsAppClient:
     return FakeWhatsAppClient()
 
 
+# --- Owner authentication ------------------------------------------------------------------
+
+TEST_JWT_SECRET = "test-jwt-secret-that-is-long-enough-for-hs256"
+OWNER_EMAIL = "owner@example.com"
+OWNER_PASSWORD = "correct horse battery staple"
+# Hashed once per run: Argon2 is deliberately slow, and most tests just need an owner.
+_OWNER_PASSWORD_HASH = hash_password(OWNER_PASSWORD)
+
+
+@pytest.fixture(autouse=True)
+def jwt_secret(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    monkeypatch.setenv("JWT_SECRET", TEST_JWT_SECRET)
+    get_settings.cache_clear()
+    yield TEST_JWT_SECRET
+    get_settings.cache_clear()
+
+
 @pytest.fixture
-def client(
-    db: Session,
-    fake_embedder: FakeEmbedder,
-    fake_llm: FakeChatModel,
-    fake_whatsapp: FakeWhatsAppClient,
-) -> Iterator[TestClient]:
-    """An API client whose requests use the per-test session, so they're rolled back too.
+def owner(db: Session) -> Owner:
+    owner = Owner(email=OWNER_EMAIL, name="Test Owner", password_hash=_OWNER_PASSWORD_HASH)
+    db.add(owner)
+    db.flush()
+    return owner
+
+
+@pytest.fixture
+def owner_token(owner: Owner) -> str:
+    return create_access_token(owner.id)[0]
+
+
+# --- API clients ----------------------------------------------------------------------------
+
+
+def _test_app(db: Session, embedder, llm, whatsapp) -> FastAPI:
+    """The app wired to the per-test session, so API changes are rolled back too.
 
     AI providers and WhatsApp are always replaced with fakes, so no test can call a paid or
     external API.
     """
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[embedder_dependency] = lambda: fake_embedder
-    app.dependency_overrides[chat_model_dependency] = lambda: fake_llm
-    app.dependency_overrides[whatsapp_client_dependency] = lambda: fake_whatsapp
+    app.dependency_overrides[embedder_dependency] = lambda: embedder
+    app.dependency_overrides[chat_model_dependency] = lambda: llm
+    app.dependency_overrides[whatsapp_client_dependency] = lambda: whatsapp
     app.dependency_overrides[whatsapp_config_dependency] = lambda: WHATSAPP_TEST_CONFIG
     # Background tasks reuse the test's session (wrapped so they can't close it).
     app.dependency_overrides[session_factory_dependency] = lambda: lambda: nullcontext(db)
-    with TestClient(app) as client:
+    return app
+
+
+@pytest.fixture
+def client(
+    db: Session,
+    fake_embedder: FakeEmbedder,
+    fake_llm: FakeChatModel,
+    fake_whatsapp: FakeWhatsAppClient,
+    owner_token: str,
+) -> Iterator[TestClient]:
+    """API client logged in as the owner (customer endpoints simply ignore the token)."""
+    app = _test_app(db, fake_embedder, fake_llm, fake_whatsapp)
+    with TestClient(app, headers={"Authorization": f"Bearer {owner_token}"}) as client:
+        yield client
+
+
+@pytest.fixture
+def anon_client(
+    db: Session,
+    fake_embedder: FakeEmbedder,
+    fake_llm: FakeChatModel,
+    fake_whatsapp: FakeWhatsAppClient,
+) -> Iterator[TestClient]:
+    """API client with no login, like a customer or an attacker."""
+    with TestClient(_test_app(db, fake_embedder, fake_llm, fake_whatsapp)) as client:
         yield client

@@ -15,6 +15,8 @@ dependencies = [
     "pgvector>=0.3",  # vector column type for SQLAlchemy
     "httpx2>=2.13",  # HTTP client (Voyage AI API); also used by the Anthropic SDK
     "anthropic>=1.13",  # Claude API
+    "pyjwt>=2.9",  # owner login tokens
+    "argon2-cffi>=23.1",  # password hashing
 ]
 
 [project.optional-dependencies]
@@ -44,6 +46,10 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Demo conversations are natural-language data; wrapping sentences would hurt readability.
+"app/seed_demo.py" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency injection uses calls in default arguments (Depends(...)).

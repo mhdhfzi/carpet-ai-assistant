@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # e.g. "https://demo.example.com,https://www.example.com". Empty = none.
     cors_origins: str = ""
 
+    # Owner login. Tokens are signed with this secret: long, random, never committed.
+    jwt_secret: SecretStr | None = None
+    access_token_minutes: int = 8 * 60
+
     # Embeddings for RAG. SecretStr keeps the key out of logs and error messages.
     voyage_api_key: SecretStr | None = None
     embedding_model: str = "voyage-3.5"
@@ -35,6 +39,7 @@ class Settings(BaseSettings):
     whatsapp_api_version: str = "v23.0"
 
     @field_validator(
+        "jwt_secret",
         "voyage_api_key",
         "anthropic_api_key",
         "whatsapp_verify_token",

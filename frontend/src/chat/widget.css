@@ -1,20 +1,5 @@
 @import "tailwindcss";
-
-/* Brand: Plus Jakarta Sans / Bricolage Grotesque, near-black ink,
-   yellow brand. The fonts are loaded by the host page; shadow DOM content can use them. */
-@theme {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --color-ink: #0a0a0a;
-  --color-ink-soft: #525252;
-  --color-mist: #fafafa;
-  --color-foam: #f2f2f2;
-  --color-line: #e5e5e5;
-  --color-brand: #facc15;
-  --color-brand-hover: #eab308;
-  --color-danger: #b91c1c;
-  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 20px 48px -16px rgb(0 0 0 / 0.28);
-}
+@import "../styles/theme.css";
 
 /* Tailwind v4 gives some of its variables initial values with @property, which browsers
    ignore inside shadow roots. Set those values here so borders, shadows, rings and

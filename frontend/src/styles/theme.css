@@ -1,0 +1,20 @@
+/* Shared brand tokens for the chat widget and the owner dashboard: Plus Jakarta Sans /
+   Bricolage Grotesque, near-black ink, yellow brand. Pages load the fonts themselves. */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #0a0a0a;
+  --color-ink-soft: #525252;
+  --color-mist: #fafafa;
+  --color-foam: #f2f2f2;
+  --color-line: #e5e5e5;
+  --color-brand: #facc15;
+  --color-brand-hover: #eab308;
+  --color-brand-ink: #854d0e; /* gold text on white, 7.4:1 contrast */
+  --color-danger: #b91c1c;
+  /* Data marks: the brand yellow (#facc15) is only 1.5:1 on white, so charts use a deeper
+     step of the same ramp, validated at >= 3:1 (dataviz validate_palette.js). */
+  --color-chart: #a16207;
+  --color-chart-track: #fef3c7;
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 20px 48px -16px rgb(0 0 0 / 0.28);
+}

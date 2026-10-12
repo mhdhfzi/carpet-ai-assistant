@@ -207,7 +207,7 @@ class Conversation(TimestampMixin, Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="Message.created_at",
+        order_by="Message.id",  # insertion order; timestamps can tie within a transaction
     )
     bookings: Mapped[list[Booking]] = relationship(back_populates="conversation")
 
@@ -234,6 +234,18 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class Owner(TimestampMixin, Base):
+    """A business owner who can log in to the dashboard. Created with python -m app.create_owner."""
+
+    __tablename__ = "owners"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # stored lower-case
+    name: Mapped[str] = mapped_column(String(100))
+    # Argon2 hash (includes its own salt and parameters); the password itself is never stored.
+    password_hash: Mapped[str] = mapped_column(String(255))
 
 
 class ClosedDate(Base):

@@ -100,6 +100,7 @@ class BookingRead(BaseModel):
 
     id: int
     customer: CustomerRead
+    conversation_id: int | None  # the chat that led to the booking, if any
     scheduled_start: datetime
     scheduled_end: datetime
     location: BookingLocation
