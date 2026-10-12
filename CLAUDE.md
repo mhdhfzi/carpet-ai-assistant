@@ -97,7 +97,7 @@ Work through these phases in order. Tick items off as they are done.
 - [x] WhatsApp webhook (verify signature, handle incoming/outgoing messages)
 
 ### Phase 5: Admin dashboard
-- [ ] Owner login (JWT auth)
+- [x] Owner login (JWT auth)
 - [ ] Bookings list and status updates
 - [ ] Analytics: common questions, chat-to-booking conversion, busy days, unanswered questions
 

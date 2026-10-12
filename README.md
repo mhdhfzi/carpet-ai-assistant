@@ -27,12 +27,13 @@ uvicorn app.main:app --reload  # API docs at http://127.0.0.1:8000/docs
 ```
 
 ```bash
-# Chat widget (frontend/)
+# Chat widget and owner dashboard (frontend/)
 cd frontend
 npm install
-npm run dev                    # demo page at http://localhost:5173 (proxies /api to the backend)
+npm run dev                    # widget demo at http://localhost:5173, dashboard at /admin.html
+                               # (both proxy /api to the backend)
 npm run lint && npm run typecheck && npm test
-npm run build                  # -> dist/widget.js, one self-contained embeddable script
+npm run build                  # -> dist/ (demo + dashboard) and dist/widget.js (embeddable)
 ```
 
 Embed the widget on any site:
