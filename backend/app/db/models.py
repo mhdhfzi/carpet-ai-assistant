@@ -207,7 +207,7 @@ class Conversation(TimestampMixin, Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="Message.created_at",
+        order_by="Message.id",  # insertion order; timestamps can tie within a transaction
     )
     bookings: Mapped[list[Booking]] = relationship(back_populates="conversation")
 

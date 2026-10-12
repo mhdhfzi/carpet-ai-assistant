@@ -98,7 +98,7 @@ Work through these phases in order. Tick items off as they are done.
 
 ### Phase 5: Admin dashboard
 - [x] Owner login (JWT auth)
-- [ ] Bookings list and status updates
+- [x] Bookings list and status updates
 - [ ] Analytics: common questions, chat-to-booking conversion, busy days, unanswered questions
 
 ### Phase 6: Production-grade

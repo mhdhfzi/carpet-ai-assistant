@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from app.db.models import MessageRole
+from app.db.models import Channel, MessageRole
 
 MessageText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
@@ -36,3 +36,46 @@ class ChatHistory(BaseModel):
     session_id: str
     handed_off: bool
     messages: list[ChatMessageRead]
+
+
+# --- Owner view ------------------------------------------------------------------------------
+
+
+class SourceRead(BaseModel):
+    source: str
+    title: str
+    heading: str
+    cited_text: str
+
+
+class OwnerMessageRead(BaseModel):
+    """A message with the internals the owner may review: cited sources and grounding."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: MessageRole
+    content: str
+    sources: list[SourceRead] | None
+    grounded: bool | None
+    created_at: datetime
+
+
+class ConversationCustomer(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    phone: str
+
+
+class ConversationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    channel: Channel
+    handed_off: bool
+    handoff_reason: str | None
+    customer: ConversationCustomer | None
+    created_at: datetime
+    messages: list[OwnerMessageRead]

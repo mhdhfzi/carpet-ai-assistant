@@ -10,6 +10,7 @@
   --color-line: #e5e5e5;
   --color-brand: #facc15;
   --color-brand-hover: #eab308;
+  --color-brand-ink: #854d0e; /* gold text on white, 7.4:1 contrast */
   --color-danger: #b91c1c;
   --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 20px 48px -16px rgb(0 0 0 / 0.28);
 }

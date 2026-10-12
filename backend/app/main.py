@@ -7,6 +7,7 @@ from app.api import (
     bookings,
     chat,
     closed_dates,
+    conversations,
     services,
     unanswered,
     whatsapp,
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(availability.router)
     app.include_router(closed_dates.router)
     app.include_router(chat.router)
+    app.include_router(conversations.router)
     app.include_router(unanswered.router)
     app.include_router(whatsapp.router)
 

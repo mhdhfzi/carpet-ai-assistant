@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useAuth } from './auth'
+import { BookingsPage } from './BookingsPage'
 import { LoginPage } from './LoginPage'
 import { type Route, useHashRoute } from './useHashRoute'
 
@@ -19,11 +20,7 @@ export function App() {
 
   return (
     <Layout route={route}>
-      {route === 'analytics' ? (
-        <Placeholder title="Analytics" />
-      ) : (
-        <Placeholder title="Bookings" />
-      )}
+      {route === 'analytics' ? <Placeholder title="Analytics" /> : <BookingsPage />}
     </Layout>
   )
 }
