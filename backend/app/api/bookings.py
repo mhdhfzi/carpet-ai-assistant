@@ -4,12 +4,13 @@ from fastapi import APIRouter, Query
 from fastapi import status as http_status
 from pydantic import AwareDatetime
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, RequireOwner
 from app.db.models import Booking, BookingStatus
 from app.schemas.booking import BookingCreate, BookingRead, BookingUpdate
 from app.services import bookings
 
-router = APIRouter(prefix="/api/bookings", tags=["bookings"])
+# Owner only: bookings hold customers' names, phone numbers and addresses.
+router = APIRouter(prefix="/api/bookings", tags=["bookings"], dependencies=[RequireOwner])
 
 
 @router.get("", response_model=list[BookingRead])

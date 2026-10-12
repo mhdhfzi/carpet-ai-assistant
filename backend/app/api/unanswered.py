@@ -4,12 +4,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, RequireOwner
 from app.db.models import UnansweredQuestion
 from app.schemas.unanswered import UnansweredQuestionRead, UnansweredQuestionUpdate
 from app.services import unanswered
 
-router = APIRouter(prefix="/api/unanswered-questions", tags=["unanswered questions"])
+router = APIRouter(
+    prefix="/api/unanswered-questions", tags=["unanswered questions"], dependencies=[RequireOwner]
+)
 
 
 @router.get("", response_model=list[UnansweredQuestionRead])

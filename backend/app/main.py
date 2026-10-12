@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    auth,
     availability,
     bookings,
     chat,
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, debug=settings.debug)
 
     register_exception_handlers(app)
+    app.include_router(auth.router)
     if settings.cors_origin_list:
         # Only the listed sites may call the API from a visitor's browser (the chat widget).
         app.add_middleware(

@@ -12,13 +12,14 @@ docker compose up -d
 
 # Backend
 cd backend
-cp .env.example .env            # then fill in the API keys
+cp .env.example .env            # then fill in JWT_SECRET and the API keys
 python -m venv .venv
 .venv/Scripts/activate        # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
 alembic upgrade head           # apply database migrations
 python -m app.seed             # load the service price list (safe to re-run)
 python -m app.ai.ingest        # embed knowledge docs + prices (needs VOYAGE_API_KEY in .env)
+python -m app.create_owner owner@example.com "Owner Name"  # dashboard login (prompts for a password)
 python -m app.ai.ask           # chat with the assistant in the terminal (needs ANTHROPIC_API_KEY)
 ruff check . && ruff format --check .
 pytest                         # needs the database running; uses a separate carpet_test DB

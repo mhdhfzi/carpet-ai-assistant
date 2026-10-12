@@ -236,6 +236,18 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
+class Owner(TimestampMixin, Base):
+    """A business owner who can log in to the dashboard. Created with python -m app.create_owner."""
+
+    __tablename__ = "owners"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # stored lower-case
+    name: Mapped[str] = mapped_column(String(100))
+    # Argon2 hash (includes its own salt and parameters); the password itself is never stored.
+    password_hash: Mapped[str] = mapped_column(String(255))
+
+
 class ClosedDate(Base):
     """A day the business is closed besides Fridays, e.g. a public holiday."""
 

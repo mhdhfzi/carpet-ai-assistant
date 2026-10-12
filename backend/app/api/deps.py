@@ -3,11 +3,14 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import Embedder, get_embedder
 from app.ai.llm import ChatModel, get_chat_model
 from app.core.config import get_settings
+from app.core.security import AuthError, decode_access_token
+from app.db.models import Owner
 from app.db.session import SessionLocal, get_db
 from app.services.whatsapp import (
     GraphWhatsAppClient,
@@ -17,6 +20,33 @@ from app.services.whatsapp import (
 )
 
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+# --- Owner authentication ----------------------------------------------------------------------
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def current_owner(
+    db: DbSession,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> Owner:
+    """The logged-in owner, from the Authorization: Bearer token.
+
+    The owner is reloaded on every request, so a deleted account's token stops working
+    immediately instead of when it expires.
+    """
+    if credentials is None:
+        raise AuthError("Not logged in")
+    owner = db.get(Owner, decode_access_token(credentials.credentials))
+    if owner is None:
+        raise AuthError("This account no longer exists")
+    return owner
+
+
+CurrentOwner = Annotated[Owner, Depends(current_owner)]
+# For whole routers or single routes: dependencies=[RequireOwner]
+RequireOwner = Depends(current_owner)
 
 
 # Cached so every request reuses one HTTP client (connection pooling). A missing API key

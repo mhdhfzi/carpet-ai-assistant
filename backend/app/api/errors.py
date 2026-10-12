@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.ai.embeddings import EmbeddingError
 from app.ai.llm import LLMError
+from app.core.security import AuthError, AuthNotConfiguredError
 from app.services.errors import BusinessRuleError, ConflictError, DomainError, NotFoundError
 from app.services.whatsapp import WhatsAppError
 
@@ -25,8 +26,9 @@ _STATUS_CODES: dict[type[DomainError], int] = {
 def register_exception_handlers(app: FastAPI) -> None:
     for exc_class, status_code in _STATUS_CODES.items():
         app.add_exception_handler(exc_class, _handler(status_code))
-    for exc_class in (EmbeddingError, LLMError, WhatsAppError):
+    for exc_class in (EmbeddingError, LLMError, WhatsAppError, AuthNotConfiguredError):
         app.add_exception_handler(exc_class, _ai_unavailable)
+    app.add_exception_handler(AuthError, _unauthorized)
 
 
 def _handler(status_code: int):
@@ -43,4 +45,12 @@ async def _ai_unavailable(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={"detail": "The assistant is temporarily unavailable. Please try again later."},
+    )
+
+
+async def _unauthorized(_: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"detail": str(exc)},
+        headers={"WWW-Authenticate": "Bearer"},
     )
