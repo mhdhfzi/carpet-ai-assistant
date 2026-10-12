@@ -224,6 +224,9 @@ class Message(Base):
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     role: Mapped[MessageRole] = mapped_column(str_enum(MessageRole, "message_role"))
     content: Mapped[str] = mapped_column(Text)
+    # The channel's own message id (e.g. WhatsApp's "wamid..."). Unique, so a webhook
+    # delivered twice can't be processed twice.
+    external_id: Mapped[str | None] = mapped_column(String(200), unique=True)
     # Assistant replies only: the knowledge chunks the reply cited (shown in the admin view),
     # and whether it cited any. An ungrounded reply means the knowledge base had no answer.
     sources: Mapped[list[dict] | None] = mapped_column(JSONB)

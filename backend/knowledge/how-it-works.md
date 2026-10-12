@@ -7,8 +7,10 @@ title: How each service works
 ## How carpet cleaning works
 
 1. We collect the carpet from the customer's home, or the customer drops it off at our shop.
+   Pickup and delivery are free within 15 km of the shop.
 2. We clean the carpet at our shop using our cleaning procedure.
-3. We return the carpet to the customer within 5 to 7 days.
+3. We dry the carpet fully, pack it neatly, and return it to the customer within 5 to 7
+   days, if there are no problems with the carpet.
 
 A carpet collection visit is short (about 30 minutes), because the carpet is cleaned at the
 shop rather than at the customer's home.
@@ -25,15 +27,15 @@ the customer. Any price given before measuring is an estimate based on the size 
 gives us. For handmade carpet, the owner also inspects the material before confirming the
 price.
 
-## How sofa, mattress and car cleaning works
+## How sofa, mattress and car seat cleaning works
 
-Sofas, mattresses (tilam) and cars are usually cleaned at the customer's home. Customers can
-also bring them to our shop instead.
+Sofas, mattresses (tilam) and car seats are usually cleaned at the customer's home.
+Customers can also bring them to our shop instead.
 
-## How long sofa, mattress and car cleaning takes
+## How long sofa, mattress and car seat cleaning takes
 
-Cleaning a sofa, mattress or car at the customer's home usually takes about 2 hours, if
-there are no problems.
+Cleaning a sofa, mattress or car seats at the customer's home usually takes about 2 hours,
+if there are no problems.
 
 ## Combining services in one visit
 

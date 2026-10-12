@@ -1,7 +1,7 @@
 """Customer conversations: store messages and generate the assistant's reply.
 
-`reply` is channel-independent; the web endpoint uses it now and the WhatsApp webhook will
-reuse it. Conversations are stored so the owner can review them and take over.
+`reply` is channel-independent: the web chat and the WhatsApp webhook both use it.
+Conversations are stored so the owner can review them and take over.
 """
 
 import secrets
@@ -16,6 +16,7 @@ from app.ai.llm import ChatModel, ChatTurn
 from app.ai.tools import ToolContext
 from app.db.models import Channel, Conversation, Message, MessageRole, UnansweredReason
 from app.services import unanswered
+from app.services.errors import NotFoundError
 
 # How many earlier messages the model sees. Enough for follow-up questions while keeping
 # each request small (cost and latency grow with history).
@@ -36,13 +37,21 @@ def handle_web_message(
 
 
 def reply(
-    db: Session, embedder: Embedder, llm: ChatModel, conversation: Conversation, text: str
+    db: Session,
+    embedder: Embedder,
+    llm: ChatModel,
+    conversation: Conversation,
+    text: str,
+    *,
+    external_id: str | None = None,
 ) -> ChatResult:
     history = _recent_turns(db, conversation)
 
     # Save the customer's message first, in its own transaction: if the AI call fails,
     # the owner still sees what the customer asked.
-    customer_message = Message(conversation=conversation, role=MessageRole.CUSTOMER, content=text)
+    customer_message = Message(
+        conversation=conversation, role=MessageRole.CUSTOMER, content=text, external_id=external_id
+    )
     db.add(customer_message)
     db.commit()
 
@@ -113,3 +122,19 @@ def _recent_turns(db: Session, conversation: Conversation) -> list[ChatTurn]:
     while turns and turns[0].role == "assistant":
         turns.pop(0)
     return turns
+
+
+def web_history(
+    db: Session, session_id: str, *, limit: int = 100
+) -> tuple[Conversation, list[Message]]:
+    """The latest messages of a web conversation, oldest first, for reloading the widget."""
+    conversation = _find_web_conversation(db, session_id)
+    if conversation is None:
+        raise NotFoundError("Conversation not found")
+    messages = db.scalars(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.id.desc())
+        .limit(limit)
+    ).all()
+    return conversation, list(reversed(messages))

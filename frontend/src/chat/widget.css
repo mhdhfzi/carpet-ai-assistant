@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Brand: Plus Jakarta Sans / Bricolage Grotesque, near-black ink,
+   yellow brand. The fonts are loaded by the host page; shadow DOM content can use them. */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #0a0a0a;
+  --color-ink-soft: #525252;
+  --color-mist: #fafafa;
+  --color-foam: #f2f2f2;
+  --color-line: #e5e5e5;
+  --color-brand: #facc15;
+  --color-brand-hover: #eab308;
+  --color-danger: #b91c1c;
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 20px 48px -16px rgb(0 0 0 / 0.28);
+}
+
+/* Tailwind v4 gives some of its variables initial values with @property, which browsers
+   ignore inside shadow roots. Set those values here so borders, shadows, rings and
+   transforms work in the widget. */
+@layer base {
+  :host,
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    --tw-border-style: solid;
+    --tw-outline-style: solid;
+    --tw-translate-x: 0;
+    --tw-translate-y: 0;
+    --tw-translate-z: 0;
+    --tw-scale-x: 1;
+    --tw-scale-y: 1;
+    --tw-scale-z: 1;
+    --tw-space-y-reverse: 0;
+    --tw-shadow: 0 0 #0000;
+    --tw-shadow-alpha: 100%;
+    --tw-inset-shadow: 0 0 #0000;
+    --tw-inset-shadow-alpha: 100%;
+    --tw-ring-shadow: 0 0 #0000;
+    --tw-inset-ring-shadow: 0 0 #0000;
+    --tw-ring-offset-width: 0px;
+    --tw-ring-offset-color: #fff;
+    --tw-ring-offset-shadow: 0 0 #0000;
+  }
+
+  /* The host page's inherited styles (font size, line height, colour) stop here. */
+  :host {
+    all: initial;
+  }
+}

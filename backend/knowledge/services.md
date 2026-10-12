@@ -4,8 +4,8 @@ title: Services we offer
 
 # Services we offer
 
-We are a cleaning business based in Negeri Sembilan, Malaysia. We clean carpets, sofas,
-mattresses and cars.
+Kilau Carpet Care cleans carpets (for homes, mosques, surau, halls and offices), mattresses,
+sofas and car seats, serving all of Negeri Sembilan.
 
 ## Carpet cleaning (cuci karpet)
 
@@ -37,7 +37,22 @@ Sofa cleaning is priced per seat. A three-seater sofa counts as three seats.
 
 Mattress cleaning is priced per mattress, by size: single, queen or king.
 
-## Car cleaning (cuci kereta)
+## Car seat cleaning (cuci seat kereta)
 
-We also clean cars. The price depends on the size of the car, for example sedan or MPV.
-Car cleaning prices are confirmed by the owner.
+We clean a car's fabric seats, car carpet (karpet kereta) and dashboard. It is a cleaning
+of the car interior, not a full car wash. The price depends on the size of the car, for
+example sedan or MPV, and is confirmed by the owner.
+
+## Mosque, surau and hall carpets (karpet masjid, surau, dewan)
+
+We clean carpets for mosques, surau and halls. There is no fixed price: the owner visits
+the site first to see the carpets, then gives a quote through WhatsApp. To arrange a site
+visit, we need the location, roughly how much carpet there is, and a contact name and
+phone number.
+
+## Office and commercial carpets (karpet pejabat, kedai)
+
+We clean carpets for offices, shops and other commercial premises. As with mosque carpets,
+the owner visits the site first and then gives a quote through WhatsApp. To arrange a site
+visit, we need the location, roughly how much carpet there is, and a contact name and
+phone number.
