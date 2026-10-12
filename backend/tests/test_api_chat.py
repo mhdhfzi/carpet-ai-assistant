@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.ingest import ingest
-from app.ai.llm import ChatTurn, Citation, LLMAnswer, LLMError
+from app.ai.llm import ChatTurn, Citation, LLMError, ModelTurn
 from app.api import deps
 from app.db.models import Channel, Conversation, Message, MessageRole
 from app.main import create_app
@@ -85,7 +85,7 @@ def test_reply_sources_and_grounding_are_stored_for_the_owner(
 ) -> None:
     write_doc(tmp_path, "hours.md", {"Opening hours": "We are closed on Fridays."})
     ingest(db, fake_embedder, tmp_path)
-    fake_llm.next_answer = LLMAnswer("No, closed on Fridays.", citations=[Citation(0, "closed")])
+    fake_llm.script.append(ModelTurn("No, closed on Fridays.", citations=[Citation(0, "closed")]))
 
     body = send(client, "Are you open on Friday?")
 
@@ -148,10 +148,10 @@ def test_invalid_messages_are_rejected(client: TestClient, message: str) -> None
 def test_ai_failure_returns_503_but_keeps_the_customer_message(
     client: TestClient, db: Session, fake_llm: FakeChatModel
 ) -> None:
-    def broken(**_: Any) -> LLMAnswer:
+    def broken(**_: Any) -> ModelTurn:
         raise LLMError("upstream exploded with secret details")
 
-    fake_llm.answer = broken  # type: ignore[method-assign]
+    fake_llm.respond = broken  # type: ignore[method-assign]
 
     response = client.post("/api/chat", json={"message": "Are you open today?"})
 
@@ -164,7 +164,7 @@ def test_ai_failure_returns_503_but_keeps_the_customer_message(
 def test_missing_api_key_returns_503(
     db: Session, fake_embedder: FakeEmbedder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def no_key() -> LLMAnswer:
+    def no_key() -> ModelTurn:
         raise LLMError("ANTHROPIC_API_KEY is not set")
 
     monkeypatch.setattr(deps, "get_chat_model", no_key)
