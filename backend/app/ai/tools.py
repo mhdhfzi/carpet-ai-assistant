@@ -18,9 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from app.ai.price_list import describe_price
-from app.db.models import BookingLocation, Conversation
+from app.db.models import BookingLocation, Conversation, UnansweredReason
 from app.schemas.booking import BookingCreate
-from app.services import availability, bookings, catalog, pricing
+from app.services import availability, bookings, catalog, pricing, unanswered
 from app.services.errors import DomainError
 
 ESTIMATE_NOTE = (
@@ -35,6 +35,8 @@ class ToolContext:
     conversation: Conversation
     # The customer message this turn is answering; used by the booking confirmation guard.
     customer_message_id: int
+    # Similarity of the best knowledge chunk retrieved this turn (for the unanswered log).
+    top_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,13 @@ class PrepareBookingInput(ToolInput):
     location: BookingLocation = BookingLocation.CUSTOMER_HOME
     items: list[ItemInput] = Field(min_length=1)
     notes: str | None = Field(default=None, description="Anything the owner should know.")
+
+
+class FlagUnansweredInput(ToolInput):
+    question: str = Field(
+        min_length=1,
+        description="The question you couldn't answer, summarised in English for the owner.",
+    )
 
 
 class HandoffInput(ToolInput):
@@ -235,9 +244,33 @@ def create_booking(ctx: ToolContext, _: NoInput) -> dict[str, Any]:
     }
 
 
+def flag_unanswered_question(ctx: ToolContext, data: FlagUnansweredInput) -> dict[str, Any]:
+    unanswered.log_question(
+        ctx.db,
+        ctx.conversation,
+        ctx.customer_message_id,
+        UnansweredReason.NO_ANSWER,
+        question=data.question,
+        top_score=ctx.top_score,
+    )
+    ctx.db.commit()
+    return {
+        "logged": True,
+        "next_step": "Tell the customer you're not sure and the owner will get back to them.",
+    }
+
+
 def handoff_to_human(ctx: ToolContext, data: HandoffInput) -> dict[str, Any]:
     ctx.conversation.handed_off = True
     ctx.conversation.handoff_reason = data.reason
+    unanswered.log_question(
+        ctx.db,
+        ctx.conversation,
+        ctx.customer_message_id,
+        UnansweredReason.HANDED_OFF,
+        detail=data.reason,
+        top_score=ctx.top_score,
+    )
     ctx.db.commit()
     return {
         "handed_off": True,
@@ -299,6 +332,14 @@ TOOLS: dict[str, Tool] = {
             "has seen the summary and replied to confirm it.",
             NoInput,
             create_booking,
+        ),
+        Tool(
+            "flag_unanswered_question",
+            "Record a question you can't answer from the information and tools you have, so "
+            "the owner can follow up and add the answer. Call it before telling the customer "
+            "you're not sure. Not needed for greetings or small talk.",
+            FlagUnansweredInput,
+            flag_unanswered_question,
         ),
         Tool(
             "handoff_to_human",

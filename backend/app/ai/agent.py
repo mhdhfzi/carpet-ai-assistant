@@ -58,6 +58,7 @@ def run(
     ctx: ToolContext, embedder: Embedder, llm: ChatModel, messages: Sequence[ChatTurn]
 ) -> AgentReply:
     chunks = retrieve(ctx.db, embedder, rag.retrieval_query(messages), limit=TOP_K)
+    ctx.top_score = chunks[0].score if chunks else None
     documents = rag.to_documents(chunks)
     tools = tool_definitions()
     context = request_context(clock.now())

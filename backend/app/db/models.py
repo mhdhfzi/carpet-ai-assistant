@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -57,6 +58,12 @@ class MessageRole(StrEnum):
     CUSTOMER = "customer"
     ASSISTANT = "assistant"
     STAFF = "staff"  # a human who took over after a handoff
+
+
+class UnansweredReason(StrEnum):
+    NO_ANSWER = "no_answer"  # the assistant flagged it couldn't answer
+    HANDED_OFF = "handed_off"  # the conversation was handed to the owner
+    GAVE_UP = "gave_up"  # refusal, or too many tool rounds
 
 
 class Service(TimestampMixin, Base):
@@ -263,3 +270,31 @@ class KnowledgeChunk(Base):
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UnansweredQuestion(Base):
+    """A customer question the assistant couldn't handle: the owner's to-do list for
+    improving the knowledge base, shown on the dashboard until marked resolved."""
+
+    __tablename__ = "unanswered_questions"
+    __table_args__ = (
+        Index("ix_unanswered_questions_resolved_created_at", "resolved", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    # The customer message that asked it (the original wording, in their language).
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
+    reason: Mapped[UnansweredReason] = mapped_column(
+        str_enum(UnansweredReason, "unanswered_reason")
+    )
+    question: Mapped[str] = mapped_column(Text)  # what was asked, as summarised for the owner
+    detail: Mapped[str | None] = mapped_column(Text)  # e.g. the handoff reason
+    # Similarity of the best knowledge chunk found: helps tune a confidence threshold later.
+    top_score: Mapped[float | None] = mapped_column(Float)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    conversation: Mapped[Conversation] = relationship()

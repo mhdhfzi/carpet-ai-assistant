@@ -14,7 +14,8 @@ from app.ai import agent
 from app.ai.embeddings import Embedder
 from app.ai.llm import ChatModel, ChatTurn
 from app.ai.tools import ToolContext
-from app.db.models import Channel, Conversation, Message, MessageRole
+from app.db.models import Channel, Conversation, Message, MessageRole, UnansweredReason
+from app.services import unanswered
 
 # How many earlier messages the model sees. Enough for follow-up questions while keeping
 # each request small (cost and latency grow with history).
@@ -59,6 +60,14 @@ def reply(
             grounded=answer.grounded,
         )
     )
+    if answer.gave_up:
+        unanswered.log_question(
+            db,
+            conversation,
+            customer_message.id,
+            UnansweredReason.GAVE_UP,
+            top_score=ctx.top_score,
+        )
     db.commit()
     return ChatResult(conversation, reply=answer.text)
 

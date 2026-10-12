@@ -89,7 +89,7 @@ Work through these phases in order. Tick items off as they are done.
 ### Phase 3: Tool calling (agent)
 - [x] Tools: `get_services`, `estimate_price`, `check_availability`, `create_booking` (with `prepare_booking`), `handoff_to_human`
 - [x] Agent loop with confirmation step before `create_booking`
-- [ ] Log low-confidence / unanswered questions
+- [x] Log low-confidence / unanswered questions
 - [x] Tests for the tool-calling flow
 
 ### Phase 4: Channels
