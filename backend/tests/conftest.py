@@ -11,9 +11,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import URL, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
+from app.ai.llm import LLMAnswer
+from app.api.deps import chat_model_dependency, embedder_dependency
 from app.core import clock
 from app.db.session import get_db
 from app.main import create_app
+from tests.fakes import FakeChatModel, FakeEmbedder
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -79,9 +82,26 @@ def db(engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def client(db: Session) -> Iterator[TestClient]:
-    """An API client whose requests use the per-test session, so they're rolled back too."""
+def fake_embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+def fake_llm() -> FakeChatModel:
+    return FakeChatModel(LLMAnswer("Hello from the fake model."))
+
+
+@pytest.fixture
+def client(
+    db: Session, fake_embedder: FakeEmbedder, fake_llm: FakeChatModel
+) -> Iterator[TestClient]:
+    """An API client whose requests use the per-test session, so they're rolled back too.
+
+    AI providers are always replaced with fakes, so no test can call a paid API.
+    """
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[embedder_dependency] = lambda: fake_embedder
+    app.dependency_overrides[chat_model_dependency] = lambda: fake_llm
     with TestClient(app) as client:
         yield client

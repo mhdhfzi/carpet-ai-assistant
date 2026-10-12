@@ -16,7 +16,7 @@ This is **not** my university final-year project. It is a separate portfolio pie
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2.x, Alembic (migrations), Pydantic v2 |
 | Database | PostgreSQL 16 + pgvector (for embeddings) |
-| AI | LLM API with tool calling; embeddings for RAG. Keep the provider behind an interface so it can be swapped |
+| AI | Claude (Anthropic API) for chat + tool calling; Voyage AI embeddings for RAG. Both behind interfaces so providers can be swapped |
 | Frontend | React + TypeScript (Vite), Tailwind CSS: web chat widget + admin dashboard |
 | Messaging | WhatsApp Business Cloud API (webhook) |
 | Infra | Docker + docker-compose for local dev; GitHub Actions for CI/CD; deploy to AWS (or GCP/Azure) |
@@ -81,10 +81,10 @@ Work through these phases in order. Tick items off as they are done.
 - [x] Availability service (free slots) with unit tests
 
 ### Phase 2: RAG chatbot
-- [ ] Write knowledge documents in `backend/knowledge/`
-- [ ] Ingestion script: chunk → embed → store in pgvector
-- [ ] Retrieval + answer generation with sources
-- [ ] `/chat` endpoint; tests with a mocked LLM
+- [x] Write knowledge documents in `backend/knowledge/`
+- [x] Ingestion script: chunk → embed → store in pgvector
+- [x] Retrieval + answer generation with sources
+- [x] `/chat` endpoint; tests with a mocked LLM
 
 ### Phase 3: Tool calling (agent)
 - [ ] Tools: `get_services`, `estimate_price`, `check_availability`, `create_booking`, `handoff_to_human`

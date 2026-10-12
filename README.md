@@ -12,11 +12,14 @@ docker compose up -d
 
 # Backend
 cd backend
+cp .env.example .env            # then fill in the API keys
 python -m venv .venv
 .venv/Scripts/activate        # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
 alembic upgrade head           # apply database migrations
 python -m app.seed             # load the service price list (safe to re-run)
+python -m app.ai.ingest        # embed knowledge docs + prices (needs VOYAGE_API_KEY in .env)
+python -m app.ai.ask "Are you open on Friday?"  # try the assistant (needs ANTHROPIC_API_KEY)
 ruff check . && ruff format --check .
 pytest                         # needs the database running; uses a separate carpet_test DB
 uvicorn app.main:app --reload  # API docs at http://127.0.0.1:8000/docs

@@ -12,12 +12,14 @@ dependencies = [
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "tzdata>=2024.1",  # IANA timezones for zoneinfo (Windows has none built in)
+    "pgvector>=0.3",  # vector column type for SQLAlchemy
+    "httpx2>=2.13",  # HTTP client (Voyage AI API); also used by the Anthropic SDK
+    "anthropic>=1.13",  # Claude API
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
-    "httpx2>=2.13",  # used by FastAPI's TestClient
     "ruff>=0.7",
 ]
 
