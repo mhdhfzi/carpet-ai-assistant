@@ -4,6 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -23,6 +24,9 @@ from app.db.base import Base, TimestampMixin, str_enum
 
 # Money is always NUMERIC (exact decimal), never float.
 Money = Numeric(10, 2)
+
+# Size of the embedding vectors (voyage-3.5's default). Changing it needs a migration.
+EMBEDDING_DIMENSIONS = 1024
 
 
 class PricingUnit(StrEnum):
@@ -218,3 +222,33 @@ class ClosedDate(Base):
 
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     reason: Mapped[str] = mapped_column(String(100), default="")
+
+
+class KnowledgeChunk(Base):
+    """One retrievable piece of the knowledge base (a document section or a price-list entry).
+
+    Rebuilt by `python -m app.ai.ingest`; never edited by hand.
+    """
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        # HNSW: approximate nearest-neighbour index, fast even as the knowledge base grows.
+        # vector_cosine_ops matches the cosine distance (<=>) used when searching.
+        Index(
+            "ix_knowledge_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(200))  # e.g. "faq.md", cited in the admin view
+    title: Mapped[str] = mapped_column(String(200))
+    heading: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    # sha256 of the embedding model + embedded text: lets re-ingestion reuse embeddings for
+    # unchanged chunks instead of paying to embed them again.
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

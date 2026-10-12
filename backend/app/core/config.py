@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,10 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"] = "local"
     debug: bool = False
     database_url: str = "postgresql+psycopg://carpet:carpet@127.0.0.1:5432/carpet"
+
+    # Embeddings for RAG. SecretStr keeps the key out of logs and error messages.
+    voyage_api_key: SecretStr | None = None
+    embedding_model: str = "voyage-3.5"
 
 
 @lru_cache

@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
@@ -37,6 +38,9 @@ def run_migrations_online() -> None:
     connectable = create_engine(get_url(), poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
+        # Teach SQLAlchemy's reflection the pgvector type, so lembic check and
+        # autogenerate compare vector columns correctly instead of seeing an unknown type.
+        connection.dialect.ischema_names["vector"] = Vector
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
