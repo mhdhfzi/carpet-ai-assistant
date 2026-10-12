@@ -14,6 +14,7 @@ dependencies = [
     "tzdata>=2024.1",  # IANA timezones for zoneinfo (Windows has none built in)
     "pgvector>=0.3",  # vector column type for SQLAlchemy
     "httpx2>=2.13",  # HTTP client (Voyage AI API); also used by the Anthropic SDK
+    "anthropic>=1.13",  # Claude API
 ]
 
 [project.optional-dependencies]

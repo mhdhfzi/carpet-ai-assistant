@@ -4,8 +4,31 @@ import hashlib
 import math
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 
+from app.ai.llm import ChatTurn, Document, LLMAnswer
 from app.db.models import EMBEDDING_DIMENSIONS
+
+
+@dataclass
+class ChatCall:
+    system: str
+    documents: list[Document]
+    messages: list[ChatTurn]
+
+
+class FakeChatModel:
+    """Returns a scripted answer and records what it was asked."""
+
+    def __init__(self, answer: LLMAnswer) -> None:
+        self.next_answer = answer
+        self.calls: list[ChatCall] = []
+
+    def answer(
+        self, *, system: str, documents: Sequence[Document], messages: Sequence[ChatTurn]
+    ) -> LLMAnswer:
+        self.calls.append(ChatCall(system, list(documents), list(messages)))
+        return self.next_answer
 
 
 class FakeEmbedder:

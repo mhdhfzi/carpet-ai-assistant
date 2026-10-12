@@ -83,7 +83,7 @@ Work through these phases in order. Tick items off as they are done.
 ### Phase 2: RAG chatbot
 - [x] Write knowledge documents in `backend/knowledge/`
 - [x] Ingestion script: chunk → embed → store in pgvector
-- [ ] Retrieval + answer generation with sources
+- [x] Retrieval + answer generation with sources
 - [ ] `/chat` endpoint; tests with a mocked LLM
 
 ### Phase 3: Tool calling (agent)
