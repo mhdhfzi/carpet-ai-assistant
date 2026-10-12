@@ -130,3 +130,10 @@ jobs:
         if: env.DEPLOY == 'true'
         run: |
           gcloud run deploy kilau --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
+      # The one-off command job and the nightly demo reset run the same code as the app.
+      - name: Update the other jobs
+        if: env.DEPLOY == 'true'
+        run: |
+          for job in manage demo-reset; do
+            gcloud run jobs update "$job" --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
+          done

@@ -63,6 +63,9 @@ Live: https://kilau-918469824880.asia-southeast1.run.app
 | Images | Artifact Registry `asia-southeast1-docker.pkg.dev/kilau-assistant/kilau/app:<git sha>` |
 | Secrets | Secret Manager: `database-url`, `jwt-secret`, `voyage-api-key`, `anthropic-api-key` |
 | Migrations / one-off commands | Cloud Run jobs `migrate` (`alembic upgrade head`) and `manage` (`python -m ...`) |
+| Nightly demo reset | Cloud Scheduler `demo-reset-nightly` (03:00 MYT) runs the `demo-reset` job: `python -m app.seed_demo --reset` |
+
+**Public demo.** The dashboard has a read-only demo login (`demo@example.com` / `kilau-demo-2026`, also a one-click button on the login page). Owners have a role, and the auth dependency refuses every non-GET request from the `demo` role with 403, so a write route added later is covered automatically (tested by enumerating all routes). Because that login is public, the nightly reset deletes every customer, chat and booking and re-seeds the fictional demo data, so nothing a visitor types stays visible for more than a day.
 
 **Continuous deployment.** On every push to `main`, CI runs the tests, then builds the image, pushes it, runs the `migrate` job and rolls Cloud Run onto the new image. GitHub authenticates through Workload Identity Federation (no stored key; only this repository is trusted) as `github-deployer`, which can push images and deploy but not read secrets. The app runs as `kilau-run`, which can only read its secrets.
 
