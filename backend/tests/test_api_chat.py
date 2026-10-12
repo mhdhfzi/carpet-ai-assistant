@@ -178,3 +178,80 @@ def test_missing_api_key_returns_503(
 
     assert response.status_code == 503
     assert "ANTHROPIC_API_KEY" not in response.text
+
+
+# --- History (restoring the widget after a page reload) ------------------------------------
+
+
+def test_history_returns_the_conversation_without_internal_fields(
+    client: TestClient, fake_llm: FakeChatModel
+) -> None:
+    fake_llm.script.append(ModelTurn("We're closed on Fridays.", citations=[Citation(0, "x")]))
+    session = send(client, "Are you open Friday?")["session_id"]
+
+    response = client.get(f"/api/chat/{session}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == session
+    assert body["handed_off"] is False
+    assert [(m["role"], m["content"]) for m in body["messages"]] == [
+        ("customer", "Are you open Friday?"),
+        ("assistant", "We're closed on Fridays."),
+    ]
+    assert set(body["messages"][0]) == {"role", "content", "created_at"}  # no sources
+
+
+def test_history_of_an_unknown_session_is_404(client: TestClient) -> None:
+    assert client.get("/api/chat/not-a-real-session").status_code == 404
+
+
+def test_history_shows_handoff(client: TestClient, db: Session) -> None:
+    session = send(client, "Hi")["session_id"]
+    conversation = db.scalar(select(Conversation).where(Conversation.external_id == session))
+    assert conversation is not None
+    conversation.handed_off = True
+    db.commit()
+
+    assert client.get(f"/api/chat/{session}").json()["handed_off"] is True
+
+
+# --- CORS ------------------------------------------------------------------------------------
+
+
+def cors_client(db: Session, monkeypatch: pytest.MonkeyPatch, origins: str) -> TestClient:
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("CORS_ORIGINS", origins)
+    get_settings.cache_clear()
+    app = create_app()
+    get_settings.cache_clear()
+    app.dependency_overrides[deps.get_db] = lambda: db
+    return TestClient(app)
+
+
+def preflight(client: TestClient, origin: str):
+    return client.options(
+        "/api/chat",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+
+def test_cors_allows_only_listed_sites(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = cors_client(db, monkeypatch, "https://cucicucisenawang.com/, https://example.org")
+
+    allowed = preflight(client, "https://cucicucisenawang.com")
+    blocked = preflight(client, "https://evil.example")
+
+    assert allowed.headers["access-control-allow-origin"] == "https://cucicucisenawang.com"
+    assert "access-control-allow-origin" not in blocked.headers
+
+
+def test_no_cors_by_default(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = cors_client(db, monkeypatch, "")
+
+    assert "access-control-allow-origin" not in preflight(client, "https://x.example").headers

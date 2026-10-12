@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"] = "local"
     debug: bool = False
     database_url: str = "postgresql+psycopg://carpet:carpet@127.0.0.1:5432/carpet"
+    # Websites allowed to call the API from a browser (the chat widget), comma-separated,
+    # e.g. "https://cucicucisenawang.com,https://www.cucicucisenawang.com". Empty = none.
+    cors_origins: str = ""
 
     # Embeddings for RAG. SecretStr keeps the key out of logs and error messages.
     voyage_api_key: SecretStr | None = None
@@ -29,6 +32,12 @@ class Settings(BaseSettings):
         # .env.example ships `KEY=` lines; an empty value must count as missing,
         # not as a key made of an empty string.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [
+            origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
 
 @lru_cache
