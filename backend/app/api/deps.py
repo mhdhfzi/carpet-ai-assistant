@@ -2,15 +2,15 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import Embedder, get_embedder
 from app.ai.llm import ChatModel, get_chat_model
 from app.core.config import get_settings
-from app.core.security import AuthError, decode_access_token
-from app.db.models import Owner
+from app.core.security import AuthError, ReadOnlyAccountError, decode_access_token
+from app.db.models import Owner, OwnerRole
 from app.db.session import SessionLocal, get_db
 from app.services.whatsapp import (
     GraphWhatsAppClient,
@@ -26,8 +26,12 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 _bearer = HTTPBearer(auto_error=False)
 
+# Methods that only read. Anything else changes data.
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
 
 def current_owner(
+    request: Request,
     db: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> Owner:
@@ -35,12 +39,17 @@ def current_owner(
 
     The owner is reloaded on every request, so a deleted account's token stops working
     immediately instead of when it expires.
+
+    The demo account is read-only, checked here by HTTP method rather than per route: deny
+    by default, so a write endpoint added later is protected without anyone remembering to.
     """
     if credentials is None:
         raise AuthError("Not logged in")
     owner = db.get(Owner, decode_access_token(credentials.credentials))
     if owner is None:
         raise AuthError("This account no longer exists")
+    if owner.role is OwnerRole.DEMO and request.method not in SAFE_METHODS:
+        raise ReadOnlyAccountError("The demo account is read-only")
     return owner
 
 

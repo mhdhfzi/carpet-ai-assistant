@@ -1,13 +1,21 @@
 """Fictional demo data for the owner dashboard: customers, chats and bookings around today.
 
-Run with:  python -m app.seed_demo
+Run with:  python -m app.seed_demo            (local development)
+           python -m app.seed_demo --reset    (the public demo, nightly)
 
 Re-running replaces the previous demo data and never touches anything else. Demo
 customers use the fake phone range +60 3-0000 0xxx, and demo conversations have
 "demo-" ids, which is how earlier demo rows are found. Needs the price list
 (python -m app.seed) first.
+
+--reset first deletes ALL customers, chats, bookings and unanswered questions, then
+seeds. On the public demo it runs nightly, so whatever visitors typed into the chat is
+gone within a day, and the read-only demo login never shows it for long.
+
+Both also make sure the read-only demo login exists.
 """
 
+import argparse
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -16,6 +24,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core import clock
+from app.core.security import hash_password
 from app.db.models import (
     Booking,
     BookingItem,
@@ -26,14 +35,21 @@ from app.db.models import (
     Customer,
     Message,
     MessageRole,
+    Owner,
+    OwnerRole,
     Service,
     UnansweredQuestion,
     UnansweredReason,
 )
 from app.services import availability, pricing
+from app.services.owners import create_owner
 
 DEMO_PHONE_PREFIX = "+60300000"
 DEMO_CONVERSATION_PREFIX = "demo-"
+
+# Published on the landing page on purpose: the account is read-only (app/api/deps.py).
+DEMO_OWNER_EMAIL = "demo@example.com"
+DEMO_OWNER_PASSWORD = "kilau-demo-2026"
 
 HOME = BookingLocation.CUSTOMER_HOME
 SHOP = BookingLocation.SHOP
@@ -487,6 +503,28 @@ def clear_demo(db: Session) -> None:
     db.flush()
 
 
+def reset_customer_data(db: Session) -> None:
+    """Delete every customer, chat, booking and unanswered question, demo or not."""
+    db.execute(delete(UnansweredQuestion))
+    db.execute(delete(Booking))  # items cascade
+    db.execute(delete(Conversation))  # messages cascade
+    db.execute(delete(Customer))
+    db.flush()
+
+
+def ensure_demo_owner(db: Session) -> Owner:
+    """The read-only demo login, created if missing and reset to its published password."""
+    owner = db.scalar(select(Owner).where(Owner.email == DEMO_OWNER_EMAIL))
+    if owner is None:
+        return create_owner(
+            db, DEMO_OWNER_EMAIL, "Demo visitor", DEMO_OWNER_PASSWORD, role=OwnerRole.DEMO
+        )
+    owner.role = OwnerRole.DEMO
+    owner.password_hash = hash_password(DEMO_OWNER_PASSWORD)
+    db.commit()
+    return owner
+
+
 def _booking(spec, customer, conversation, services, today: date, tz, created_at) -> Booking:
     day = today + timedelta(days=spec["day"])
     if day.weekday() in availability.HOURS.closed_weekdays:  # never on a Friday
@@ -522,10 +560,21 @@ def _booking(spec, customer, conversation, services, today: date, tz, created_at
 def main() -> None:
     from app.db.session import SessionLocal
 
+    parser = argparse.ArgumentParser(description="Seed the dashboard demo data.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="first delete ALL customers, chats and bookings (for the public demo)",
+    )
+    args = parser.parse_args()
+
     with SessionLocal() as db:
         if not db.scalar(select(Service.id).limit(1)):
             raise SystemExit("No services yet: run python -m app.seed first.")
+        if args.reset:
+            reset_customer_data(db)
         counts = seed_demo(db)
+        ensure_demo_owner(db)
     print(
         f"Demo data created: {counts['conversations']} conversations, "
         f"{counts['bookings']} bookings, {counts['unanswered']} unanswered questions."

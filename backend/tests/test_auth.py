@@ -63,6 +63,7 @@ def test_login_returns_a_token_that_identifies_the_owner(
         "id": owner.id,
         "email": OWNER_EMAIL,
         "name": "Test Owner",
+        "role": "owner",
     }
 
 

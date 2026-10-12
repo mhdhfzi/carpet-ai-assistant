@@ -23,6 +23,10 @@ class AuthError(Exception):
     pass
 
 
+class ReadOnlyAccountError(Exception):
+    """A logged-in account that may look but not change anything (the public demo): a 403."""
+
+
 class AuthNotConfiguredError(Exception):
     """The server can't issue or check tokens (no JWT_SECRET): a 503, not a failed login."""
 

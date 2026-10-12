@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.ai.embeddings import EmbeddingError
 from app.ai.llm import LLMError
 from app.core.rate_limit import RateLimitExceeded
-from app.core.security import AuthError, AuthNotConfiguredError
+from app.core.security import AuthError, AuthNotConfiguredError, ReadOnlyAccountError
 from app.services.errors import BusinessRuleError, ConflictError, DomainError, NotFoundError
 from app.services.whatsapp import WhatsAppError
 
@@ -30,6 +30,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     for exc_class in (EmbeddingError, LLMError, WhatsAppError, AuthNotConfiguredError):
         app.add_exception_handler(exc_class, _ai_unavailable)
     app.add_exception_handler(AuthError, _unauthorized)
+    app.add_exception_handler(ReadOnlyAccountError, _handler(status.HTTP_403_FORBIDDEN))
     app.add_exception_handler(RateLimitExceeded, _rate_limited)
 
 
