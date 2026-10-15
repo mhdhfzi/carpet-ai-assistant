@@ -1,14 +1,17 @@
 """One codebase, several businesses: the demo defaults, and an answers-only deployment for a
 real business that sends customers to WhatsApp to book."""
 
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import seed_demo
 from app.ai import agent
 from app.ai.chunking import BACKEND_DIR, KNOWLEDGE_DIR, knowledge_dir
 from app.ai.llm import ChatTurn, ModelTurn
@@ -16,6 +19,7 @@ from app.ai.prompts import HANDOFF_MESSAGE, system_prompt
 from app.ai.tools import ANSWER_TOOLS, ToolContext, run_tool
 from app.core.config import Settings, get_settings
 from app.db.models import Booking, Channel, Conversation, Message, MessageRole
+from app.main import create_app
 from app.seed import seed_services
 from app.services.chat import DAILY_LIMIT_REPLY, daily_limit_reply
 from tests.fakes import FakeChatModel, FakeEmbedder, tool_turn
@@ -138,3 +142,36 @@ def test_fallback_and_daily_limit_replies_point_to_whatsapp(
 
 def test_demo_keeps_its_own_fixed_replies() -> None:
     assert daily_limit_reply() == DAILY_LIMIT_REPLY
+
+
+# --- Deployment surface ------------------------------------------------------------------
+
+
+def test_business_endpoint_describes_the_demo(db: Session) -> None:
+    body = TestClient(create_app()).get("/api/business").json()
+
+    assert body == {"name": "Kilau Carpet Care", "demo": True, "bookings": True}
+
+
+def test_real_business_endpoint_and_no_demo_landing_page(
+    real_business: Settings, db: Session
+) -> None:
+    client = TestClient(create_app())
+
+    assert client.get("/api/business").json() == {
+        "name": "Cuci-Cuci Senawang",
+        "demo": False,
+        "bookings": False,
+    }
+    landing = client.get("/", follow_redirects=False)
+    assert landing.status_code == 307 and landing.headers["location"] == "/admin.html"
+
+
+def test_demo_seed_refuses_to_run_for_a_real_business(
+    real_business: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """seed_demo --reset deletes every customer: it must never touch real data."""
+    monkeypatch.setattr(sys, "argv", ["seed_demo", "--reset"])
+
+    with pytest.raises(SystemExit, match="DEMO_BUSINESS is false"):
+        seed_demo.main()

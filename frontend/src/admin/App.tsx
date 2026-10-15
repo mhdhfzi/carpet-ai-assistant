@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AnalyticsPage } from './AnalyticsPage'
 import { useAuth } from './auth'
 import { BookingsPage } from './BookingsPage'
+import { shortName, useBusiness } from './business'
 import { LoginPage } from './LoginPage'
 import { type Route, useHashRoute } from './useHashRoute'
 
@@ -28,6 +29,7 @@ export function App() {
 
 function Layout({ route, children }: { route: Route; children: ReactNode }) {
   const { state, signOut, readOnly } = useAuth()
+  const business = useBusiness()
   const owner = state.status === 'signed-in' ? state.owner : null
 
   return (
@@ -35,7 +37,8 @@ function Layout({ route, children }: { route: Route; children: ReactNode }) {
       <header className="bg-ink text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <p className="font-display text-lg font-bold">
-            Kilau <span className="text-brand">Dashboard</span>
+            {business && `${shortName(business.name)} `}
+            <span className="text-brand">Dashboard</span>
           </p>
           <nav aria-label="Main" className="flex gap-1">
             {NAV.map((item) => (

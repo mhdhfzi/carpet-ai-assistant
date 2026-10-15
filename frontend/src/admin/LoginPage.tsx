@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { ApiError } from './api'
 import { useAuth } from './auth'
+import { useBusiness } from './business'
 
 // The public, read-only demo login (created by python -m app.seed_demo). Published on
 // purpose: the server refuses every change from this account.
@@ -9,6 +10,7 @@ export const DEMO_PASSWORD = 'kilau-demo-2026'
 
 export function LoginPage({ notice }: { notice?: string }) {
   const { signIn } = useAuth()
+  const business = useBusiness()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -38,7 +40,7 @@ export function LoginPage({ notice }: { notice?: string }) {
     <main className="grid min-h-dvh place-items-center bg-mist p-4">
       <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-3xl bg-white p-8 shadow-lift ring-1 ring-line">
         <div>
-          <p className="text-sm font-semibold text-ink-soft">Kilau Carpet Care</p>
+          <p className="min-h-5 text-sm font-semibold text-ink-soft">{business?.name}</p>
           <h1 className="font-display text-2xl font-bold">Owner dashboard</h1>
         </div>
 
@@ -82,17 +84,19 @@ export function LoginPage({ notice }: { notice?: string }) {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <div className="space-y-2 border-t border-line pt-5 text-center">
-          <p className="text-sm text-ink-soft">Just looking? The demo account can see everything but change nothing.</p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => attempt(DEMO_EMAIL, DEMO_PASSWORD)}
-            className="w-full rounded-full py-3 font-semibold ring-1 ring-line hover:bg-foam disabled:opacity-50"
-          >
-            Try the demo account
-          </button>
-        </div>
+        {business?.demo && (
+          <div className="space-y-2 border-t border-line pt-5 text-center">
+            <p className="text-sm text-ink-soft">Just looking? The demo account can see everything but change nothing.</p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => attempt(DEMO_EMAIL, DEMO_PASSWORD)}
+              className="w-full rounded-full py-3 font-semibold ring-1 ring-line hover:bg-foam disabled:opacity-50"
+            >
+              Try the demo account
+            </button>
+          </div>
+        )}
       </form>
     </main>
   )

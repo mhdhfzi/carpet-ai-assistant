@@ -24,6 +24,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core import clock
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.models import (
     Booking,
@@ -567,6 +568,9 @@ def main() -> None:
         help="first delete ALL customers, chats and bookings (for the public demo)",
     )
     args = parser.parse_args()
+    if not get_settings().demo_business:
+        # --reset deletes every customer and chat: never against a real business's data.
+        raise SystemExit("Refusing to seed demo data: DEMO_BUSINESS is false.")
 
     with SessionLocal() as db:
         if not db.scalar(select(Service.id).limit(1)):

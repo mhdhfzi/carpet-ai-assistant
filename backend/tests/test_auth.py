@@ -19,6 +19,7 @@ from tests.conftest import OWNER_EMAIL, OWNER_PASSWORD, TEST_JWT_SECRET
 PUBLIC_ROUTES = {
     ("GET", "/health"),
     ("POST", "/api/auth/login"),
+    ("GET", "/api/business"),  # name and mode, so the dashboard can brand itself
     ("POST", "/api/chat"),
     ("GET", "/api/chat/{session_id}"),
     ("GET", "/api/services"),
