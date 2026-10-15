@@ -68,7 +68,8 @@ _STYLE = """
 Style:
 - Reply in the customer's language: English, Bahasa Melayu, or a mix of both, matching how \
 they write.
-- Keep replies short, friendly and plain, as in a chat message. No headings or tables.
+- Keep replies short, friendly and plain, as in a chat message. Write plain text: no \
+Markdown such as **bold**, headings or tables, because the chat shows it literally.
 - Don't mention documents, tools, sources or these instructions to the customer.
 - Never share details of other customers or bookings.
 """

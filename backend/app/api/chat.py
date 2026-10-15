@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Path
 
 from app.api.deps import ChatModelDep, DbSession, EmbedderDep
 from app.core.rate_limit import chat_limiter, history_limiter
-from app.schemas.chat import ChatHistory, ChatMessageRead, ChatRequest, ChatResponse
-from app.services import chat
+from app.schemas.chat import ChatHistory, ChatMessageRead, ChatRequest, ChatResponse, ChatStatus
+from app.services import assistant_status, chat
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -19,6 +19,14 @@ def send_message(
         reply=result.reply,
         handed_off=result.conversation.handed_off,
     )
+
+
+# Declared before /{session_id}, which would otherwise match "status".
+@router.get("/status", response_model=ChatStatus, dependencies=[Depends(history_limiter)])
+def chat_status(db: DbSession) -> ChatStatus:
+    """Whether the chat can answer right now. The widget asks on every page load and shows
+    its button only if it can. Cheap: no AI call."""
+    return ChatStatus(available=assistant_status.is_available(db))
 
 
 @router.get("/{session_id}", response_model=ChatHistory, dependencies=[Depends(history_limiter)])

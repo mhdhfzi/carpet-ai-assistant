@@ -7,20 +7,17 @@ Conversations are stored so the owner can review them and take over.
 import logging
 import secrets
 from dataclasses import asdict, dataclass
-from datetime import datetime, time
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai import agent
 from app.ai.embeddings import Embedder
-from app.ai.llm import ChatModel, ChatTurn
+from app.ai.llm import ChatModel, ChatTurn, LLMCreditError
 from app.ai.tools import ToolContext
-from app.core import clock
 from app.core.config import get_settings
 from app.db.models import Channel, Conversation, Message, MessageRole, UnansweredReason
-from app.services import unanswered
-from app.services.availability import HOURS
+from app.services import assistant_status, unanswered
 from app.services.errors import NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -35,12 +32,27 @@ DAILY_LIMIT_REPLY = (
 )
 
 
+UNAVAILABLE_REPLY = (
+    "Maaf, pembantu tidak tersedia buat masa ini. Sila cuba lagi nanti. / "
+    "Sorry, the assistant isn't available right now. Please try again later."
+)
+
+
 def daily_limit_reply() -> str:
     """The fixed reply once the daily AI cap is reached: a real business points customers
     to WhatsApp rather than telling them to come back tomorrow."""
+    return _whatsapp_reply() or DAILY_LIMIT_REPLY
+
+
+def unavailable_reply() -> str:
+    """The fixed reply while the chat is switched off or paused (out of AI credit)."""
+    return _whatsapp_reply() or UNAVAILABLE_REPLY
+
+
+def _whatsapp_reply() -> str | None:
     settings = get_settings()
     if settings.demo_business or not settings.contact_whatsapp:
-        return DAILY_LIMIT_REPLY
+        return None
     contact = settings.contact_whatsapp
     return (
         f"Maaf, pembantu AI kami tidak dapat membalas sekarang. Sila WhatsApp kami di {contact}. / "
@@ -83,17 +95,23 @@ def reply(
     if conversation.handed_off:
         return ChatResult(conversation, reply=None)
 
-    if _daily_ai_limit_reached(db):
-        # Cost guard for the public demo: answer politely without calling the AI. Stored
-        # with grounded=None, like other fixed replies, so it isn't counted as AI output.
+    # Normally the widget hides itself in these cases (see assistant_status), but a page
+    # opened earlier can still send: answer politely without calling the AI.
+    if not get_settings().chat_enabled or assistant_status.paused_until(db):
+        return _fixed_reply(db, conversation, unavailable_reply())
+    if assistant_status.daily_limit_reached(db):
         logger.warning("Daily AI reply limit reached; sending the fixed reply")
-        fixed = daily_limit_reply()
-        db.add(Message(conversation=conversation, role=MessageRole.ASSISTANT, content=fixed))
-        db.commit()
-        return ChatResult(conversation, reply=fixed)
+        return _fixed_reply(db, conversation, daily_limit_reply())
 
     ctx = ToolContext(db=db, conversation=conversation, customer_message_id=customer_message.id)
-    answer = agent.run(ctx, embedder, llm, [*history, ChatTurn("user", text)])
+    try:
+        answer = agent.run(ctx, embedder, llm, [*history, ChatTurn("user", text)])
+    except LLMCreditError as exc:
+        # Out of credit: pause, so the widget hides its button until someone tops up.
+        db.rollback()
+        assistant_status.pause(db, str(exc))
+        return _fixed_reply(db, conversation, unavailable_reply())
+    assistant_status.record_success(db)
     db.add(
         Message(
             conversation=conversation,
@@ -115,22 +133,12 @@ def reply(
     return ChatResult(conversation, reply=answer.text)
 
 
-def _daily_ai_limit_reached(db: Session) -> bool:
-    """Counted in the database, so the cap holds across all server instances. AI replies
-    are the assistant messages with a grounded value; fixed replies leave it unset."""
-    limit = get_settings().ai_daily_reply_limit
-    if limit <= 0:
-        return False
-    today = clock.now().astimezone(HOURS.timezone).date()
-    since = datetime.combine(today, time.min, HOURS.timezone)
-    replies = db.scalar(
-        select(func.count(Message.id)).where(
-            Message.role == MessageRole.ASSISTANT,
-            Message.grounded.is_not(None),
-            Message.created_at >= since,
-        )
-    )
-    return (replies or 0) >= limit
+def _fixed_reply(db: Session, conversation: Conversation, text: str) -> ChatResult:
+    """A reply that didn't come from the AI. Stored with grounded=None, so it doesn't count
+    towards the daily AI cap."""
+    db.add(Message(conversation=conversation, role=MessageRole.ASSISTANT, content=text))
+    db.commit()
+    return ChatResult(conversation, reply=text)
 
 
 def _find_web_conversation(db: Session, session_id: str | None) -> Conversation | None:

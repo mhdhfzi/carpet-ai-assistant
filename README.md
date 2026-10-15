@@ -203,6 +203,12 @@ gcloud run services update kilau --region asia-southeast1 --update-secrets ANTHR
 gcloud run jobs execute manage --region asia-southeast1 --args=-m,app.seed_demo --wait
 ```
 
+**When the chat can't answer, it hides itself.** The widget asks `GET /api/chat/status` on every page load and shows its button only if the chat can answer. It can't when switched off (`CHAT_ENABLED=false`), when today's reply cap is reached, or when the AI account is out of credit: a `billing_error` from Claude pauses the chat (stored in the database, so every instance agrees). The pause ends by itself after 30 minutes and doubles each time in a row, up to 6 hours, so after a top-up the chat comes back without anyone doing anything. To bring it back straight away:
+
+```bash
+gcloud run jobs execute cc-manage --region asia-southeast1 --args=-m,app.chat_switch,resume --wait
+```
+
 Neon runs Postgres 18; CI tests against 16. The app uses nothing that differs between them.
 
 ### One codebase, two deployments

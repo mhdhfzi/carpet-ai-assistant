@@ -1,5 +1,5 @@
-import { act } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountChatWidget, optionsFromScript } from './embed'
 import { DEMO_BRAND, whatsAppLink } from './i18n'
 
@@ -10,7 +10,15 @@ function shadow(): ShadowRoot {
 }
 
 describe('mountChatWidget', () => {
-  it('renders inside a shadow root with its own styles', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ available: true }))))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('renders inside a shadow root with its own styles', async () => {
     act(() => {
       mountChatWidget({ apiBase: '', bottomOffset: 16 })
     })
@@ -18,7 +26,7 @@ describe('mountChatWidget', () => {
     // Vitest doesn't compile CSS, so only check the stylesheet is attached to the shadow
     // root; the real CSS is checked in the built widget.js.
     expect(shadow().querySelector('style')).not.toBeNull()
-    expect(shadow().querySelector('button')).toHaveTextContent('Tanya kami')
+    await waitFor(() => expect(shadow().querySelector('button')).toHaveTextContent('Tanya kami'))
   })
 
   it('mounts only once and can be removed', () => {

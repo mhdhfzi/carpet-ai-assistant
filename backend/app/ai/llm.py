@@ -18,6 +18,11 @@ class LLMError(Exception):
     pass
 
 
+class LLMCreditError(LLMError):
+    """The AI provider account has run out of credit. Not temporary like an outage: the
+    chat pauses itself until someone tops up (see app/services/assistant_status.py)."""
+
+
 @dataclass(frozen=True)
 class Document:
     title: str
@@ -152,6 +157,8 @@ class ClaudeChatModel:
                 fallbacks="default",
             )
         except anthropic.APIError as exc:
+            if _out_of_credit(exc):
+                raise LLMCreditError(f"Claude API account is out of credit: {exc}") from exc
             raise LLMError(f"Claude API request failed: {exc}") from exc
 
         if response.stop_reason == "refusal":
@@ -172,6 +179,18 @@ class ClaudeChatModel:
             tool_calls=tool_calls,
             raw=response.content,
         )
+
+
+def _out_of_credit(exc: anthropic.APIError) -> bool:
+    """The account has no credit left: a `billing_error` (HTTP 402). Older API versions
+    reported it as a 400 whose message mentions the credit balance."""
+    if not isinstance(exc, anthropic.APIStatusError):
+        return False  # a network problem, not billing
+    return (
+        getattr(exc, "type", None) == "billing_error"
+        or exc.status_code == 402
+        or "credit balance" in str(exc).lower()
+    )
 
 
 def _document_block(doc: Document) -> dict[str, Any]:

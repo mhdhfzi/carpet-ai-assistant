@@ -323,3 +323,19 @@ class UnansweredQuestion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship()
+
+
+class AssistantPause(Base):
+    """When the AI is paused because the provider account ran out of credit (one row, id 1).
+
+    In the database, not in memory: Cloud Run restarts instances often (it scales to zero)
+    and may run two at once, and all of them must agree whether the chat is shown.
+    """
+
+    __tablename__ = "assistant_pause"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Pauses in a row without a successful reply in between: each one lasts longer.
+    consecutive: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    reason: Mapped[str | None] = mapped_column(Text)
