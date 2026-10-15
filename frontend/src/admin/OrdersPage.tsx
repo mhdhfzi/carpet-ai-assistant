@@ -127,6 +127,7 @@ export function OrderCard({ order }: { order: Order }) {
           )}
         </div>
       </div>
+      <Progress order={order} />
       {order.status === 'washed' && order.ready_from && order.ready_by && (
         <p className="mt-2 text-xs text-ink-soft">
           Jangka kering: {formatDay(order.ready_from)} – {formatDay(order.ready_by)}
@@ -134,4 +135,17 @@ export function OrderCard({ order }: { order: Order }) {
       )}
     </a>
   )
+}
+
+/** Several carpets at different steps: "1 / 3 dicuci" or "2 / 3 siap". */
+function Progress({ order }: { order: Order }) {
+  const count = order.items.length
+  if (count < 2) return null
+  if (order.status === 'received' && order.items_washed > 0) {
+    return <p className="mt-2 text-xs font-semibold">{order.items_washed} / {count} dicuci</p>
+  }
+  if (order.status === 'washed' && order.items_ready > 0) {
+    return <p className="mt-2 text-xs font-semibold">{order.items_ready} / {count} siap</p>
+  }
+  return null
 }

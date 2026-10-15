@@ -1,4 +1,4 @@
-import type { BookingLocation, BookingStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
+import type { BookingLocation, BookingStatus, ItemStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
 
 // The business runs on Malaysia time, whatever timezone the owner's device is set to.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'
@@ -89,6 +89,32 @@ export const ORDER_ACTION_LABEL: Record<OrderStatus, string> = {
   ready: 'Tanda siap (kering)',
   completed: 'Tanda selesai (diambil / dihantar)',
   cancelled: 'Batalkan pesanan',
+}
+
+/** The big button when an order has several items: it moves all of them. */
+export const ALL_ITEMS_ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
+  washed: 'Tanda semua sudah dicuci',
+  ready: 'Tanda semua siap (kering)',
+}
+
+/** One carpet's step. */
+export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
+  received: 'Belum dicuci',
+  washed: 'Sedang kering',
+  ready: 'Siap',
+}
+
+export const ITEM_STATUS_STYLE: Record<ItemStatus, string> = {
+  received: 'bg-brand/25 text-ink',
+  washed: 'bg-sky-100 text-sky-900',
+  ready: 'bg-emerald-100 text-emerald-900',
+}
+
+/** The button that moves one carpet to this step. */
+export const ITEM_ACTION_LABEL: Record<ItemStatus, string> = {
+  received: 'Belum dicuci',
+  washed: 'Dicuci',
+  ready: 'Kering, siap',
 }
 
 export const RETURN_LABEL: Record<ReturnMethod, string> = {

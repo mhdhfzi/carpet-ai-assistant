@@ -85,6 +85,7 @@ export type UnansweredQuestion = {
 // --- Back office (orders) -------------------------------------------------------------------
 
 export type OrderStatus = 'received' | 'washed' | 'ready' | 'completed' | 'cancelled'
+export type ItemStatus = 'received' | 'washed' | 'ready'
 export type ReturnMethod = 'pickup' | 'delivery'
 export type PaymentMethod = 'cash' | 'transfer' | 'duitnow'
 
@@ -122,6 +123,11 @@ export type OrderItem = {
   unit_price: string | null
   line_total: string | null
   notes: string | null
+  status: ItemStatus
+  washed_on: string | null
+  ready_on: string | null
+  ready_from: string | null
+  ready_by: string | null
 }
 
 export type Order = {
@@ -138,6 +144,8 @@ export type Order = {
   completed_on: string | null
   ready_from: string | null
   ready_by: string | null
+  items_washed: number
+  items_ready: number
   price_pending: boolean
   subtotal: string
   total: string
@@ -145,7 +153,7 @@ export type Order = {
   balance: string
   items: OrderItem[]
   payments: Payment[]
-  events: { status: OrderStatus; note: string | null; by: string | null; at: string }[]
+  events: { status: OrderStatus; item_tag: string | null; note: string | null; by: string | null; at: string }[]
   created_at: string
 }
 
@@ -171,6 +179,11 @@ export type OrderItemInput = {
   quantity?: string
   unit_price?: string
   notes?: string
+}
+
+export const NEXT_ITEM_STATUS: Partial<Record<ItemStatus, ItemStatus>> = {
+  received: 'washed',
+  washed: 'ready',
 }
 
 export const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {

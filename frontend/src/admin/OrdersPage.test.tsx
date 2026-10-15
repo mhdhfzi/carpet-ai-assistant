@@ -53,6 +53,8 @@ function order(overrides: Partial<Order> = {}): Order {
     completed_on: null,
     ready_from: null,
     ready_by: null,
+    items_washed: 0,
+    items_ready: 0,
     price_pending: false,
     subtotal: '144.00',
     total: '144.00',
@@ -70,9 +72,14 @@ function order(overrides: Partial<Order> = {}): Order {
         unit_price: '1.80',
         line_total: '144.00',
         notes: 'tompok kopi',
+        status: 'received',
+        washed_on: null,
+        ready_on: null,
+        ready_from: null,
+        ready_by: null,
       },
     ],
-    events: [{ status: 'received', note: null, by: 'Pekerja', at: '2026-10-10T02:00:00Z' }],
+    events: [{ status: 'received', item_tag: null, note: null, by: 'Pekerja', at: '2026-10-10T02:00:00Z' }],
     payments: [
       { id: 1, amount: '50.00', method: 'transfer', paid_on: '2026-10-10', note: 'Deposit', received_by: 'Pekerja', voided: false, void_reason: null },
     ],
@@ -334,5 +341,52 @@ describe('back office', () => {
     expect(receiptCard).toHaveTextContent('BakiRM94.00')
     expect(receiptCard).toHaveTextContent('Bayaran: Maybank 1234 (Rizqiman Gemilang Legacy)')
     expect(screen.getByRole('button', { name: 'Cetak / simpan PDF' })).toBeInTheDocument()
+  })
+
+  it('moves each carpet on its own and shows its drying window', async () => {
+    const second = {
+      ...order().items[0],
+      id: 2,
+      position: 2,
+      tag: '412-2',
+      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const },
+    }
+    const twoCarpets = order({ items: [order().items[0], second] })
+    const firstWashed = order({
+      items: [
+        { ...order().items[0], status: 'washed', washed_on: '2026-10-10', ready_from: '2026-10-15', ready_by: '2026-10-17' },
+        second,
+      ],
+      items_washed: 1,
+    })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: { ...receipt(), order: twoCarpets } }),
+      'PATCH /api/orders/7/items/1': () => ({ body: firstWashed }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect(await screen.findByRole('button', { name: 'Tanda semua sudah dicuci' })).toBeInTheDocument()
+    const lines = screen.getAllByRole('listitem').filter((li) => /412-\d/.test(li.textContent ?? ''))
+    await user.click(within(lines[0]).getByRole('button', { name: 'Dicuci' }))
+
+    expect(calls.find((c) => c.method === 'PATCH')?.path).toBe('/api/orders/7/items/1')
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed' })
+    expect(await screen.findByText('dicuci 10 Oct · kering 15 Oct–17 Oct')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undur' })).toBeNull() // owner only
+  })
+
+  it('shows how many carpets of an order are done on the list', async () => {
+    const items = [order().items[0], { ...order().items[0], id: 2, position: 2, tag: '412-2' }, { ...order().items[0], id: 3, position: 3, tag: '412-3' }]
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [order({ items, items_washed: 1 })] }),
+    })
+    renderSignedIn()
+
+    const card = await screen.findByRole('link', { name: /Pesanan 412/ })
+    expect(card).toHaveTextContent('1 / 3 dicuci')
   })
 })

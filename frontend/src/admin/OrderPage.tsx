@@ -4,6 +4,10 @@ import { useAuth } from './auth'
 import {
   ORDER_ACTION_LABEL,
   ORDER_STATUS_LABEL,
+  ALL_ITEMS_ACTION_LABEL,
+  ITEM_ACTION_LABEL,
+  ITEM_STATUS_LABEL,
+  ITEM_STATUS_STYLE,
   ORDER_STATUS_STYLE,
   PAYMENT_LABEL,
   RETURN_LABEL,
@@ -16,6 +20,8 @@ import {
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, rowsFromItems, rowsToInput } from './itemRows'
 import {
+  type ItemStatus,
+  NEXT_ITEM_STATUS,
   NEXT_ORDER_STATUS,
   type Order,
   type OrderStatus,
@@ -105,7 +111,7 @@ export function OrderPage({ id }: { id: number }) {
           onClick={() => save({ status: next })}
           className="w-full rounded-full bg-brand py-4 text-lg font-semibold hover:bg-brand-hover disabled:opacity-50"
         >
-          {ORDER_ACTION_LABEL[next]}
+          {(order.items.length > 1 && ALL_ITEMS_ACTION_LABEL[next]) || ORDER_ACTION_LABEL[next]}
         </button>
       )}
       {next === 'completed' && Number(order.balance) > 0 && (
@@ -154,7 +160,8 @@ export function OrderPage({ id }: { id: number }) {
           </div>
           <ul className="divide-y divide-line rounded-2xl bg-white ring-1 ring-line">
             {order.items.map((item) => (
-              <li key={item.id} className="flex justify-between gap-3 p-3">
+              <li key={item.id} className="space-y-2 p-3">
+                <div className="flex justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold">
                     <span className="mr-2 rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-white">{item.tag}</span>
@@ -167,6 +174,14 @@ export function OrderPage({ id }: { id: number }) {
                   {item.notes && <p className="text-sm">Catatan: {item.notes}</p>}
                 </div>
                 <p className="shrink-0 font-semibold">{item.line_total ? formatMoney(item.line_total) : 'Harga belum ditetapkan'}</p>
+                </div>
+                <ItemProgress
+                  item={item}
+                  open={!closed}
+                  isOwner={isOwner}
+                  busy={busy}
+                  onMove={(status) => send(`/items/${item.id}`, 'PATCH', { status })}
+                />
               </li>
             ))}
           </ul>
@@ -231,7 +246,11 @@ export function OrderPage({ id }: { id: number }) {
         <ol className="space-y-1 text-sm">
           {order.events.map((event, i) => (
             <li key={i}>
-              <span className="font-semibold">{ORDER_STATUS_LABEL[event.status]}</span> · {formatDateTime(event.at)}
+              {event.item_tag && <span className="mr-1 rounded bg-ink px-1 font-mono text-xs text-white">{event.item_tag}</span>}
+              <span className="font-semibold">
+                {event.item_tag ? ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status] : ORDER_STATUS_LABEL[event.status]}
+              </span>{' '}
+              · {formatDateTime(event.at)}
               {event.by && ` · ${event.by}`}
               {event.note && <span className="text-ink-soft"> — {event.note}</span>}
             </li>
@@ -375,6 +394,55 @@ function SendToCustomer({ order, business }: { order: Order; business: Receipt['
         </a>
       </div>
     </section>
+  )
+}
+
+/** One carpet's step, its drying window, and the button for its next step. */
+function ItemProgress({
+  item,
+  open,
+  isOwner,
+  busy,
+  onMove,
+}: {
+  item: Order['items'][number]
+  open: boolean
+  isOwner: boolean
+  busy: boolean
+  onMove: (status: ItemStatus) => Promise<void>
+}) {
+  const next = NEXT_ITEM_STATUS[item.status]
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${ITEM_STATUS_STYLE[item.status]}`}>
+        {ITEM_STATUS_LABEL[item.status]}
+      </span>
+      {item.ready_from && item.ready_by && (
+        <span className="text-xs text-ink-soft">
+          dicuci {formatDay(item.washed_on as string)} · kering {formatDay(item.ready_from)}–{formatDay(item.ready_by)}
+        </span>
+      )}
+      {open && next && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onMove(next)}
+          className="ml-auto rounded-full bg-brand px-3 py-1.5 text-xs font-semibold hover:bg-brand-hover disabled:opacity-50"
+        >
+          {ITEM_ACTION_LABEL[next]}
+        </button>
+      )}
+      {open && isOwner && item.status !== 'received' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onMove(item.status === 'ready' ? 'washed' : 'received')}
+          className={`${next ? '' : 'ml-auto '}text-xs text-ink-soft underline`}
+        >
+          Undur
+        </button>
+      )}
+    </div>
   )
 }
 
