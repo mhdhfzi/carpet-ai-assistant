@@ -31,6 +31,7 @@ MAX_TOOL_ROUNDS = 6
 DATA_TOOLS = {
     "get_services",
     "estimate_price",
+    "search_knowledge",
     "check_availability",
     "prepare_booking",
     "create_booking",
@@ -60,6 +61,7 @@ def run(
 ) -> AgentReply:
     chunks = retrieve_for(ctx.db, embedder, rag.retrieval_queries(messages), limit=TOP_K)
     ctx.top_score = max((c.score for c in chunks), default=None)
+    ctx.embedder = embedder
     documents = rag.to_documents(chunks)
     settings = get_settings()
     allowed = available_tools(settings.bookings_enabled)

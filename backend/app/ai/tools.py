@@ -17,7 +17,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
+from app.ai.embeddings import Embedder, EmbeddingError
 from app.ai.price_list import describe_price
+from app.ai.retrieval import retrieve
 from app.db.models import BookingLocation, Conversation, UnansweredReason
 from app.schemas.booking import BookingCreate
 from app.services import availability, bookings, catalog, pricing, unanswered
@@ -37,6 +39,8 @@ class ToolContext:
     customer_message_id: int
     # Similarity of the best knowledge chunk retrieved this turn (for the unanswered log).
     top_score: float | None = None
+    # For search_knowledge; set by the agent loop.
+    embedder: Embedder | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +99,14 @@ class PrepareBookingInput(ToolInput):
     notes: str | None = Field(default=None, description="Anything the owner should know.")
 
 
+class SearchInput(ToolInput):
+    query: str = Field(
+        min_length=2,
+        max_length=300,
+        description="What to look up, e.g. 'opening hours on Friday' or 'pickup charge'.",
+    )
+
+
 class FlagUnansweredInput(ToolInput):
     question: str = Field(
         min_length=1,
@@ -107,6 +119,20 @@ class HandoffInput(ToolInput):
 
 
 # --- Handlers --------------------------------------------------------------------------------
+
+
+def search_knowledge(ctx: ToolContext, data: SearchInput) -> dict[str, Any]:
+    """A second look at the knowledge base, for whatever the documents sent with the message
+    didn't cover (e.g. the second of two questions in one message)."""
+    if ctx.embedder is None:
+        raise ValueError("Search is not available right now")
+    try:
+        chunks = retrieve(ctx.db, ctx.embedder, data.query, limit=4)
+    except EmbeddingError as exc:
+        # An extra lookup failing (e.g. rate-limited) must not sink the whole reply: the
+        # model gets an error result and answers from what it already has.
+        raise ValueError("Search is not available right now") from exc
+    return {"results": [{"source": f"{c.title}: {c.heading}", "text": c.content} for c in chunks]}
 
 
 def get_services(ctx: ToolContext, _: NoInput) -> dict[str, Any]:
@@ -334,6 +360,14 @@ TOOLS: dict[str, Tool] = {
             create_booking,
         ),
         Tool(
+            "search_knowledge",
+            "Search the business's documents (services, hours, policies, FAQ) for information "
+            "the documents provided with the message don't contain, e.g. the second of two "
+            "questions. Use it before saying you're not sure.",
+            SearchInput,
+            search_knowledge,
+        ),
+        Tool(
             "flag_unanswered_question",
             "Record a question you can't answer from the information and tools you have, so "
             "the owner can follow up and add the answer. Call it before telling the customer "
@@ -354,7 +388,7 @@ TOOLS: dict[str, Tool] = {
 
 # What a deployment that doesn't take bookings offers: read-only answers, plus logging the
 # questions it couldn't answer. Hand-offs go to WhatsApp instead (see app/ai/prompts.py).
-ANSWER_TOOLS = ("get_services", "estimate_price", "flag_unanswered_question")
+ANSWER_TOOLS = ("get_services", "estimate_price", "search_knowledge", "flag_unanswered_question")
 
 
 def available_tools(bookings_enabled: bool) -> tuple[str, ...]:

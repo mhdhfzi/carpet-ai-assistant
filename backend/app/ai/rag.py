@@ -1,6 +1,7 @@
 """Retrieval-augmented generation helpers: what to search for, how retrieved chunks are
 given to the model, and how the model's citations map back to knowledge sources."""
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -18,16 +19,29 @@ class Source:
     cited_text: str
 
 
-def retrieval_queries(messages: Sequence[ChatTurn]) -> list[str]:
-    """What to search for: the latest customer message on its own, then the latest two
-    together.
+# A question ends at ?, ! or a full stop followed by a space, or at a line break.
+_QUESTION_END = re.compile(r"(?<=[?!.])\s+|\n+")
+MAX_PARTS = 3
 
-    The pair is for follow-ups like "how about shaggy?", which only make sense with the
-    message before. The latest message alone is for new questions: joined to a long earlier
-    message, a short "Kedai kat mana?" is drowned out and its answer never retrieved.
+
+def retrieval_queries(messages: Sequence[ChatTurn]) -> list[str]:
+    """What to search for: the latest customer message, then each question in it if it asks
+    several, then the latest two messages together.
+
+    One query per question, because the strongest topic otherwise takes every result: in
+    "Hari Jumaat buka tak? Berapa harga cuci tilam queen?" the mattress prices crowded out
+    the opening hours. The pair is for follow-ups like "how about shaggy?", which only make
+    sense with the message before; the latest message alone keeps a short new question from
+    being drowned out by a long earlier one.
     """
     customer_messages = [turn.content for turn in messages if turn.role == "user"]
-    queries = customer_messages[-1:]
+    if not customer_messages:
+        return []
+    latest = customer_messages[-1]
+    queries = [latest]
+    parts = [p.strip() for p in _QUESTION_END.split(latest) if len(p.strip()) >= 3]
+    if len(parts) > 1:
+        queries += parts[:MAX_PARTS]
     if len(customer_messages) >= 2:
         queries.append("\n".join(customer_messages[-2:]))
     return queries

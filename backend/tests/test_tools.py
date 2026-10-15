@@ -1,15 +1,20 @@
 """The assistant's tools, called directly (no LLM). Clock frozen at Saturday 10 Oct 2026."""
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.ai.embeddings import EmbeddingError
+from app.ai.ingest import ingest
 from app.ai.tools import TOOLS, ToolContext, run_tool, tool_definitions
 from app.db.models import Booking, Channel, Conversation, Message, MessageRole, Service
 from app.seed import seed_services
+from tests.fakes import FakeEmbedder
+from tests.test_ingest import write_doc
 
 
 @pytest.fixture
@@ -253,3 +258,39 @@ def test_handoff_marks_the_conversation(db: Session, conversation: Conversation)
 
     assert conversation.handed_off is True
     assert conversation.handoff_reason == "Customer asked for a person"
+
+
+def test_search_knowledge_finds_what_the_message_documents_missed(
+    db: Session, conversation: Conversation, tmp_path: Path
+) -> None:
+    write_doc(tmp_path, "hours.md", {"Opening hours": "We are closed on Friday (Jumaat)."})
+    embedder = FakeEmbedder()
+    ingest(db, embedder, tmp_path)
+    ctx = customer_says(db, conversation, "Hari Jumaat buka tak?")
+    ctx.embedder = embedder
+
+    results = call(ctx, "search_knowledge", query="open on Friday Jumaat")["results"]
+
+    assert results[0]["source"].endswith("Opening hours")
+    assert "closed on Friday" in results[0]["text"]
+
+
+def test_search_knowledge_without_an_embedder_is_a_clean_error(
+    db: Session, conversation: Conversation
+) -> None:
+    error = call_error(customer_says(db, conversation, "Hi"), "search_knowledge", query="hours")
+
+    assert "not available" in error
+
+
+def test_a_failed_search_is_an_error_result_not_a_failed_reply(
+    db: Session, conversation: Conversation
+) -> None:
+    class RateLimitedEmbedder(FakeEmbedder):
+        def embed_query(self, text: str) -> list[float]:
+            raise EmbeddingError("Voyage AI returned 429")
+
+    ctx = customer_says(db, conversation, "Hi")
+    ctx.embedder = RateLimitedEmbedder()
+
+    assert "not available" in call_error(ctx, "search_knowledge", query="hours")
