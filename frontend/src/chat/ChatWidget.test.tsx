@@ -5,10 +5,18 @@ import { ChatWidget, OPEN_EVENT } from './ChatWidget'
 
 type Reply = { status?: number; body?: unknown }
 
-/** A fake backend: replies in order and records every request. */
+/**
+ * A fake backend: replies to chat calls in order and records them. The status check the
+ * widget makes on load is answered separately (available unless told otherwise).
+ */
 function mockApi(...replies: Reply[]) {
+  return mockApiWithStatus(true, ...replies)
+}
+
+function mockApiWithStatus(available: boolean, ...replies: Reply[]) {
   const calls: { url: string; body: unknown }[] = []
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/api/chat/status')) return new Response(JSON.stringify({ available }))
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined })
     const reply = replies.shift() ?? { status: 500 }
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 })
@@ -24,7 +32,7 @@ const answer = (reply: string | null, extra: object = {}) => ({
 async function openChat() {
   const user = userEvent.setup()
   render(<ChatWidget apiBase="https://api.test" bottomOffset={16} />)
-  await user.click(screen.getByRole('button', { name: /buka chat/i }))
+  await user.click(await screen.findByRole('button', { name: /buka chat/i }))
   return user
 }
 
@@ -40,6 +48,7 @@ describe('ChatWidget', () => {
   it('opens from the host page with a question typed in, without sending it', async () => {
     const calls = mockApi()
     render(<ChatWidget apiBase="https://api.test" bottomOffset={16} />)
+    await screen.findByRole('button', { name: /buka chat/i })
 
     act(() => {
       window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { message: 'Harga karpet shaggy?' } }))
@@ -120,13 +129,43 @@ describe('ChatWidget', () => {
     await waitFor(() => expect(localStorage.getItem('kilau-chat-session')).toBeNull())
   })
 
-  it('does not call the API until the chat is opened', () => {
+  it('only checks availability until the chat is opened', async () => {
     localStorage.setItem('kilau-chat-session', 'session-abc')
-    mockApi()
+    const calls = mockApi()
 
     render(<ChatWidget apiBase="" bottomOffset={16} />)
+    await screen.findByRole('button', { name: /buka chat/i })
 
-    expect(fetch).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0) // no history or chat request yet
+  })
+
+  it('shows nothing when the chat is unavailable (switched off or out of AI credit)', async () => {
+    mockApiWithStatus(false)
+    render(<ChatWidget apiBase="https://api.test" bottomOffset={16} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('https://api.test/api/chat/status'))
+    expect(screen.queryByRole('button')).toBeNull()
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { message: 'Hi' } }))
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows nothing if the server cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))))
+    render(<ChatWidget apiBase="https://api.test" bottomOffset={16} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('shows replies as plain text even if the model adds bold markers', async () => {
+    mockApi(answer('Sofa 2 seater: **RM120**.'))
+    const user = await openChat()
+
+    await user.type(screen.getByRole('textbox'), 'Harga?{Enter}')
+
+    expect(await screen.findByText('Sofa 2 seater: RM120.')).toBeInTheDocument()
   })
 
   it('shows an error with a retry that resends the message', async () => {
@@ -154,13 +193,13 @@ describe('ChatWidget', () => {
   })
 
   it('does not send blank messages; Shift+Enter adds a new line', async () => {
-    mockApi()
+    const calls = mockApi()
     const user = await openChat()
 
     await user.type(screen.getByRole('textbox'), '   {Enter}')
     await user.type(screen.getByRole('textbox'), 'line one{Shift>}{Enter}{/Shift}line two')
 
-    expect(fetch).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0) // nothing sent
     expect(screen.getByRole('textbox')).toHaveValue('   line one\nline two')
   })
 
@@ -171,7 +210,7 @@ describe('ChatWidget', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /buka chat/i }))
+    await user.click(await screen.findByRole('button', { name: /buka chat/i }))
     await user.click(screen.getByRole('button', { name: 'Tutup chat' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -199,7 +238,7 @@ describe('ChatWidget', () => {
         whatsapp="012-345 6789"
       />,
     )
-    await user.click(screen.getByRole('button', { name: /buka chat/i }))
+    await user.click(await screen.findByRole('button', { name: /buka chat/i }))
 
     expect(screen.getByRole('dialog', { name: 'Pembantu Cuci-Cuci' })).toBeInTheDocument()
     expect(screen.getByText(/pembantu AI Cuci-Cuci Senawang.*Untuk tempahan, WhatsApp kami/)).toBeInTheDocument()

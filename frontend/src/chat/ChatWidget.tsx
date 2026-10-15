@@ -1,6 +1,7 @@
 import { type CSSProperties, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { type Brand, DEMO_BRAND, type Strings, stringsFor, whatsAppLink } from './i18n'
 import { ChatIcon, CloseIcon, SendIcon } from './icons'
+import { fetchAvailable } from './api'
 import { type ChatMessage, useChat } from './useChat'
 import { useHostLang } from './useHostLang'
 
@@ -26,6 +27,7 @@ export const OPEN_EVENT = 'kilau-chat:open'
 export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp }: WidgetOptions) {
   const t = stringsFor(useHostLang(), brand)
   const [open, setOpen] = useState(false)
+  const [available, setAvailable] = useState(false)
   const [prefill, setPrefill] = useState({ text: '', version: 0 })
   const chat = useChat(apiBase)
   const bottom = `max(${bottomOffset}px, env(safe-area-inset-bottom))`
@@ -36,7 +38,20 @@ export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp
     void loadHistory()
   }
 
+  // Show nothing until the server says the chat can answer: when it's switched off or out
+  // of AI credit, visitors just don't see a chat button.
   useEffect(() => {
+    let current = true
+    void fetchAvailable(apiBase).then((ok) => {
+      if (current) setAvailable(ok)
+    })
+    return () => {
+      current = false
+    }
+  }, [apiBase])
+
+  useEffect(() => {
+    if (!available) return
     const onOpen = (event: Event) => {
       const message = (event as CustomEvent<{ message?: unknown } | null>).detail?.message
       // A new version remounts the panel, so its draft starts as this message.
@@ -48,7 +63,9 @@ export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp
     return () => {
       window.removeEventListener(OPEN_EVENT, onOpen)
     }
-  }, [loadHistory])
+  }, [available, loadHistory])
+
+  if (!available) return null
 
   return (
     <div className="font-sans text-[15px] leading-normal text-ink antialiased">
@@ -223,7 +240,12 @@ function Bubble({ role, text }: { role: ChatMessage['role']; text: string }) {
         mine ? 'ml-auto rounded-br-sm bg-ink text-white' : 'rounded-bl-sm bg-white ring-1 ring-line'
       }`}
     >
-      {text}
+      {plainText(text)}
     </p>
   )
+}
+
+/** Replies are plain text, but drop Markdown bold markers if the model adds them anyway. */
+function plainText(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/gs, '$1').replace(/__(.+?)__/gs, '$1')
 }

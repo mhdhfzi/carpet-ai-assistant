@@ -44,3 +44,16 @@ export async function fetchHistory(apiBase: string, sessionId: string): Promise<
   if (!response.ok) throw new ApiError(response.status)
   return response.json()
 }
+
+/**
+ * Whether the chat can answer right now (it can't when switched off, out of AI credit or
+ * over the daily cap). Any failure counts as "no": better no button than a broken chat.
+ */
+export async function fetchAvailable(apiBase: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${apiBase}/api/chat/status`)
+    return response.ok && (await response.json()).available === true
+  } catch {
+    return false
+  }
+}
