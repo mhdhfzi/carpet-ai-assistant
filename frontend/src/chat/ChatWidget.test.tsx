@@ -187,4 +187,29 @@ describe('ChatWidget', () => {
     expect(await screen.findByRole('dialog', { name: 'Kilau Assistant' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Type a message…')
   })
+
+  it('shows a real business, answers-only greeting and a WhatsApp link', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    render(
+      <ChatWidget
+        apiBase="https://api.test"
+        bottomOffset={16}
+        brand={{ name: 'Cuci-Cuci Senawang', shortName: 'Cuci-Cuci', bookings: false }}
+        whatsapp="012-345 6789"
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /buka chat/i }))
+
+    expect(screen.getByRole('dialog', { name: 'Pembantu Cuci-Cuci' })).toBeInTheDocument()
+    expect(screen.getByText(/pembantu AI Cuci-Cuci Senawang.*Untuk tempahan, WhatsApp kami/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'WhatsApp kami' })).toHaveAttribute('href', 'https://wa.me/60123456789')
+  })
+
+  it('shows no WhatsApp link without a number', async () => {
+    mockApi()
+    await openChat()
+
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull()
+  })
 })

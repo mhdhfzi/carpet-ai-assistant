@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { type Strings, strings } from './i18n'
+import { type Brand, DEMO_BRAND, type Strings, stringsFor, whatsAppLink } from './i18n'
 import { ChatIcon, CloseIcon, SendIcon } from './icons'
 import { type ChatMessage, useChat } from './useChat'
 import { useHostLang } from './useHostLang'
@@ -9,6 +9,10 @@ export type WidgetOptions = {
   apiBase: string
   /** Distance from the bottom of the screen in px, e.g. to sit above a WhatsApp button. */
   bottomOffset: number
+  /** Which business this is for; defaults to the portfolio demo. */
+  brand?: Brand
+  /** The business's WhatsApp number, for a `WhatsApp us` link in the chat. */
+  whatsapp?: string
 }
 
 const MAX_LENGTH = 2000 // same limit as the backend
@@ -19,8 +23,8 @@ const MAX_LENGTH = 2000 // same limit as the backend
  */
 export const OPEN_EVENT = 'kilau-chat:open'
 
-export function ChatWidget({ apiBase, bottomOffset }: WidgetOptions) {
-  const t = strings[useHostLang()]
+export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp }: WidgetOptions) {
+  const t = stringsFor(useHostLang(), brand)
   const [open, setOpen] = useState(false)
   const [prefill, setPrefill] = useState({ text: '', version: 0 })
   const chat = useChat(apiBase)
@@ -55,6 +59,7 @@ export function ChatWidget({ apiBase, bottomOffset }: WidgetOptions) {
           chat={chat}
           bottom={bottom}
           initialDraft={prefill.text}
+          whatsapp={whatsapp}
           onClose={() => setOpen(false)}
         />
       ) : (
@@ -78,10 +83,11 @@ type PanelProps = {
   chat: ReturnType<typeof useChat>
   bottom: string
   initialDraft: string
+  whatsapp?: string
   onClose: () => void
 }
 
-function ChatPanel({ t, chat, bottom, initialDraft, onClose }: PanelProps) {
+function ChatPanel({ t, chat, bottom, initialDraft, whatsapp, onClose }: PanelProps) {
   const [draft, setDraft] = useState(initialDraft)
   const input = useRef<HTMLTextAreaElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -188,7 +194,22 @@ function ChatPanel({ t, chat, bottom, initialDraft, onClose }: PanelProps) {
             <SendIcon className="size-5" />
           </button>
         </div>
-        <p className="mt-2 text-center text-[11px] text-ink-soft">{t.aiNotice}</p>
+        <p className="mt-2 text-center text-[11px] text-ink-soft">
+          {t.aiNotice}
+          {whatsapp && (
+            <>
+              {' · '}
+              <a
+                href={whatsAppLink(whatsapp)}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-ink underline underline-offset-2"
+              >
+                {t.whatsapp}
+              </a>
+            </>
+          )}
+        </p>
       </form>
     </section>
   )
