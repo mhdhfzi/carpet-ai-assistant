@@ -14,9 +14,10 @@ from pathlib import Path
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.ai.chunking import KNOWLEDGE_DIR, Chunk, load_documents
+from app.ai.chunking import KNOWLEDGE_DIR, Chunk, knowledge_dir, load_documents
 from app.ai.embeddings import Embedder, EmbeddingError, get_embedder
 from app.ai.price_list import price_list_chunks
+from app.core.config import get_settings
 from app.db.models import KnowledgeChunk
 from app.db.session import SessionLocal
 from app.services import catalog
@@ -76,7 +77,7 @@ def _existing_embeddings(db: Session, hashes: set[str]) -> dict[str, list[float]
 def main() -> None:
     try:
         with SessionLocal() as db:
-            result = ingest(db, get_embedder())
+            result = ingest(db, get_embedder(), knowledge_dir(get_settings()))
     except EmbeddingError as exc:
         raise SystemExit(f"Ingestion failed: {exc}") from exc
     print(

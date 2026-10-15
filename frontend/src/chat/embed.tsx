@@ -9,6 +9,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ChatWidget, type WidgetOptions } from './ChatWidget'
+import { DEMO_BRAND } from './i18n'
 import css from './widget.css?inline'
 
 const HOST_ID = 'kilau-chat-widget'
@@ -38,11 +39,24 @@ export function mountChatWidget(options: WidgetOptions): () => void {
   }
 }
 
+/**
+ * Options from the script tag. Only data-api is required; the rest default to the demo:
+ *   data-name="Cuci-Cuci Senawang"  data-short-name="Cuci-Cuci"
+ *   data-whatsapp="012-345 6789"    data-bookings="false"   data-offset-bottom="92"
+ */
 export function optionsFromScript(script: HTMLScriptElement): WidgetOptions {
-  const offset = Number(script.dataset.offsetBottom)
+  const data = script.dataset
+  const offset = Number(data.offsetBottom)
+  const name = data.name?.trim() || DEMO_BRAND.name
   return {
-    apiBase: (script.dataset.api ?? '').replace(/\/+$/, ''),
+    apiBase: (data.api ?? '').replace(/\/+$/, ''),
     bottomOffset: Number.isFinite(offset) && offset >= 0 ? offset : 16,
+    brand: {
+      name,
+      shortName: data.shortName?.trim() || (data.name ? name : DEMO_BRAND.shortName),
+      bookings: data.bookings !== 'false',
+    },
+    whatsapp: data.whatsapp?.trim() || undefined,
   }
 }
 

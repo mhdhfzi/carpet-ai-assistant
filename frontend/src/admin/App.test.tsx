@@ -83,13 +83,30 @@ describe('owner dashboard', () => {
         return loginOk(init)
       },
       'GET /api/auth/me': () => ({ status: 200, body: { ...OWNER, name: 'Demo visitor', role: 'demo' } }),
+      'GET /api/business': () => ({ status: 200, body: { name: 'Kilau Carpet Care', demo: true, bookings: true } }),
     })
     renderApp()
 
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Try the demo account' }))
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Try the demo account' }))
 
     expect(await screen.findByText('Demo · read-only')).toBeInTheDocument()
     expect(sent).toEqual({ email: DEMO_EMAIL, password: DEMO_PASSWORD })
+  })
+
+  it('shows a real business its own name and never offers the demo login', async () => {
+    mockBackend({ 'GET /api/business': () => ({ status: 200, body: { name: 'Cuci-Cuci Senawang', demo: false, bookings: false } }) })
+    renderApp()
+
+    expect(await screen.findByText('Cuci-Cuci Senawang')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Try the demo account' })).toBeNull()
+  })
+
+  it('hides the demo login if it cannot tell which business this is', async () => {
+    const requests = mockBackend({})
+    renderApp()
+
+    await vi.waitFor(() => expect(requests.some((r) => r.key === 'GET /api/business')).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Try the demo account' })).toBeNull()
   })
 
   it('shows a clear error for wrong credentials', async () => {
@@ -130,14 +147,16 @@ describe('owner dashboard', () => {
     expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 
-  it('ignores an expired stored token without calling the server', () => {
+  it('ignores an expired stored token without calling the server', async () => {
     sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ token: 'old', expiresAt: Date.now() - 1 }))
-    mockBackend({})
+    const requests = mockBackend({})
 
     renderApp()
 
     expect(screen.getByRole('heading', { name: 'Owner dashboard' })).toBeInTheDocument()
-    expect(fetch).not.toHaveBeenCalled()
+    // Only the public business info is fetched; the expired token is never sent.
+    await vi.waitFor(() => expect(requests.map((r) => r.key)).toEqual(['GET /api/business']))
+    expect(requests.every((r) => r.auth === null)).toBe(true)
   })
 
   it('signs out', async () => {

@@ -69,6 +69,9 @@ class FakeEmbedder:
     def embed_query(self, text: str) -> list[float]:
         return self._vector(text)
 
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
     def _vector(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
         for word in re.findall(r"\w+", text.lower()):

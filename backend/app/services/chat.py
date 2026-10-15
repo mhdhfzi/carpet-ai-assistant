@@ -35,6 +35,19 @@ DAILY_LIMIT_REPLY = (
 )
 
 
+def daily_limit_reply() -> str:
+    """The fixed reply once the daily AI cap is reached: a real business points customers
+    to WhatsApp rather than telling them to come back tomorrow."""
+    settings = get_settings()
+    if settings.demo_business or not settings.contact_whatsapp:
+        return DAILY_LIMIT_REPLY
+    contact = settings.contact_whatsapp
+    return (
+        f"Maaf, pembantu AI kami tidak dapat membalas sekarang. Sila WhatsApp kami di {contact}. / "
+        f"Sorry, our AI assistant can't reply right now. Please WhatsApp us at {contact}."
+    )
+
+
 @dataclass(frozen=True)
 class ChatResult:
     conversation: Conversation
@@ -74,13 +87,10 @@ def reply(
         # Cost guard for the public demo: answer politely without calling the AI. Stored
         # with grounded=None, like other fixed replies, so it isn't counted as AI output.
         logger.warning("Daily AI reply limit reached; sending the fixed reply")
-        db.add(
-            Message(
-                conversation=conversation, role=MessageRole.ASSISTANT, content=DAILY_LIMIT_REPLY
-            )
-        )
+        fixed = daily_limit_reply()
+        db.add(Message(conversation=conversation, role=MessageRole.ASSISTANT, content=fixed))
         db.commit()
-        return ChatResult(conversation, reply=DAILY_LIMIT_REPLY)
+        return ChatResult(conversation, reply=fixed)
 
     ctx = ToolContext(db=db, conversation=conversation, customer_message_id=customer_message.id)
     answer = agent.run(ctx, embedder, llm, [*history, ChatTurn("user", text)])

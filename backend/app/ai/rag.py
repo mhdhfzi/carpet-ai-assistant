@@ -18,13 +18,19 @@ class Source:
     cited_text: str
 
 
-def retrieval_query(messages: Sequence[ChatTurn]) -> str:
-    """Search with the latest two customer messages, not just the last one.
+def retrieval_queries(messages: Sequence[ChatTurn]) -> list[str]:
+    """What to search for: the latest customer message on its own, then the latest two
+    together.
 
-    Follow-ups like "how about shaggy?" only make sense with the message before them.
+    The pair is for follow-ups like "how about shaggy?", which only make sense with the
+    message before. The latest message alone is for new questions: joined to a long earlier
+    message, a short "Kedai kat mana?" is drowned out and its answer never retrieved.
     """
     customer_messages = [turn.content for turn in messages if turn.role == "user"]
-    return "\n".join(customer_messages[-2:])
+    queries = customer_messages[-1:]
+    if len(customer_messages) >= 2:
+        queries.append("\n".join(customer_messages[-2:]))
+    return queries
 
 
 def to_documents(chunks: Sequence[RetrievedChunk]) -> list[Document]:

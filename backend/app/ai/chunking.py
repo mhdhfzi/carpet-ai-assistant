@@ -4,8 +4,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
+from app.core.config import Settings
 
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+KNOWLEDGE_DIR = BACKEND_DIR / "knowledge"  # the portfolio demo
 _FRONT_MATTER = re.compile(r"\A---\n(?P<meta>.*?)\n---\n", re.DOTALL)
 _SECTION = re.compile(r"^## +(?P<heading>.+)$", re.MULTILINE)
 _TITLE_LINE = re.compile(r"^# .*$", re.MULTILINE)
@@ -50,6 +52,15 @@ def parse_document(text: str, source: str) -> list[Chunk]:
         if content:
             chunks.append(Chunk(source, title, section["heading"].strip(), content))
     return chunks
+
+
+def knowledge_dir(settings: Settings) -> Path:
+    """The documents this deployment answers from (KNOWLEDGE_DIR setting). A relative path is
+    taken from the backend folder, so it means the same locally and in the Docker image."""
+    if not settings.knowledge_dir:
+        return KNOWLEDGE_DIR
+    path = Path(settings.knowledge_dir)
+    return path if path.is_absolute() else BACKEND_DIR / path
 
 
 def load_documents(directory: Path = KNOWLEDGE_DIR) -> list[Chunk]:

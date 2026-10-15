@@ -13,11 +13,12 @@ from datetime import datetime
 from app.ai import rag
 from app.ai.embeddings import Embedder
 from app.ai.llm import ChatModel, ChatTurn, Exchange, ToolOutcome
-from app.ai.prompts import AGENT_SYSTEM_PROMPT, HANDOFF_MESSAGE
+from app.ai.prompts import fallback_message, system_prompt
 from app.ai.rag import Source
-from app.ai.retrieval import RetrievedChunk, retrieve
-from app.ai.tools import ToolContext, run_tool, tool_definitions
+from app.ai.retrieval import RetrievedChunk, retrieve_for
+from app.ai.tools import ToolContext, available_tools, run_tool, tool_definitions
 from app.core import clock
+from app.core.config import get_settings
 from app.services.availability import HOURS
 
 TOP_K = 5
@@ -57,17 +58,20 @@ class AgentReply:
 def run(
     ctx: ToolContext, embedder: Embedder, llm: ChatModel, messages: Sequence[ChatTurn]
 ) -> AgentReply:
-    chunks = retrieve(ctx.db, embedder, rag.retrieval_query(messages), limit=TOP_K)
-    ctx.top_score = chunks[0].score if chunks else None
+    chunks = retrieve_for(ctx.db, embedder, rag.retrieval_queries(messages), limit=TOP_K)
+    ctx.top_score = max((c.score for c in chunks), default=None)
     documents = rag.to_documents(chunks)
-    tools = tool_definitions()
+    settings = get_settings()
+    allowed = available_tools(settings.bookings_enabled)
+    tools = tool_definitions(allowed)
+    system = system_prompt(settings)
     context = request_context(clock.now())
 
     exchanges: list[Exchange] = []
     tools_used: list[str] = []
     for _ in range(MAX_TOOL_ROUNDS + 1):
         turn = llm.respond(
-            system=AGENT_SYSTEM_PROMPT,
+            system=system,
             context=context,
             documents=documents,
             messages=messages,
@@ -88,14 +92,18 @@ def run(
 
         outcomes = []
         for call in turn.tool_calls:
-            result = run_tool(ctx, call.name, call.input)
+            result = run_tool(ctx, call.name, call.input, allowed=allowed)
             outcomes.append(ToolOutcome(call.id, result.content, result.is_error))
             if not result.is_error:
                 tools_used.append(call.name)
         exchanges.append((turn, outcomes))
 
     return AgentReply(
-        text=HANDOFF_MESSAGE, sources=[], retrieved=chunks, tools_used=tools_used, gave_up=True
+        text=fallback_message(settings),
+        sources=[],
+        retrieved=chunks,
+        tools_used=tools_used,
+        gave_up=True,
     )
 
 
