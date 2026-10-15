@@ -232,6 +232,118 @@ def test_a_cancelled_order_cannot_change(client: TestClient, services: dict[str,
     assert change.status_code == payment.status_code == 422
 
 
+# --- Each carpet on its own ------------------------------------------------------------------
+
+
+def two_carpets(client: TestClient, services: dict[str, int]) -> dict:
+    return client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [
+                carpet(services, "Karpet Biasa", "8", "10"),
+                carpet(services, "Karpet Shaggy", "5", "8"),
+            ],
+        },
+    ).json()
+
+
+def move(client: TestClient, order: dict, position: int, status: str):
+    item_id = order["items"][position - 1]["id"]
+    return client.patch(f"/api/orders/{order['id']}/items/{item_id}", json={"status": status})
+
+
+def test_each_carpet_is_washed_on_its_own_and_the_order_waits_for_the_last(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+
+    one_washed = move(client, order, 1, "washed").json()
+
+    assert [i["status"] for i in one_washed["items"]] == ["washed", "received"]
+    assert one_washed["status"] == "received"  # still on the "belum dicuci" list
+    assert (one_washed["items_washed"], one_washed["items_ready"]) == (1, 0)
+    assert one_washed["events"][-1]["item_tag"] == "1-1"
+    assert one_washed["items"][0]["ready_from"] == "2026-10-15"
+
+    both_washed = move(client, order, 2, "washed").json()
+
+    assert both_washed["status"] == "washed"
+    assert both_washed["washed_on"] == TODAY.isoformat()
+
+
+def test_the_order_is_ready_only_when_every_carpet_is_dry(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(staff_client, services)
+    staff_client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
+
+    one_dry = move(staff_client, order, 1, "ready").json()
+    too_early = staff_client.patch(f"/api/orders/{order['id']}", json={"status": "completed"})
+    all_dry = move(staff_client, order, 2, "ready").json()
+
+    assert one_dry["status"] == "washed" and one_dry["items_ready"] == 1
+    assert too_early.status_code == 409  # handed back only when every carpet is dry
+    assert all_dry["status"] == "ready"
+    assert all_dry["ready_from"] is None  # nothing left drying
+
+
+def test_washing_the_whole_order_moves_every_carpet(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+    move(client, order, 1, "washed")
+    move(client, order, 1, "ready")
+
+    washed = client.patch(f"/api/orders/{order['id']}", json={"status": "washed"}).json()
+
+    assert [i["status"] for i in washed["items"]] == ["ready", "washed"]  # ahead stays ahead
+    assert washed["status"] == "washed"
+
+
+def test_staff_move_a_carpet_one_step_and_the_owner_corrects(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+
+    skipped = move(staff_client, order, 1, "ready")
+    move(client, order, 1, "washed")
+    back = move(client, order, 1, "received").json()
+
+    assert skipped.status_code == 409
+    assert back["items"][0]["status"] == "received"
+    assert back["items"][0]["washed_on"] is None
+
+
+def test_editing_items_keeps_each_carpets_progress(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+    move(client, order, 1, "washed")
+
+    edited = client.patch(
+        f"/api/orders/{order['id']}",
+        json={
+            "items": [
+                carpet(services, "Karpet Biasa", "8", "10"),
+                carpet(services, "Karpet Shaggy", "5", "8"),
+                counted(services, "Cucian Sofa", 2),
+            ]
+        },
+    ).json()
+
+    assert [i["status"] for i in edited["items"]] == ["washed", "received", "received"]
+
+
+def test_a_finished_order_s_carpets_cannot_move(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+    client.patch(f"/api/orders/{order['id']}", json={"status": "completed"})
+
+    assert move(client, order, 1, "received").status_code == 422
+
+
 # --- Finding orders and customers ------------------------------------------------------------
 
 

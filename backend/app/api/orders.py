@@ -12,6 +12,7 @@ from app.db.models import Customer, Order, OrderStatus
 from app.schemas.order import (
     CustomerDetail,
     CustomerSummary,
+    ItemStatusUpdate,
     OrderCreate,
     OrderCustomerRead,
     OrderEventRead,
@@ -62,6 +63,15 @@ def get_order(order_id: int, db: DbSession) -> OrderRead:
 def update_order(order_id: int, data: OrderUpdate, db: DbSession, actor: CurrentOwner) -> OrderRead:
     order = orders.get_order(db, order_id)
     return to_read(orders.update_order(db, order, data, actor))
+
+
+@router.patch("/{order_id}/items/{item_id}", response_model=OrderRead)
+def update_item_status(
+    order_id: int, item_id: int, data: ItemStatusUpdate, db: DbSession, actor: CurrentOwner
+) -> OrderRead:
+    """Move one carpet along (dicuci, siap). The order follows its slowest item."""
+    order = orders.get_order(db, order_id)
+    return to_read(orders.update_item_status(db, order, item_id, data.status, data.note, actor))
 
 
 @router.post("/{order_id}/payments", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -145,6 +155,7 @@ def _summary(
 def to_read(order: Order) -> OrderRead:
     totals = orders.totals(order)
     window = orders.ready_window(order)
+    washed, ready = orders.progress(order)
     return OrderRead(
         id=order.id,
         number=order.number,
@@ -159,6 +170,8 @@ def to_read(order: Order) -> OrderRead:
         completed_on=order.completed_on,
         ready_from=window[0] if window else None,
         ready_by=window[1] if window else None,
+        items_washed=washed,
+        items_ready=ready,
         price_pending=totals.price_pending,
         subtotal=totals.subtotal,
         total=totals.total,
@@ -189,12 +202,18 @@ def to_read(order: Order) -> OrderRead:
                 unit_price=item.unit_price,
                 line_total=orders.line_total(item),
                 notes=item.notes,
+                status=item.status,
+                washed_on=item.washed_on,
+                ready_on=item.ready_on,
+                ready_from=item_window[0] if item_window else None,
+                ready_by=item_window[1] if item_window else None,
             )
-            for item in order.items
+            for item, item_window in ((i, orders.item_ready_window(i)) for i in order.items)
         ],
         events=[
             OrderEventRead(
                 status=event.status,
+                item_tag=event.item_tag,
                 note=event.note,
                 by=event.by.name if event.by else None,
                 at=event.created_at,

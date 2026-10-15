@@ -6,6 +6,8 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
 - staff record orders and move them one step along; the owner can set prices and
   discounts, cancel, and correct a status
 - payments are never edited or deleted: the owner voids a wrong one, with a reason
+- each item (each tagged carpet) is washed and dries on its own; the order follows its
+  slowest item, and is handed back only when every item is dry
 """
 
 from collections.abc import Collection
@@ -20,6 +22,7 @@ from app.core import clock
 from app.core.security import ForbiddenError
 from app.db.models import (
     Customer,
+    ItemStatus,
     Order,
     OrderEvent,
     OrderItem,
@@ -45,6 +48,20 @@ NEXT_STATUS = {
     OrderStatus.READY: OrderStatus.COMPLETED,
 }
 CLOSED = {OrderStatus.COMPLETED, OrderStatus.CANCELLED}
+ITEM_STEPS = [ItemStatus.RECEIVED, ItemStatus.WASHED, ItemStatus.READY]
+# An open order's status is its slowest item's step.
+ORDER_STEP = {
+    ItemStatus.RECEIVED: OrderStatus.RECEIVED,
+    ItemStatus.WASHED: OrderStatus.WASHED,
+    ItemStatus.READY: OrderStatus.READY,
+}
+# Moving the whole order to a step moves its items there (handed back = all dry).
+ITEM_STEP = {
+    OrderStatus.RECEIVED: ItemStatus.RECEIVED,
+    OrderStatus.WASHED: ItemStatus.WASHED,
+    OrderStatus.READY: ItemStatus.READY,
+    OrderStatus.COMPLETED: ItemStatus.READY,
+}
 # Any fixed number: serialises order creation so two saves never get the same number.
 _NUMBER_LOCK = 774_101
 
@@ -136,13 +153,31 @@ def line_total(item: OrderItem) -> Decimal | None:
 
 
 def ready_window(order: Order) -> tuple[date, date] | None:
-    """When the carpets should be dry, counted from the day they were washed."""
-    has_carpets = any(item.service.pricing_unit is PricingUnit.PER_SQFT for item in order.items)
-    if order.washed_on is None or not has_carpets:
+    """When the carpets should all be dry: 5-7 days after the last one was washed."""
+    carpets = [i for i in order.items if i.service.pricing_unit is PricingUnit.PER_SQFT]
+    if not carpets or any(i.washed_on is None for i in carpets):
         return None
-    return order.washed_on + timedelta(days=DRYING_DAYS[0]), order.washed_on + timedelta(
+    if all(i.status is ItemStatus.READY for i in carpets):
+        return None
+    return item_ready_window(max(carpets, key=lambda i: i.washed_on))
+
+
+def item_ready_window(item: OrderItem) -> tuple[date, date] | None:
+    """When one washed carpet should be dry."""
+    if item.washed_on is None or item.status is not ItemStatus.WASHED:
+        return None
+    if item.service.pricing_unit is not PricingUnit.PER_SQFT:
+        return None
+    return item.washed_on + timedelta(days=DRYING_DAYS[0]), item.washed_on + timedelta(
         days=DRYING_DAYS[1]
     )
+
+
+def progress(order: Order) -> tuple[int, int]:
+    """(items washed or dry, items dry): shown as "2 / 3 siap" on the order list."""
+    washed = sum(1 for i in order.items if i.status is not ItemStatus.RECEIVED)
+    ready = sum(1 for i in order.items if i.status is ItemStatus.READY)
+    return washed, ready
 
 
 def tag(order: Order, item: OrderItem) -> str:
@@ -282,6 +317,7 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
         if order.status in CLOSED and not is_owner(actor):
             raise ForbiddenError("Only the owner can change a finished order")
         _replace_items(db, order, data.items, actor)
+        _follow_items(order)
     if "return_method" in sent:
         order.return_method = data.return_method
     if "notes" in sent:
@@ -328,7 +364,41 @@ def void_payment(db: Session, order: Order, payment_id: int, reason: str, actor:
     return get_order(db, order.id)
 
 
+def update_item_status(
+    db: Session,
+    order: Order,
+    item_id: int,
+    new: ItemStatus,
+    note: str | None,
+    actor: Owner,
+) -> Order:
+    """Move one carpet along (e.g. "412-2 dicuci"). Staff go one step forward; going back is
+    a correction for the owner. The order then follows its slowest item."""
+    if order.status in CLOSED:
+        raise BusinessRuleError(f"This order is {order.status.value}")
+    item = next((i for i in order.items if i.id == item_id), None)
+    if item is None:
+        raise NotFoundError(f"Item {item_id} not found on this order")
+    if new is item.status:
+        return get_order(db, order.id)
+    step = ITEM_STEPS.index(item.status)
+    if not is_owner(actor) and ITEM_STEPS.index(new) != step + 1:
+        raise InvalidStatusTransitionError(
+            f"{tag(order, item)}: the next step is {ITEM_STEPS[step + 1].value}"
+            if step + 1 < len(ITEM_STEPS)
+            else f"{tag(order, item)} is already {item.status.value}"
+        )
+    _move_item(item, new)
+    order.events.append(
+        OrderEvent(status=ORDER_STEP[new], item_tag=tag(order, item), note=note, by_id=actor.id)
+    )
+    _follow_items(order)
+    db.commit()
+    return get_order(db, order.id)
+
+
 def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owner) -> None:
+    """Move the whole order: every item comes along (e.g. all carpets washed the same day)."""
     if new is OrderStatus.CANCELLED:
         _owner_only(actor, "cancel an order")
     elif NEXT_STATUS.get(order.status) is not new and not is_owner(actor):
@@ -339,9 +409,43 @@ def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owne
             if order.status in NEXT_STATUS
             else f"This order is {order.status.value}"
         )
+    if new is not OrderStatus.CANCELLED:
+        target = ITEM_STEPS.index(ITEM_STEP[new])
+        backward = _rank(new) < _rank(order.status)
+        for item in order.items:
+            here = ITEM_STEPS.index(item.status)
+            # Forward: items behind catch up (items ahead stay ahead). Back, an owner's
+            # correction: items ahead return to that step.
+            if here < target or (backward and here > target):
+                _move_item(item, ITEM_STEPS[target])
     order.status = new
     _set_step_dates(order, new)
     order.events.append(OrderEvent(status=new, note=note, by_id=actor.id))
+    _follow_items(order)
+
+
+def _rank(status: OrderStatus) -> int:
+    """How far along an order is; a cancelled one counts as not started."""
+    path = [OrderStatus.RECEIVED, OrderStatus.WASHED, OrderStatus.READY, OrderStatus.COMPLETED]
+    return path.index(status) if status in path else 0
+
+
+def _move_item(item: OrderItem, new: ItemStatus) -> None:
+    """Set an item's step, recording the day each step was reached (going back clears)."""
+    reached = ITEM_STEPS.index(new)
+    item.status = new
+    item.washed_on = (item.washed_on or today()) if reached >= 1 else None
+    item.ready_on = (item.ready_on or today()) if reached >= 2 else None
+
+
+def _follow_items(order: Order) -> None:
+    """An open order sits at its slowest item's step, so nothing is forgotten."""
+    if order.status in CLOSED or not order.items:
+        return
+    slowest = min(order.items, key=lambda i: ITEM_STEPS.index(i.status)).status
+    if ORDER_STEP[slowest] is not order.status:
+        order.status = ORDER_STEP[slowest]
+        _set_step_dates(order, order.status)
 
 
 def _set_step_dates(order: Order, status: OrderStatus) -> None:
@@ -364,19 +468,19 @@ def _set_step_dates(order: Order, status: OrderStatus) -> None:
 
 
 def _replace_items(db: Session, order: Order, items: list[OrderItemIn], actor: Owner) -> None:
-    # Prices already on the order stay as they were (not today's price list), unless the
-    # owner sends a new one.
-    old_prices = {(i.service_id, i.position): i.unit_price for i in order.items}
+    # An item that stays (same service, same place) keeps its price (not today's price
+    # list, unless the owner sends a new one) and its progress.
+    kept = {(i.service_id, i.position): i for i in order.items}
     order.items.clear()
     db.flush()
-    order.items.extend(_build_items(db, items, actor, keep=old_prices))
+    order.items.extend(_build_items(db, items, actor, keep=kept))
 
 
 def _build_items(
     db: Session,
     items: list[OrderItemIn],
     actor: Owner,
-    keep: dict[tuple[int, int], Decimal | None] | None = None,
+    keep: dict[tuple[int, int], OrderItem] | None = None,
 ) -> list[OrderItem]:
     built = []
     for position, data in enumerate(items, start=1):
@@ -388,7 +492,7 @@ def _build_items(
             _owner_only(actor, "set a price")
             unit_price = data.unit_price
         elif keep is not None and (service.id, position) in keep:
-            unit_price = keep[(service.id, position)]
+            unit_price = keep[(service.id, position)].unit_price
         else:
             # A fixed price comes from the price list; a range (handmade) waits for the owner.
             unit_price = service.unit_price if service.unit_price_max is None else None
@@ -401,8 +505,16 @@ def _build_items(
                 quantity=quantity,
                 unit_price=unit_price,
                 notes=data.notes,
+                # Set here, not left to the column default: the order's step is worked out
+                # from its items before they're saved.
+                status=ItemStatus.RECEIVED,
             )
         )
+        before = keep.get((service.id, position)) if keep else None
+        if before is not None:
+            built[-1].status = before.status
+            built[-1].washed_on = before.washed_on
+            built[-1].ready_on = before.ready_on
     return built
 
 

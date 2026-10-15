@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import OrderStatus, PaymentMethod, PricingUnit, ReturnMethod
+from app.db.models import ItemStatus, OrderStatus, PaymentMethod, PricingUnit, ReturnMethod
 from app.schemas.booking import CustomerIn
 
 Feet = Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)]
@@ -40,6 +40,11 @@ class PaymentIn(BaseModel):
     method: PaymentMethod
     paid_on: date | None = None  # defaults to today
     note: str | None = Field(default=None, max_length=200)
+
+
+class ItemStatusUpdate(BaseModel):
+    status: ItemStatus
+    note: str | None = Field(default=None, max_length=300)
 
 
 class PaymentVoid(BaseModel):
@@ -97,10 +102,17 @@ class OrderItemRead(BaseModel):
     unit_price: Decimal | None  # None: the owner hasn't set it yet
     line_total: Decimal | None
     notes: str | None
+    status: ItemStatus
+    washed_on: date | None
+    ready_on: date | None
+    # A washed carpet dries in 5-7 days; None once dry (or for items that aren't carpets).
+    ready_from: date | None
+    ready_by: date | None
 
 
 class OrderEventRead(BaseModel):
     status: OrderStatus
+    item_tag: str | None  # the item that moved, or None for the whole order
     note: str | None
     by: str | None  # who made the change
     at: datetime
@@ -121,6 +133,8 @@ class OrderRead(BaseModel):
     # Carpets dry in 5-7 days after washing; None until washed (or with no carpets).
     ready_from: date | None
     ready_by: date | None
+    items_washed: int  # items washed or dry: "2 / 3 dicuci"
+    items_ready: int  # items dry: "2 / 3 siap"
     price_pending: bool  # some item has no price yet: totals are partial
     subtotal: Decimal
     total: Decimal  # subtotal - discount

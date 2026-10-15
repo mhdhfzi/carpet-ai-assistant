@@ -69,6 +69,14 @@ class OrderStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ItemStatus(StrEnum):
+    """Where one carpet (one tag) is. The order follows its slowest item."""
+
+    RECEIVED = "received"  # Diterima
+    WASHED = "washed"  # Dicuci: drying
+    READY = "ready"  # Siap: dry
+
+
 class PaymentMethod(StrEnum):
     CASH = "cash"  # tunai
     TRANSFER = "transfer"  # pindahan bank
@@ -443,6 +451,14 @@ class OrderItem(Base):
     # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
     unit_price: Mapped[Decimal | None] = mapped_column(Money)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Each carpet moves on its own: washed one day, dry 5-7 days later.
+    status: Mapped[ItemStatus] = mapped_column(
+        str_enum(ItemStatus, "order_item_status"),
+        default=ItemStatus.RECEIVED,
+        server_default=ItemStatus.RECEIVED.value,
+    )
+    washed_on: Mapped[date | None] = mapped_column(Date)
+    ready_on: Mapped[date | None] = mapped_column(Date)
 
     order: Mapped[Order] = relationship(back_populates="items")
     service: Mapped["Service"] = relationship()
@@ -456,6 +472,8 @@ class OrderEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     status: Mapped[OrderStatus] = mapped_column(str_enum(OrderStatus, "order_event_status"))
+    # Set when one item moved (its tag, e.g. "412-2"); empty for the whole order.
+    item_tag: Mapped[str | None] = mapped_column(String(20))
     note: Mapped[str | None] = mapped_column(Text)
     by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
