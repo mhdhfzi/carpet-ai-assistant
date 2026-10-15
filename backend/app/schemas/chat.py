@@ -16,6 +16,10 @@ class ChatRequest(BaseModel):
     message: MessageText
 
 
+class ChatStatus(BaseModel):
+    available: bool  # false: the widget hides itself (switched off, out of credit, daily cap)
+
+
 class ChatResponse(BaseModel):
     session_id: str
     reply: str | None  # None when the owner has taken over the conversation

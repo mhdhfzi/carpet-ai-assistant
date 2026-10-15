@@ -21,6 +21,7 @@ PUBLIC_ROUTES = {
     ("POST", "/api/auth/login"),
     ("GET", "/api/business"),  # name and mode, so the dashboard can brand itself
     ("POST", "/api/chat"),
+    ("GET", "/api/chat/status"),  # whether the widget should show itself
     ("GET", "/api/chat/{session_id}"),
     ("GET", "/api/services"),
     ("GET", "/api/services/{service_id}"),
