@@ -29,8 +29,8 @@ export function CustomerPage({ id }: { id: number }) {
 
   return (
     <article className="mx-auto max-w-xl space-y-5">
-      <a href={href({ page: 'orders' })} className="text-sm underline">
-        ← Semua pesanan
+      <a href={href({ page: 'customers' })} className="text-sm underline">
+        ← Semua pelanggan
       </a>
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-bold">{customer.name}</h1>

@@ -7,6 +7,7 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
   discounts, cancel, and correct a status
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -88,7 +89,7 @@ def get_order(db: Session, order_id: int) -> Order:
 def list_orders(
     db: Session,
     *,
-    status: OrderStatus | None = None,
+    statuses: Collection[OrderStatus] = (),
     q: str | None = None,
     customer_id: int | None = None,
     limit: int = 100,
@@ -97,8 +98,8 @@ def list_orders(
     query = select(Order).join(Order.customer).options(*_with_details())
     if customer_id is not None:
         query = query.where(Order.customer_id == customer_id)
-    if status is not None:
-        query = query.where(Order.status == status)
+    if statuses:
+        query = query.where(Order.status.in_(statuses))
     if q and q.strip():
         query = query.where(_search(q.strip()))
     return list(db.scalars(query.order_by(Order.number.desc()).limit(limit)))
@@ -149,23 +150,54 @@ def find_customer(db: Session, phone: str) -> Customer | None:
     return db.scalar(select(Customer).where(Customer.phone == normalize_phone(phone)))
 
 
-def search_customers(
-    db: Session, q: str, limit: int = 20
-) -> list[tuple[Customer, int, date | None]]:
-    """Customers matching a name or phone, with their order count and last order date."""
-    digits = "".join(ch for ch in q if ch.isdigit())
-    match = Customer.name.ilike(f"%{q}%")
-    if len(digits) >= 4:
-        match = or_(match, Customer.phone.like(f"%{digits.lstrip('0')}%"))
-    rows = db.execute(
-        select(Customer, func.count(Order.id), func.max(Order.received_on))
+@dataclass(frozen=True)
+class CustomerRow:
+    customer: Customer
+    orders: int
+    last_order_on: date | None
+    total_value: Decimal  # all their orders except cancelled ones
+
+
+def list_customers(
+    db: Session, q: str | None = None, *, limit: int = 50, offset: int = 0
+) -> list[CustomerRow]:
+    """Every customer (or those matching a name or phone), most recent first."""
+    # Each order's value: its priced items less its discount (items without a price yet
+    # count as 0), computed in the database so the whole table is one query.
+    lines = (
+        select(
+            OrderItem.order_id,
+            func.coalesce(
+                func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0
+            ).label("items"),
+        )
+        .group_by(OrderItem.order_id)
+        .subquery()
+    )
+    value = func.greatest(func.coalesce(lines.c["items"], 0) - Order.discount, 0)
+    counted = Order.status != OrderStatus.CANCELLED
+    query = (
+        select(
+            Customer,
+            func.count(Order.id),
+            func.max(Order.received_on),
+            func.coalesce(func.sum(value).filter(counted), 0),
+        )
         .outerjoin(Order, Order.customer_id == Customer.id)
-        .where(match)
+        .outerjoin(lines, lines.c.order_id == Order.id)
         .group_by(Customer.id)
         .order_by(func.max(Order.received_on).desc().nulls_last(), Customer.name)
         .limit(limit)
+        .offset(offset)
     )
-    return [(customer, count, last) for customer, count, last in rows]
+    if q and q.strip():
+        q = q.strip()
+        digits = "".join(ch for ch in q if ch.isdigit())
+        match = Customer.name.ilike(f"%{q}%")
+        if len(digits) >= 4:
+            match = or_(match, Customer.phone.like(f"%{digits.lstrip('0')}%"))
+        query = query.where(match)
+    return [CustomerRow(c, n, last, Decimal(total)) for c, n, last, total in db.execute(query)]
 
 
 def _save_customer(db: Session, data: CustomerIn) -> Customer:

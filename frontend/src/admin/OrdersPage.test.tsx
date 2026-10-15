@@ -110,8 +110,8 @@ describe('back office', () => {
     expect(card).toHaveTextContent('Karpet Biasa 8 x 10 kaki')
     expect(card).toHaveTextContent('Diterima')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan'])
-    expect(calls.find((c) => c.path === '/api/orders')?.query.get('status')).toBe('received')
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Pelanggan'])
+    expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received'])
   })
 
   it('gives the owner orders and analytics, and no bookings for an answers-only business', async () => {
@@ -124,7 +124,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Pelanggan', 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
@@ -218,5 +218,49 @@ describe('back office', () => {
     await user.click(await screen.findByRole('button', { name: 'Tanda sudah dicuci' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Only the owner can give a discount')
+  })
+
+  it('moves picked-up and cancelled orders to the history tab', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': (call) => ({
+        body: call.query.getAll('status').includes('completed')
+          ? [order({ status: 'completed', completed_on: '2026-10-20' })]
+          : [],
+      }),
+    })
+    const user = renderSignedIn()
+
+    await screen.findByText('Tiada pesanan di sini.')
+    await user.click(screen.getByRole('button', { name: 'Sejarah' }))
+
+    const card = await screen.findByRole('link', { name: /Pesanan 412/ })
+    expect(card).toHaveTextContent('Selesai')
+    expect(card).toHaveTextContent('selesai 20 Oct')
+    expect(calls.at(-1)?.query.getAll('status')).toEqual(['completed', 'cancelled'])
+  })
+
+  it('lists every customer in one table', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/customers': () => ({
+        body: [
+          { id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A', orders: 2, last_order_on: '2026-10-10', total_value: '324.00' },
+          { id: 4, name: 'Siti', phone: '+60191112222', area: null, address: null, orders: 0, last_order_on: null, total_value: '0' },
+        ],
+      }),
+    })
+    renderSignedIn('#/customers')
+
+    const table = await screen.findByRole('table')
+    const rows = within(table).getAllByRole('row')
+    expect(within(rows[0]).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Nama', 'Telefon', 'Kawasan', 'Alamat', 'Pesanan', 'Terakhir', 'Jumlah',
+    ])
+    expect(rows[1]).toHaveTextContent('Ali+60123456789Seremban 25, Jalan A210 OctRM324.00')
+    expect(within(rows[1]).getByRole('link', { name: 'Ali' })).toHaveAttribute('href', '#/customers/3')
+    expect(rows[2]).toHaveTextContent('Siti+60191112222––0–RM0.00')
   })
 })

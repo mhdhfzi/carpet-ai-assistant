@@ -4,17 +4,18 @@ import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, formatDay, formatMoney, formatS
 import type { Order, OrderStatus } from './types'
 import { href } from './useHashRoute'
 
-// Today's work first: what still needs washing, then what can be handed back.
-const FILTERS: { value: OrderStatus | ''; label: string }[] = [
-  { value: 'received', label: 'Belum dicuci' },
-  { value: 'washed', label: 'Sedang kering' },
-  { value: 'ready', label: 'Siap' },
-  { value: '', label: 'Semua' },
+// Today's work first: what still needs washing, then what can be handed back. Once a
+// carpet is picked up or delivered (or the order cancelled), the order moves to the history.
+const FILTERS: { key: string; statuses: OrderStatus[]; label: string }[] = [
+  { key: 'received', statuses: ['received'], label: 'Belum dicuci' },
+  { key: 'washed', statuses: ['washed'], label: 'Sedang kering' },
+  { key: 'ready', statuses: ['ready'], label: 'Siap' },
+  { key: 'history', statuses: ['completed', 'cancelled'], label: 'Sejarah' },
 ]
 
 export function OrdersPage() {
   const { request } = useAuth()
-  const [status, setStatus] = useState<OrderStatus | ''>('received')
+  const [filter, setFilter] = useState(FILTERS[0])
   const [query, setQuery] = useState('')
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [error, setError] = useState(false)
@@ -24,7 +25,7 @@ export function OrdersPage() {
     const params = new URLSearchParams()
     // A search looks through every status: a customer asking about a tag may be anywhere.
     if (query.trim()) params.set('q', query.trim())
-    else if (status) params.set('status', status)
+    else for (const s of filter.statuses) params.append('status', s)
     const timer = setTimeout(() => {
       request<Order[]>(`/api/orders?${params}`)
         .then((data) => {
@@ -41,7 +42,7 @@ export function OrdersPage() {
       current = false
       clearTimeout(timer)
     }
-  }, [request, status, query])
+  }, [request, filter, query])
 
   return (
     <section className="space-y-4">
@@ -67,10 +68,13 @@ export function OrdersPage() {
         <div className="flex flex-wrap gap-2" role="group" aria-label="Tapis status">
           {FILTERS.map((f) => (
             <button
-              key={f.label}
+              key={f.key}
               type="button"
-              aria-pressed={status === f.value}
-              onClick={() => setStatus(f.value)}
+              aria-pressed={filter.key === f.key}
+              onClick={() => {
+                setOrders(null) // show "loading", not the previous tab's orders
+                setFilter(f)
+              }}
               className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
             >
               {f.label}
@@ -109,6 +113,7 @@ export function OrderCard({ order }: { order: Order }) {
           </p>
           <p className="text-sm text-ink-soft">
             {order.customer.phone} · diterima {formatDay(order.received_on)}
+            {order.completed_on && ` · selesai ${formatDay(order.completed_on)}`}
           </p>
           <p className="mt-1 truncate text-sm">{items}</p>
         </div>

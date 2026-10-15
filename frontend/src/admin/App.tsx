@@ -4,6 +4,7 @@ import { useAuth } from './auth'
 import { BookingsPage } from './BookingsPage'
 import { type Business, shortName, useBusiness } from './business'
 import { CustomerPage } from './CustomerPage'
+import { CustomersPage } from './CustomersPage'
 import { LoginPage } from './LoginPage'
 import { NewOrderPage } from './NewOrderPage'
 import { OrderPage } from './OrderPage'
@@ -15,15 +16,18 @@ type NavItem = { route: Route; label: string }
 /** The menu depends on the business (does it use orders? bookings?) and on the role:
  * staff only work with orders; the server refuses them everything else anyway. */
 function navFor(business: Business | null | undefined, staff: boolean): NavItem[] {
-  if (staff) return [{ route: { page: 'orders' }, label: 'Pesanan' }]
-  const items: NavItem[] = []
-  if (business?.orders) items.push({ route: { page: 'orders' }, label: 'Pesanan' })
+  const backOffice: NavItem[] = [
+    { route: { page: 'orders' }, label: 'Pesanan' },
+    { route: { page: 'customers' }, label: 'Pelanggan' },
+  ]
+  if (staff) return backOffice
+  const items: NavItem[] = business?.orders ? [...backOffice] : []
   if (business?.bookings !== false) items.push({ route: { page: 'bookings' }, label: 'Bookings' })
   items.push({ route: { page: 'analytics' }, label: 'Analytics' })
   return items
 }
 
-const STAFF_PAGES = new Set<Route['page']>(['orders', 'new-order', 'order', 'customer'])
+const STAFF_PAGES = new Set<Route['page']>(['orders', 'customers', 'new-order', 'order', 'customer'])
 
 export function App() {
   const { state } = useAuth()
@@ -56,6 +60,8 @@ function Page({ route }: { route: Route }) {
       return <AnalyticsPage />
     case 'orders':
       return <OrdersPage />
+    case 'customers':
+      return <CustomersPage />
     case 'new-order':
       return <NewOrderPage />
     case 'order':
@@ -67,9 +73,11 @@ function Page({ route }: { route: Route }) {
   }
 }
 
-/** Order, customer and new-order pages belong to the "Pesanan" menu item. */
+/** Which menu item a page belongs to: a single order under Pesanan, a customer under Pelanggan. */
 function section(route: Route): Route['page'] {
-  return route.page === 'order' || route.page === 'new-order' || route.page === 'customer' ? 'orders' : route.page
+  if (route.page === 'order' || route.page === 'new-order') return 'orders'
+  if (route.page === 'customer') return 'customers'
+  return route.page
 }
 
 function Layout({

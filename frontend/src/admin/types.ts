@@ -136,7 +136,7 @@ export type Order = {
   created_at: string
 }
 
-export type CustomerSummary = OrderCustomer & { orders: number; last_order_on: string | null }
+export type CustomerSummary = OrderCustomer & { orders: number; last_order_on: string | null; total_value: string }
 export type CustomerDetail = CustomerSummary & { order_history: Order[] }
 
 /** What the order form sends for each item. */

@@ -256,6 +256,47 @@ def test_a_customer_page_shows_their_order_history(
     assert [o["number"] for o in detail["order_history"]] == [2, 1]
 
 
+def test_history_holds_finished_and_cancelled_orders(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    done, cancelled, active = (new_order(client, services) for _ in range(3))
+    for status in ("washed", "ready", "completed"):
+        client.patch(f"/api/orders/{done['id']}", json={"status": status})
+    client.patch(f"/api/orders/{cancelled['id']}", json={"status": "cancelled"})
+
+    history = client.get(
+        "/api/orders", params=[("status", "completed"), ("status", "cancelled")]
+    ).json()
+
+    assert [o["number"] for o in history] == [cancelled["number"], done["number"]]
+    assert active["number"] not in [o["number"] for o in history]
+
+
+def test_the_customer_table_lists_everyone_with_their_order_value(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    new_order(client, services)  # RM324
+    cancelled = new_order(client, services)
+    client.patch(f"/api/orders/{cancelled['id']}", json={"status": "cancelled"})
+    client.post(
+        "/api/orders",
+        json={
+            "customer": {"name": "Siti", "phone": "019-111 2222"},
+            "items": [counted(services, "Cucian Tilam Queen", 1)],
+            "discount": "20.00",
+        },
+    )
+
+    table = client.get("/api/customers").json()
+
+    by_name = {row["name"]: row for row in table}
+    assert by_name["Ali"]["orders"] == 2
+    assert by_name["Ali"]["total_value"] == "324.00"  # the cancelled order doesn't count
+    assert by_name["Siti"]["total_value"] == "120.00"  # RM140 less the RM20 discount
+    detail = client.get(f"/api/customers/{by_name['Ali']['id']}").json()
+    assert detail["total_value"] == "324.00"
+
+
 # --- Staff -----------------------------------------------------------------------------------
 
 

@@ -6,6 +6,7 @@ export type Route =
   | { page: 'bookings' }
   | { page: 'analytics' }
   | { page: 'orders' }
+  | { page: 'customers' }
   | { page: 'new-order' }
   | { page: 'order'; id: number }
   | { page: 'customer'; id: number }
@@ -22,7 +23,7 @@ export function parseRoute(hash: string): Route | null {
       if (id === 'new') return { page: 'new-order' }
       return id && Number.isInteger(number) && number > 0 ? { page: 'order', id: number } : { page: 'orders' }
     case 'customers':
-      return Number.isInteger(number) && number > 0 ? { page: 'customer', id: number } : null
+      return id && Number.isInteger(number) && number > 0 ? { page: 'customer', id: number } : { page: 'customers' }
     default:
       return null
   }

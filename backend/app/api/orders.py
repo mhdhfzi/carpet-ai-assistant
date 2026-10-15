@@ -1,5 +1,7 @@
 """The back office: orders and customers, for the owner and staff (ORDERS_ENABLED)."""
 
+from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -32,11 +34,12 @@ customers_router = APIRouter(
 @router.get("", response_model=list[OrderRead])
 def list_orders(
     db: DbSession,
-    status: OrderStatus | None = None,
+    status: Annotated[list[OrderStatus] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
 ) -> list[OrderRead]:
-    """Newest first; filter by status, or find by order number, tag, phone or name."""
-    return [to_read(order) for order in orders.list_orders(db, status=status, q=q)]
+    """Newest first; filter by one or more statuses (?status=completed&status=cancelled for
+    the history), or find by order number, tag, phone or name."""
+    return [to_read(order) for order in orders.list_orders(db, statuses=status or (), q=q)]
 
 
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -56,12 +59,17 @@ def update_order(order_id: int, data: OrderUpdate, db: DbSession, actor: Current
 
 
 @customers_router.get("", response_model=list[CustomerSummary])
-def search_customers(
-    db: DbSession, q: Annotated[str, Query(min_length=1, max_length=100)]
+def list_customers(
+    db: DbSession,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[CustomerSummary]:
-    """For the order form (type a phone number) and the customer page."""
+    """All customers, most recent first (the customer table), or those matching a name or
+    phone (the order form's lookup)."""
     return [
-        _summary(customer, count, last) for customer, count, last in orders.search_customers(db, q)
+        _summary(row.customer, row.orders, row.last_order_on, row.total_value)
+        for row in orders.list_customers(db, q, limit=limit, offset=offset)
     ]
 
 
@@ -70,12 +78,16 @@ def get_customer(customer_id: int, db: DbSession) -> CustomerDetail:
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise NotFoundError(f"Customer {customer_id} not found")
-    history = orders.list_orders(db, customer_id=customer.id, limit=500)
-    summary = _summary(customer, len(history), history[0].received_on if history else None)
-    return CustomerDetail(**summary.model_dump(), order_history=[to_read(o) for o in history])
+    history = [to_read(o) for o in orders.list_orders(db, customer_id=customer.id, limit=500)]
+    value = sum((o.total for o in history if o.status is not OrderStatus.CANCELLED), Decimal(0))
+    last = max((o.received_on for o in history), default=None)
+    summary = _summary(customer, len(history), last, value)
+    return CustomerDetail(**summary.model_dump(), order_history=history)
 
 
-def _summary(customer: Customer, count: int, last) -> CustomerSummary:
+def _summary(
+    customer: Customer, count: int, last: date | None, total_value: Decimal
+) -> CustomerSummary:
     return CustomerSummary(
         id=customer.id,
         name=customer.name,
@@ -84,6 +96,7 @@ def _summary(customer: Customer, count: int, last) -> CustomerSummary:
         address=customer.address,
         orders=count,
         last_order_on=last,
+        total_value=total_value,
     )
 
 

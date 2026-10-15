@@ -116,6 +116,7 @@ class CustomerSummary(BaseModel):
     address: str | None
     orders: int
     last_order_on: date | None
+    total_value: Decimal  # all their orders except cancelled ones
 
 
 class CustomerDetail(CustomerSummary):
