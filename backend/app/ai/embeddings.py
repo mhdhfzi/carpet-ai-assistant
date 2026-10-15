@@ -25,6 +25,8 @@ class Embedder(Protocol):
 
     def embed_query(self, text: str) -> list[float]: ...
 
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]: ...
+
 
 class VoyageEmbedder:
     """Voyage AI embeddings via their REST API (https://docs.voyageai.com/reference).
@@ -58,6 +60,9 @@ class VoyageEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text], "query")[0]
+
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        return self._embed(list(texts), "query")  # one request for all of them
 
     def _embed(
         self, texts: Sequence[str], input_type: Literal["document", "query"]

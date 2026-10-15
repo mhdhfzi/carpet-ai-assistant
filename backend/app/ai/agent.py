@@ -15,7 +15,7 @@ from app.ai.embeddings import Embedder
 from app.ai.llm import ChatModel, ChatTurn, Exchange, ToolOutcome
 from app.ai.prompts import fallback_message, system_prompt
 from app.ai.rag import Source
-from app.ai.retrieval import RetrievedChunk, retrieve
+from app.ai.retrieval import RetrievedChunk, retrieve_for
 from app.ai.tools import ToolContext, available_tools, run_tool, tool_definitions
 from app.core import clock
 from app.core.config import get_settings
@@ -58,8 +58,8 @@ class AgentReply:
 def run(
     ctx: ToolContext, embedder: Embedder, llm: ChatModel, messages: Sequence[ChatTurn]
 ) -> AgentReply:
-    chunks = retrieve(ctx.db, embedder, rag.retrieval_query(messages), limit=TOP_K)
-    ctx.top_score = chunks[0].score if chunks else None
+    chunks = retrieve_for(ctx.db, embedder, rag.retrieval_queries(messages), limit=TOP_K)
+    ctx.top_score = max((c.score for c in chunks), default=None)
     documents = rag.to_documents(chunks)
     settings = get_settings()
     allowed = available_tools(settings.bookings_enabled)

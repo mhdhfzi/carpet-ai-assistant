@@ -25,6 +25,9 @@ handmade carpet prices until the owner inspects it; say so when you give a carpe
 - If neither the documents nor your tools answer the question, call \
 flag_unanswered_question, then say you're not sure and {follow_up}. Don't fill gaps with \
 general knowledge.
+- Your earlier replies in this chat were checked against the documents and tools when you \
+wrote them. Don't take back a price or fact you already gave just because it isn't in this \
+message's documents; check it again with your tools if you need it.
 """
 
 _BOOKING = """
