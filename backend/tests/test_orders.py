@@ -85,6 +85,16 @@ def test_an_order_is_priced_from_the_measured_sizes(
     assert carpet_line["notes"] == "tompok kopi"
     assert sofa_line["line_total"] == "180.00"  # 3 seats x RM60
     assert (order["subtotal"], order["total"], order["balance"]) == ("324.00", "324.00", "274.00")
+    assert order["payments"][0] | {"id": 0} == {
+        "id": 0,
+        "amount": "50.00",
+        "method": "cash",
+        "paid_on": TODAY.isoformat(),
+        "note": "Deposit",
+        "received_by": "Test Owner",
+        "voided": False,
+        "void_reason": None,
+    }
     assert order["received_on"] == TODAY.isoformat()
     assert order["status"] == "received"
     assert order["events"][0]["by"] == "Test Owner"
@@ -214,9 +224,12 @@ def test_a_cancelled_order_cannot_change(client: TestClient, services: dict[str,
     order = new_order(client, services)
     client.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
 
-    response = client.patch(f"/api/orders/{order['id']}", json={"deposit": "10.00"})
+    change = client.patch(f"/api/orders/{order['id']}", json={"return_method": "pickup"})
+    payment = client.post(
+        f"/api/orders/{order['id']}/payments", json={"amount": "10.00", "method": "cash"}
+    )
 
-    assert response.status_code == 422
+    assert change.status_code == payment.status_code == 422
 
 
 # --- Finding orders and customers ------------------------------------------------------------
@@ -295,6 +308,97 @@ def test_the_customer_table_lists_everyone_with_their_order_value(
     assert by_name["Siti"]["total_value"] == "120.00"  # RM140 less the RM20 discount
     detail = client.get(f"/api/customers/{by_name['Ali']['id']}").json()
     assert detail["total_value"] == "324.00"
+
+
+# --- Payments and receipts -------------------------------------------------------------------
+
+
+def pay(client: TestClient, order: dict, amount: str, method: str = "cash"):
+    return client.post(
+        f"/api/orders/{order['id']}/payments", json={"amount": amount, "method": method}
+    )
+
+
+def test_paying_the_balance_at_pickup(client: TestClient, services: dict[str, int]) -> None:
+    order = new_order(client, services, deposit="50.00", deposit_method="transfer")
+
+    paid = pay(client, order, "274.00", "duitnow").json()
+
+    assert (paid["paid"], paid["balance"]) == ("324.00", "0.00")
+    assert [(p["amount"], p["method"]) for p in paid["payments"]] == [
+        ("50.00", "transfer"),
+        ("274.00", "duitnow"),
+    ]
+
+
+def test_a_payment_cannot_exceed_the_balance(client: TestClient, services: dict[str, int]) -> None:
+    order = new_order(client, services, deposit="300.00")
+
+    response = pay(client, order, "30.00")
+
+    assert response.status_code == 422
+    assert "balance of RM24.00" in response.json()["detail"]
+
+
+def test_the_owner_voids_a_wrong_payment_and_it_stays_on_record(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services)
+    wrong = pay(client, order, "100.00").json()["payments"][0]
+
+    voided = client.post(
+        f"/api/orders/{order['id']}/payments/{wrong['id']}/void",
+        json={"reason": "salah masuk"},
+    ).json()
+
+    assert voided["balance"] == "324.00"
+    assert voided["payments"][0]["voided"] is True
+    assert voided["payments"][0]["void_reason"] == "salah masuk"
+
+
+def test_staff_record_payments_but_cannot_void_them(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)
+    payment = pay(staff_client, order, "100.00").json()["payments"][0]
+
+    response = staff_client.post(
+        f"/api/orders/{order['id']}/payments/{payment['id']}/void", json={"reason": "salah"}
+    )
+
+    assert payment["received_by"] == "Worker"
+    assert response.status_code == 403
+
+
+def test_the_customer_table_shows_what_each_customer_still_owes(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    first = new_order(client, services, deposit="24.00")  # owes 300
+    second = new_order(client, services)
+    pay(client, second, "324.00")  # settled
+
+    row = client.get("/api/customers").json()[0]
+
+    assert first["customer"]["id"] == row["id"]
+    assert (row["total_value"], row["unpaid"]) == ("648.00", "300.00")
+
+
+def test_a_receipt_has_the_business_details_and_the_order(
+    client: TestClient, services: dict[str, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BUSINESS_NAME", "Cuci-Cuci Senawang")
+    monkeypatch.setenv("BUSINESS_REG_NO", "201903262495 (NS0229212-P)")
+    monkeypatch.setenv("PAYMENT_DETAILS", "Maybank 1234")
+    get_settings.cache_clear()
+    order = new_order(client, services)
+
+    receipt = client.get(f"/api/orders/{order['id']}/receipt").json()
+
+    assert receipt["business"]["name"] == "Cuci-Cuci Senawang"
+    assert receipt["business"]["reg_no"] == "201903262495 (NS0229212-P)"
+    assert receipt["business"]["payment_details"] == "Maybank 1234"
+    assert receipt["order"]["number"] == order["number"]
+    assert receipt["issued_on"] == TODAY.isoformat()
 
 
 # --- Staff -----------------------------------------------------------------------------------

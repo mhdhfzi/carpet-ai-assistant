@@ -5,6 +5,7 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
 - prices come from the price list and are copied onto each item when recorded
 - staff record orders and move them one step along; the owner can set prices and
   discounts, cancel, and correct a status
+- payments are never edited or deleted: the owner voids a wrong one, with a reason
 """
 
 from collections.abc import Collection
@@ -25,11 +26,12 @@ from app.db.models import (
     OrderStatus,
     Owner,
     OwnerRole,
+    Payment,
     PricingUnit,
     Service,
 )
 from app.schemas.booking import CustomerIn, normalize_phone
-from app.schemas.order import OrderCreate, OrderItemIn, OrderUpdate
+from app.schemas.order import OrderCreate, OrderItemIn, OrderUpdate, PaymentIn
 from app.services.availability import HOURS
 from app.services.errors import BusinessRuleError, InvalidStatusTransitionError, NotFoundError
 
@@ -51,6 +53,7 @@ _NUMBER_LOCK = 774_101
 class Totals:
     subtotal: Decimal
     total: Decimal
+    paid: Decimal
     balance: Decimal
     price_pending: bool
 
@@ -76,6 +79,7 @@ def _with_details():
         selectinload(Order.customer),
         selectinload(Order.items).selectinload(OrderItem.service),
         selectinload(Order.events).selectinload(OrderEvent.by),
+        selectinload(Order.payments).selectinload(Payment.received_by),
     )
 
 
@@ -120,7 +124,9 @@ def totals(order: Order) -> Totals:
     lines = [line_total(item) for item in order.items]
     subtotal = sum((line for line in lines if line is not None), Decimal("0"))
     total = max(subtotal - order.discount, Decimal("0"))
-    return Totals(subtotal, total, total - order.deposit, any(line is None for line in lines))
+    paid = sum((p.amount for p in order.payments if p.voided_at is None), Decimal("0"))
+    pending = any(line is None for line in lines)
+    return Totals(subtotal, total, paid, total - paid, pending)
 
 
 def line_total(item: OrderItem) -> Decimal | None:
@@ -156,6 +162,7 @@ class CustomerRow:
     orders: int
     last_order_on: date | None
     total_value: Decimal  # all their orders except cancelled ones
+    unpaid: Decimal  # what they still owe on those orders
 
 
 def list_customers(
@@ -174,7 +181,14 @@ def list_customers(
         .group_by(OrderItem.order_id)
         .subquery()
     )
+    paid = (
+        select(Payment.order_id, func.sum(Payment.amount).label("paid"))
+        .where(Payment.voided_at.is_(None))
+        .group_by(Payment.order_id)
+        .subquery()
+    )
     value = func.greatest(func.coalesce(lines.c["items"], 0) - Order.discount, 0)
+    owed = func.greatest(value - func.coalesce(paid.c.paid, 0), 0)
     counted = Order.status != OrderStatus.CANCELLED
     query = (
         select(
@@ -182,9 +196,11 @@ def list_customers(
             func.count(Order.id),
             func.max(Order.received_on),
             func.coalesce(func.sum(value).filter(counted), 0),
+            func.coalesce(func.sum(owed).filter(counted), 0),
         )
         .outerjoin(Order, Order.customer_id == Customer.id)
         .outerjoin(lines, lines.c.order_id == Order.id)
+        .outerjoin(paid, paid.c.order_id == Order.id)
         .group_by(Customer.id)
         .order_by(func.max(Order.received_on).desc().nulls_last(), Customer.name)
         .limit(limit)
@@ -197,7 +213,10 @@ def list_customers(
         if len(digits) >= 4:
             match = or_(match, Customer.phone.like(f"%{digits.lstrip('0')}%"))
         query = query.where(match)
-    return [CustomerRow(c, n, last, Decimal(total)) for c, n, last, total in db.execute(query)]
+    return [
+        CustomerRow(c, n, last, Decimal(total), Decimal(unpaid))
+        for c, n, last, total, unpaid in db.execute(query)
+    ]
 
 
 def _save_customer(db: Session, data: CustomerIn) -> Customer:
@@ -231,13 +250,22 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         customer=customer,
         received_on=data.received_on or today(),
         return_method=data.return_method,
-        deposit=data.deposit,
         discount=data.discount,
         notes=data.notes,
         created_by_id=actor.id,
         items=_build_items(db, data.items, actor),
     )
     order.events.append(OrderEvent(status=OrderStatus.RECEIVED, by_id=actor.id))
+    if data.deposit > 0:
+        order.payments.append(
+            Payment(
+                amount=data.deposit,
+                method=data.deposit_method,
+                paid_on=order.received_on,
+                note="Deposit",
+                received_by_id=actor.id,
+            )
+        )
     db.add(order)
     db.commit()
     return get_order(db, order.id)
@@ -254,14 +282,48 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
         if order.status in CLOSED and not is_owner(actor):
             raise ForbiddenError("Only the owner can change a finished order")
         _replace_items(db, order, data.items, actor)
-    if "deposit" in sent and data.deposit is not None:
-        order.deposit = data.deposit
     if "return_method" in sent:
         order.return_method = data.return_method
     if "notes" in sent:
         order.notes = data.notes
     if data.status is not None and data.status is not order.status:
         _change_status(order, data.status, data.status_note, actor)
+    db.commit()
+    return get_order(db, order.id)
+
+
+def record_payment(db: Session, order: Order, data: PaymentIn, actor: Owner) -> Order:
+    """Money received. Staff may record it (they collect at pickup); it can't exceed what
+    is owed, unless some price isn't set yet and the total isn't known."""
+    if order.status is OrderStatus.CANCELLED:
+        raise BusinessRuleError("A cancelled order can't take payments")
+    owed = totals(order)
+    if not owed.price_pending and data.amount > owed.balance:
+        raise BusinessRuleError(f"That is more than the balance of RM{owed.balance:.2f}")
+    order.payments.append(
+        Payment(
+            amount=data.amount,
+            method=data.method,
+            paid_on=data.paid_on or today(),
+            note=data.note,
+            received_by_id=actor.id,
+        )
+    )
+    db.commit()
+    return get_order(db, order.id)
+
+
+def void_payment(db: Session, order: Order, payment_id: int, reason: str, actor: Owner) -> Order:
+    """Cancel a wrongly recorded payment. It stays on record, marked void, with the reason."""
+    _owner_only(actor, "void a payment")
+    payment = next((p for p in order.payments if p.id == payment_id), None)
+    if payment is None:
+        raise NotFoundError(f"Payment {payment_id} not found on this order")
+    if payment.voided_at is not None:
+        raise BusinessRuleError("This payment is already void")
+    payment.voided_at = clock.now()
+    payment.voided_by_id = actor.id
+    payment.void_reason = reason
     db.commit()
     return get_order(db, order.id)
 

@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     chat_enabled: bool = True
     # The back office (orders, customers) in the dashboard: for a real business.
     orders_enabled: bool = False
+    # Printed on receipts. All optional; blank lines are left out.
+    business_reg_no: str = ""  # e.g. the SSM registration number
+    business_address: str = ""
+    # How to pay, e.g. "Maybank 1234 5678 9012 (Rizqiman Gemilang Legacy) / DuitNow QR".
+    payment_details: str = ""
 
     # The business this deployment serves. The defaults are the public portfolio demo; a
     # deployment for a real business overrides them (one codebase, several deployments).

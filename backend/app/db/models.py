@@ -69,6 +69,12 @@ class OrderStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class PaymentMethod(StrEnum):
+    CASH = "cash"  # tunai
+    TRANSFER = "transfer"  # pindahan bank
+    DUITNOW = "duitnow"  # DuitNow QR or an e-wallet
+
+
 class ReturnMethod(StrEnum):
     PICKUP = "pickup"  # the customer collects from the shop
     DELIVERY = "delivery"  # we deliver
@@ -367,7 +373,6 @@ class Order(TimestampMixin, Base):
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint("number > 0", name="number_positive"),
-        CheckConstraint("deposit >= 0", name="deposit_non_negative"),
         CheckConstraint("discount >= 0", name="discount_non_negative"),
     )
 
@@ -387,7 +392,6 @@ class Order(TimestampMixin, Base):
     return_method: Mapped[ReturnMethod | None] = mapped_column(
         str_enum(ReturnMethod, "return_method")
     )
-    deposit: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     discount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     notes: Mapped[str | None] = mapped_column(Text)
     # When each step happened, for the ready-date estimate and reports.
@@ -408,6 +412,12 @@ class Order(TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="OrderEvent.id",
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Payment.id",
     )
 
 
@@ -452,3 +462,29 @@ class OrderEvent(Base):
 
     order: Mapped[Order] = relationship(back_populates="events")
     by: Mapped["Owner | None"] = relationship()
+
+
+class Payment(Base):
+    """Money received for an order: the deposit, the balance at pickup, anything between.
+
+    Never edited or deleted. A mistake is voided (by the owner, with a reason), so the
+    record always shows what happened and who did it.
+    """
+
+    __tablename__ = "payments"
+    __table_args__ = (CheckConstraint("amount > 0", name="amount_positive"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Money)
+    method: Mapped[PaymentMethod] = mapped_column(str_enum(PaymentMethod, "payment_method"))
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)  # e.g. "Deposit"
+    received_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    voided_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    void_reason: Mapped[str | None] = mapped_column(Text)
+
+    order: Mapped[Order] = relationship(back_populates="payments")
+    received_by: Mapped["Owner | None"] = relationship(foreign_keys=[received_by_id])
