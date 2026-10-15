@@ -24,7 +24,7 @@ An assistant helps only if it can be trusted: it must never invent a price or a 
 
 | | |
 |---|---|
-| **Answers with sources** | Retrieval-augmented generation over the business's documents (services, pricing, FAQ, policies). Replies cite the passages they used; the owner sees the citations. |
+| **Answers with sources** | Retrieval-augmented generation over the business's documents (services, pricing, FAQ, policies). Replies cite the passages they used; the owner sees the citations. A message that asks several things gets every part answered, and the model can search the documents again for anything still missing. |
 | **Quotes and books** | Claude calls tools (`get_services`, `estimate_price`, `check_availability`, `prepare_booking`, `create_booking`) backed by tested business logic: price ranges, opening hours, Friday closing, 2 days' notice, one team, no double bookings. |
 | **Confirms first** | `create_booking` takes no input: it books exactly what `prepare_booking` summarised, and only after a newer customer message (the confirmation). The model can't skip the step or change details on the way. |
 | **Hands off** | Upset customers, out-of-scope requests and low-confidence answers go to the owner. Questions it couldn't answer are logged for the dashboard. |
@@ -99,6 +99,7 @@ sequenceDiagram
 - **A hand-written agent loop behind a `ChatModel` interface.** Tools need request context (database session, conversation, which customer message is being answered), and the interface keeps the loop provider-neutral and testable with a scripted fake model. Capped at 6 tool rounds so a confused model can't loop (or bill) forever.
 - **Booking confirmation enforced by the server, not the prompt.** Prompts are guidance; the rule "book only what the customer confirmed" is enforced in `create_booking` itself.
 - **"Grounded" is a structured signal.** A reply counts as grounded if it cited the knowledge base or used a data tool. Ungrounded replies and hand-offs feed the unanswered-questions log, which shows the owner what to add to the documents.
+- **Retrieval that doesn't lose questions.** Each customer message is searched as a whole, question by question, and together with the previous message (one embedding request), with the results interleaved so no single topic crowds out the rest. For run-on messages that can't be split, the model has a read-only `search_knowledge` tool to look up whatever the first search missed, instead of saying it doesn't know. Both fixes came from real conversations on the live site.
 - **pgvector instead of a separate vector database.** Embeddings live next to the business data in Postgres (HNSW cosine index): one database to run, back up and migrate. Re-ingestion reuses embeddings for unchanged chunks.
 - **No double bookings at the database level.** A Postgres exclusion constraint rejects overlapping visits even if two requests race past the application check.
 - **Deny-by-default authorization.** Every route that isn't on an explicit public list needs a login, and the read-only demo role is refused every non-GET request in one place. Both rules are tested by enumerating every route in the OpenAPI schema, so a new endpoint can't be forgotten.
