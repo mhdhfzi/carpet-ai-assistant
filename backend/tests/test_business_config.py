@@ -150,7 +150,7 @@ def test_demo_keeps_its_own_fixed_replies() -> None:
 def test_business_endpoint_describes_the_demo(db: Session) -> None:
     body = TestClient(create_app()).get("/api/business").json()
 
-    assert body == {"name": "Kilau Carpet Care", "demo": True, "bookings": True}
+    assert body == {"name": "Kilau Carpet Care", "demo": True, "bookings": True, "orders": False}
 
 
 def test_real_business_endpoint_and_no_demo_landing_page(
@@ -162,6 +162,7 @@ def test_real_business_endpoint_and_no_demo_landing_page(
         "name": "Cuci-Cuci Senawang",
         "demo": False,
         "bookings": False,
+        "orders": False,
     }
     landing = client.get("/", follow_redirects=False)
     assert landing.status_code == 307 and landing.headers["location"] == "/admin.html"

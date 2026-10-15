@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     ai_daily_reply_limit: int = 300
     # The owner's on/off switch for the chat. Off: the widget hides its button.
     chat_enabled: bool = True
+    # The back office (orders, customers) in the dashboard: for a real business.
+    orders_enabled: bool = False
 
     # The business this deployment serves. The defaults are the public portfolio demo; a
     # deployment for a real business overrides them (one codebase, several deployments).

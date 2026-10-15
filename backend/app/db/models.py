@@ -17,6 +17,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -57,6 +58,20 @@ class Channel(StrEnum):
 class OwnerRole(StrEnum):
     OWNER = "owner"  # full access
     DEMO = "demo"  # the public demo login: can see everything, change nothing
+    STAFF = "staff"  # a worker: records orders, can't change prices or see the business side
+
+
+class OrderStatus(StrEnum):
+    RECEIVED = "received"  # Diterima: recorded in the system and tagged
+    WASHED = "washed"  # Dicuci: washed, now drying (5-7 days for carpets)
+    READY = "ready"  # Siap: dry, the customer can be told
+    COMPLETED = "completed"  # Selesai: picked up by the customer or delivered
+    CANCELLED = "cancelled"
+
+
+class ReturnMethod(StrEnum):
+    PICKUP = "pickup"  # the customer collects from the shop
+    DELIVERY = "delivery"  # we deliver
 
 
 class MessageRole(StrEnum):
@@ -109,6 +124,7 @@ class Customer(TimestampMixin, Base):
 
     bookings: Mapped[list["Booking"]] = relationship(back_populates="customer")
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="customer")
+    orders: Mapped[list["Order"]] = relationship(back_populates="customer")
 
 
 class Booking(TimestampMixin, Base):
@@ -339,3 +355,100 @@ class AssistantPause(Base):
     # Pauses in a row without a successful reply in between: each one lasts longer.
     consecutive: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     reason: Mapped[str | None] = mapped_column(Text)
+
+
+class Order(TimestampMixin, Base):
+    """A job, as written in the owner's book: one customer's items received together.
+
+    Prices are copied onto the items when recorded, so later price-list changes never
+    rewrite an old order. Totals are computed from the items (app/services/orders.py).
+    """
+
+    __tablename__ = "orders"
+    __table_args__ = (
+        CheckConstraint("number > 0", name="number_positive"),
+        CheckConstraint("deposit >= 0", name="deposit_non_negative"),
+        CheckConstraint("discount >= 0", name="discount_non_negative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # The book's "Bilangan": a running number staff write on the carpet tags.
+    number: Mapped[int] = mapped_column(Integer, unique=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="RESTRICT"), index=True
+    )
+    received_on: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[OrderStatus] = mapped_column(
+        str_enum(OrderStatus, "order_status"),
+        default=OrderStatus.RECEIVED,
+        server_default=OrderStatus.RECEIVED.value,
+        index=True,
+    )
+    return_method: Mapped[ReturnMethod | None] = mapped_column(
+        str_enum(ReturnMethod, "return_method")
+    )
+    deposit: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    discount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    notes: Mapped[str | None] = mapped_column(Text)
+    # When each step happened, for the ready-date estimate and reports.
+    washed_on: Mapped[date | None] = mapped_column(Date)
+    ready_on: Mapped[date | None] = mapped_column(Date)
+    completed_on: Mapped[date | None] = mapped_column(Date)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+
+    customer: Mapped[Customer] = relationship(back_populates="orders")
+    items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="OrderItem.position",
+    )
+    events: Mapped[list["OrderEvent"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="OrderEvent.id",
+    )
+
+
+class OrderItem(Base):
+    """One line of an order: a carpet with its measured size, or a number of sofa seats,
+    mattresses or cars. Its tag is "<order number>-<position>", e.g. 412-2."""
+
+    __tablename__ = "order_items"
+    __table_args__ = (
+        UniqueConstraint("order_id", "position", name="uq_order_items_position"),
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint("unit_price >= 0", name="unit_price_non_negative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="RESTRICT"))
+    # Carpets: measured length and width in feet; quantity is then the square feet.
+    length_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    width_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
+    unit_price: Mapped[Decimal | None] = mapped_column(Money)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    order: Mapped[Order] = relationship(back_populates="items")
+    service: Mapped["Service"] = relationship()
+
+
+class OrderEvent(Base):
+    """Who moved an order to which status, and when: the order's timeline."""
+
+    __tablename__ = "order_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    status: Mapped[OrderStatus] = mapped_column(str_enum(OrderStatus, "order_event_status"))
+    note: Mapped[str | None] = mapped_column(Text)
+    by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    order: Mapped[Order] = relationship(back_populates="events")
+    by: Mapped["Owner | None"] = relationship()

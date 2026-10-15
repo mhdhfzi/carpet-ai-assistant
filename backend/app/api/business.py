@@ -16,4 +16,5 @@ def business() -> BusinessInfo:
         name=settings.business_name,
         demo=settings.demo_business,
         bookings=settings.bookings_enabled,
+        orders=settings.orders_enabled,
     )
