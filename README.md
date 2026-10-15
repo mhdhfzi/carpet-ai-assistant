@@ -10,7 +10,9 @@ An AI customer assistant for a small carpet-cleaning business in Malaysia. Custo
 - Owner dashboard: [`/admin.html`](https://kilau-918469824880.asia-southeast1.run.app/admin.html), **Try the demo account** (or `demo@example.com` / `kilau-demo-2026`). It is read-only and the data resets every night.
 - Demo video: _to be added_
 
-> Kilau Carpet Care is fictional (inspired by a real family-run business). It's a portfolio project: applied AI (RAG + tool calling), backend engineering, cloud deployment and DevOps.
+**In production for a real business:** the same code also runs the chat assistant on [cucicucisenawang.com](https://cucicucisenawang.com), my family's carpet-cleaning business in Senawang. There it answers questions and gives price estimates, and sends customers to WhatsApp to book. See [One codebase, two deployments](#one-codebase-two-deployments).
+
+> Kilau Carpet Care, the public demo, is fictional, so recruiters trying it never contact the real business. It's a portfolio project: applied AI (RAG + tool calling), backend engineering, cloud deployment and DevOps.
 
 ## The problem
 
@@ -188,6 +190,7 @@ docker compose --profile app up --build                          # http://localh
 | Secrets | Secret Manager: `database-url`, `jwt-secret`, `voyage-api-key`, `anthropic-api-key` |
 | Migrations / one-off commands | Cloud Run jobs `migrate` (`alembic upgrade head`) and `manage` (`python -m ...`) |
 | Nightly demo reset | Cloud Scheduler `demo-reset-nightly` (03:00 MYT) runs the `demo-reset` job: `python -m app.seed_demo --reset` |
+| Real business | Cloud Run service `cuci-cuci` with jobs `cc-migrate` / `cc-manage`: its own Neon database, secrets (`cc-*`) and runtime account `cuci-run`. No reset job. |
 
 **Continuous deployment.** On every push to `main`, CI runs the tests, then builds the image, pushes it, runs the `migrate` job and rolls Cloud Run onto the new image. Migrations run before the new code goes live, so they must stay compatible with the code still serving (add first, remove in a later release). GitHub authenticates through Workload Identity Federation (no stored key; only this repository is trusted) as `github-deployer`, which can push images and deploy but not read secrets. The app runs as `kilau-run`, which can only read its secrets.
 
@@ -202,6 +205,19 @@ gcloud run jobs execute manage --region asia-southeast1 --args=-m,app.seed_demo 
 
 Neon runs Postgres 18; CI tests against 16. The app uses nothing that differs between them.
 
+### One codebase, two deployments
+
+The same image runs twice, and configuration decides the business and what the assistant may do:
+
+| | Portfolio demo (`kilau`) | Real business (`cuci-cuci`) |
+|---|---|---|
+| Business | Kilau Carpet Care (fictional) | Cuci-Cuci Senawang |
+| Knowledge | `backend/knowledge/` | `backend/knowledge-cucicuci/` |
+| Assistant | Quotes and takes bookings | Answers and estimates; bookings go to WhatsApp (`BOOKINGS_ENABLED=false`) |
+| Where | Its own landing page | Embedded on cucicucisenawang.com (only that site may call it) |
+| Dashboard | Public read-only demo login, data reset nightly | Private owner login, real data kept |
+
+The difference in what the assistant may do is enforced in code, not only in the prompt: in answers-only mode the booking tools are never offered to the model, and the server refuses them even if the model names one. The two deployments share nothing but the code and the AI keys: separate databases, secrets and runtime service accounts, so the public demo can't read the real business's data. `seed_demo` refuses to run when `DEMO_BUSINESS=false`, and a test checks the two knowledge bases never mention each other.
 ## What I'd improve next
 
 - **An evaluation set for the assistant.** The agent is tested with a scripted fake model, which proves the plumbing but not the answers. Next: a fixed set of real-style questions in BM, EN and a mix of both, with expected facts, tool calls and hand-offs, scored automatically on every prompt or model change.
