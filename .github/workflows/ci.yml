@@ -137,3 +137,17 @@ jobs:
           for job in manage demo-reset; do
             gcloud run jobs update "$job" --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
           done
+      # The same image, deployed a second time for the real business (Cuci-Cuci Senawang):
+      # its own database, secrets and settings. Skipped until that service has been set up
+      # by hand, so a merge can never create it with the demo's defaults.
+      - name: Deploy the Cuci-Cuci Senawang service
+        if: env.DEPLOY == 'true'
+        run: |
+          if ! gcloud run services describe cuci-cuci --region "$REGION" --project "$PROJECT_ID" > /dev/null 2>&1; then
+            echo "cuci-cuci is not set up yet; skipping"
+            exit 0
+          fi
+          gcloud run jobs update cc-migrate --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
+          gcloud run jobs execute cc-migrate --region "$REGION" --project "$PROJECT_ID" --wait
+          gcloud run deploy cuci-cuci --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
+          gcloud run jobs update cc-manage --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --project "$PROJECT_ID"
