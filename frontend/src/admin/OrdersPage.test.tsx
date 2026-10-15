@@ -389,4 +389,41 @@ describe('back office', () => {
     const card = await screen.findByRole('link', { name: /Pesanan 412/ })
     expect(card).toHaveTextContent('1 / 3 dicuci')
   })
+
+  it('shows the business numbers and hides AI booking sections for an answers-only business', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/analytics': () => ({
+        body: {
+          days: 30, start: '2026-09-13', end: '2026-10-12', conversations: 12, handed_off: 1, bookings: 0,
+          conversion_rate: 0, conversion: [], busy_days: [], top_topics: [],
+          open_unanswered: { no_answer: 2, handed_off: 0, gave_up: 0 },
+        },
+      }),
+      'GET /api/unanswered-questions': () => ({ body: [] }),
+      'GET /api/analytics/business': () => ({
+        body: {
+          days: 30, start: '2026-09-13', end: '2026-10-12',
+          revenue: '1244.00', revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
+          revenue_over_time: [{ label: '5 Oct', start: '2026-10-05', amount: '1244.00' }],
+          orders: 9, order_value: '1500.00', cancelled: 1, unpaid: '256.00', unpaid_orders: 2,
+          in_progress: { received: 3, washed: 4, ready: 1 },
+          services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
+          busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
+        },
+      }),
+    })
+    renderSignedIn('#/analytics')
+
+    const business = await screen.findByRole('region', { name: 'Perniagaan' })
+    expect(business).toHaveTextContent('Hasil diterimaRM1244.00')
+    expect(business).toHaveTextContent('Baki belum dibayarRM256.002 pesanan')
+    expect(business).toHaveTextContent('Purata masa siap6.4 hari')
+    expect(business).toHaveTextContent('Sedang kering4')
+    expect(await screen.findByText('Chats')).toBeInTheDocument()
+    expect(screen.queryByText('Bookings made')).toBeNull()
+    expect(screen.queryByText('Chat to booking, by channel')).toBeNull()
+    expect(calls.find((c) => c.path === '/api/analytics/business')?.query.get('days')).toBe('30')
+  })
 })

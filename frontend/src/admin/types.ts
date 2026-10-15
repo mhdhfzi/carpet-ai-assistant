@@ -191,3 +191,21 @@ export const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   washed: 'ready',
   ready: 'completed',
 }
+
+export type BusinessAnalytics = {
+  days: number
+  start: string
+  end: string
+  revenue: string
+  revenue_by_method: Record<PaymentMethod, string>
+  revenue_over_time: { label: string; start: string; amount: string }[]
+  orders: number
+  order_value: string
+  cancelled: number
+  unpaid: string
+  unpaid_orders: number
+  in_progress: Record<'received' | 'washed' | 'ready', number>
+  services: { name: string; items: number; value: string }[]
+  busy_days: { weekday: string; orders: number }[]
+  average_days_to_ready: number | null
+}

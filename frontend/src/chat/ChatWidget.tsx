@@ -40,19 +40,24 @@ export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp
 
   // Show nothing until the server says the chat can answer: when it's switched off or out
   // of AI credit, visitors just don't see a chat button.
+  const availableRef = useRef(false)
   useEffect(() => {
     let current = true
     void fetchAvailable(apiBase).then((ok) => {
-      if (current) setAvailable(ok)
+      if (!current) return
+      availableRef.current = ok
+      setAvailable(ok)
     })
     return () => {
       current = false
     }
   }, [apiBase])
 
+  // Listening from the start (not only once the chat is known to be available) means an
+  // open request is never lost in the moment between; while unavailable it's ignored.
   useEffect(() => {
-    if (!available) return
     const onOpen = (event: Event) => {
+      if (!availableRef.current) return
       const message = (event as CustomEvent<{ message?: unknown } | null>).detail?.message
       // A new version remounts the panel, so its draft starts as this message.
       setPrefill((p) => ({ text: typeof message === 'string' ? message.slice(0, MAX_LENGTH) : '', version: p.version + 1 }))
@@ -63,7 +68,7 @@ export function ChatWidget({ apiBase, bottomOffset, brand = DEMO_BRAND, whatsapp
     return () => {
       window.removeEventListener(OPEN_EVENT, onOpen)
     }
-  }, [available, loadHistory])
+  }, [loadHistory])
 
   if (!available) return null
 
