@@ -52,6 +52,19 @@ def on_site(name: str, kind: str, per: str, price: str) -> dict:
     }
 
 
+def car_seats(size: str, price: str) -> dict:
+    return {
+        "name": f"Cucian Seat Kereta {size}",
+        "description": (
+            f"Car interior cleaning for a {size}: fabric seats, car carpet and dashboard, "
+            f"priced per car. {ON_SITE_PROCESS}"
+        ),
+        "pricing_unit": PricingUnit.PER_ITEM,
+        "unit_price": D(price),
+        "visit_minutes": 120,
+    }
+
+
 SERVICES: list[dict] = [
     carpet("Karpet Biasa", "Standard carpet", "1.80"),
     carpet("Karpet Shaggy", "Shaggy (long-pile) carpet", "2.00"),
@@ -64,9 +77,11 @@ SERVICES: list[dict] = [
     on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
     on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),
     on_site("Cucian Tilam King", "King mattress", "mattress", "160.00"),
-    # TODO: Cucian Seat Kereta (car seats, car carpet, dashboard) by car size (sedan, MPV,
-    # ...): waiting for prices. Mosque/surau/office carpets are quoted after a site visit,
-    # so they have no catalogue price (the assistant hands those requests to the owner).
+    car_seats("Sedan", "130.00"),
+    car_seats("SUV", "150.00"),
+    car_seats("MPV", "170.00"),
+    # Mosque/surau/office carpets are quoted after a site visit, so they have no catalogue
+    # price (the assistant sends those requests to the owner).
 ]
 
 
