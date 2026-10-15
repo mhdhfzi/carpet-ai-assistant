@@ -1,16 +1,15 @@
 import { type FormEvent, useState } from 'react'
 import { ApiError } from './api'
 import { useAuth } from './auth'
-import { useBusiness } from './business'
+import type { Business } from './business'
 
 // The public, read-only demo login (created by python -m app.seed_demo). Published on
 // purpose: the server refuses every change from this account.
 export const DEMO_EMAIL = 'demo@example.com'
 export const DEMO_PASSWORD = 'kilau-demo-2026'
 
-export function LoginPage({ notice }: { notice?: string }) {
+export function LoginPage({ notice, business }: { notice?: string; business?: Business | null }) {
   const { signIn } = useAuth()
-  const business = useBusiness()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)

@@ -1,4 +1,4 @@
-import type { BookingLocation, BookingStatus } from './types'
+import type { BookingLocation, BookingStatus, OrderStatus, ReturnMethod } from './types'
 
 // The business runs on Malaysia time, whatever timezone the owner's device is set to.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'
@@ -61,4 +61,49 @@ export const LOCATION_LABEL: Record<BookingLocation, string> = {
 /** wa.me wants the number without "+" or spaces. */
 export function whatsAppUrl(phone: string): string {
   return `https://wa.me/${phone.replace(/\D/g, '')}`
+}
+
+// --- Back office (orders): labels in Malay, as the business writes them ---------------------
+
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  received: 'Diterima',
+  washed: 'Dicuci',
+  ready: 'Siap',
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan',
+}
+
+export const ORDER_STATUS_STYLE: Record<OrderStatus, string> = {
+  received: 'bg-brand/25 text-ink',
+  washed: 'bg-sky-100 text-sky-900',
+  ready: 'bg-emerald-100 text-emerald-900',
+  completed: 'bg-foam text-ink-soft',
+  cancelled: 'bg-red-50 text-danger',
+}
+
+/** The button that moves an order to this status. */
+export const ORDER_ACTION_LABEL: Record<OrderStatus, string> = {
+  received: 'Tanda diterima',
+  washed: 'Tanda sudah dicuci',
+  ready: 'Tanda siap (kering)',
+  completed: 'Tanda selesai (diambil / dihantar)',
+  cancelled: 'Batalkan pesanan',
+}
+
+export const RETURN_LABEL: Record<ReturnMethod, string> = {
+  pickup: 'Pelanggan ambil di kedai',
+  delivery: 'Kami hantar',
+}
+
+const dateFormat = new Intl.DateTimeFormat('en-MY', { timeZone: TIME_ZONE, day: 'numeric', month: 'short' })
+
+/** "15 Oct" from "2026-10-15" (a calendar date, not a moment in time). */
+export function formatDay(isoDate: string): string {
+  return dateFormat.format(new Date(`${isoDate}T12:00:00+08:00`))
+}
+
+/** "8 x 10 ft" for a measured carpet, "3" for counted items. */
+export function formatSize(item: { length_ft: string | null; width_ft: string | null; quantity: string }): string {
+  if (item.length_ft && item.width_ft) return `${Number(item.length_ft)} x ${Number(item.width_ft)} kaki`
+  return String(Number(item.quantity))
 }

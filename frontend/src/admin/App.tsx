@@ -2,34 +2,88 @@ import type { ReactNode } from 'react'
 import { AnalyticsPage } from './AnalyticsPage'
 import { useAuth } from './auth'
 import { BookingsPage } from './BookingsPage'
-import { shortName, useBusiness } from './business'
+import { type Business, shortName, useBusiness } from './business'
+import { CustomerPage } from './CustomerPage'
 import { LoginPage } from './LoginPage'
-import { type Route, useHashRoute } from './useHashRoute'
+import { NewOrderPage } from './NewOrderPage'
+import { OrderPage } from './OrderPage'
+import { OrdersPage } from './OrdersPage'
+import { type Route, href, useHashRoute } from './useHashRoute'
 
-const NAV: { route: Route; label: string }[] = [
-  { route: 'bookings', label: 'Bookings' },
-  { route: 'analytics', label: 'Analytics' },
-]
+type NavItem = { route: Route; label: string }
+
+/** The menu depends on the business (does it use orders? bookings?) and on the role:
+ * staff only work with orders; the server refuses them everything else anyway. */
+function navFor(business: Business | null | undefined, staff: boolean): NavItem[] {
+  if (staff) return [{ route: { page: 'orders' }, label: 'Pesanan' }]
+  const items: NavItem[] = []
+  if (business?.orders) items.push({ route: { page: 'orders' }, label: 'Pesanan' })
+  if (business?.bookings !== false) items.push({ route: { page: 'bookings' }, label: 'Bookings' })
+  items.push({ route: { page: 'analytics' }, label: 'Analytics' })
+  return items
+}
+
+const STAFF_PAGES = new Set<Route['page']>(['orders', 'new-order', 'order', 'customer'])
 
 export function App() {
   const { state } = useAuth()
+  const business = useBusiness()
   const route = useHashRoute()
 
   if (state.status === 'checking') {
     return <p className="grid min-h-dvh place-items-center text-ink-soft">Loading…</p>
   }
-  if (state.status === 'signed-out') return <LoginPage notice={state.notice} />
+  if (state.status === 'signed-out') return <LoginPage notice={state.notice} business={business} />
+
+  const staff = state.owner.role === 'staff'
+  const nav = navFor(business, staff)
+  // Wait for the business before picking a default page, so nobody lands on the wrong one.
+  if (!route && business === undefined && !staff) {
+    return <p className="grid min-h-dvh place-items-center text-ink-soft">Loading…</p>
+  }
+  const current = route && (!staff || STAFF_PAGES.has(route.page)) ? route : nav[0].route
 
   return (
-    <Layout route={route}>
-      {route === 'analytics' ? <AnalyticsPage /> : <BookingsPage />}
+    <Layout nav={nav} current={current} business={business}>
+      <Page route={current} />
     </Layout>
   )
 }
 
-function Layout({ route, children }: { route: Route; children: ReactNode }) {
+function Page({ route }: { route: Route }) {
+  switch (route.page) {
+    case 'analytics':
+      return <AnalyticsPage />
+    case 'orders':
+      return <OrdersPage />
+    case 'new-order':
+      return <NewOrderPage />
+    case 'order':
+      return <OrderPage key={route.id} id={route.id} />
+    case 'customer':
+      return <CustomerPage key={route.id} id={route.id} />
+    default:
+      return <BookingsPage />
+  }
+}
+
+/** Order, customer and new-order pages belong to the "Pesanan" menu item. */
+function section(route: Route): Route['page'] {
+  return route.page === 'order' || route.page === 'new-order' || route.page === 'customer' ? 'orders' : route.page
+}
+
+function Layout({
+  nav,
+  current,
+  business,
+  children,
+}: {
+  nav: NavItem[]
+  current: Route
+  business: Business | null | undefined
+  children: ReactNode
+}) {
   const { state, signOut, readOnly } = useAuth()
-  const business = useBusiness()
   const owner = state.status === 'signed-in' ? state.owner : null
 
   return (
@@ -41,11 +95,11 @@ function Layout({ route, children }: { route: Route; children: ReactNode }) {
             <span className="text-brand">Dashboard</span>
           </p>
           <nav aria-label="Main" className="flex gap-1">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <a
-                key={item.route}
-                href={`#/${item.route}`}
-                aria-current={route === item.route ? 'page' : undefined}
+                key={item.route.page}
+                href={href(item.route)}
+                aria-current={section(current) === item.route.page ? 'page' : undefined}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-white/70 hover:text-white aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
               >
                 {item.label}

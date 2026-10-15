@@ -81,3 +81,76 @@ export type UnansweredQuestion = {
   resolved: boolean
   created_at: string
 }
+
+// --- Back office (orders) -------------------------------------------------------------------
+
+export type OrderStatus = 'received' | 'washed' | 'ready' | 'completed' | 'cancelled'
+export type ReturnMethod = 'pickup' | 'delivery'
+export type PricingUnit = 'per_sqft' | 'per_item' | 'flat'
+
+export type Service = {
+  id: number
+  name: string
+  pricing_unit: PricingUnit
+  unit_price: string
+  unit_price_max: string | null
+  is_active: boolean
+}
+
+export type OrderCustomer = { id: number; name: string; phone: string; area: string | null; address: string | null }
+
+export type OrderItem = {
+  id: number
+  position: number
+  tag: string
+  service: { id: number; name: string; pricing_unit: PricingUnit }
+  length_ft: string | null
+  width_ft: string | null
+  quantity: string
+  unit_price: string | null
+  line_total: string | null
+  notes: string | null
+}
+
+export type Order = {
+  id: number
+  number: number
+  customer: OrderCustomer
+  received_on: string
+  status: OrderStatus
+  return_method: ReturnMethod | null
+  deposit: string
+  discount: string
+  notes: string | null
+  washed_on: string | null
+  ready_on: string | null
+  completed_on: string | null
+  ready_from: string | null
+  ready_by: string | null
+  price_pending: boolean
+  subtotal: string
+  total: string
+  balance: string
+  items: OrderItem[]
+  events: { status: OrderStatus; note: string | null; by: string | null; at: string }[]
+  created_at: string
+}
+
+export type CustomerSummary = OrderCustomer & { orders: number; last_order_on: string | null }
+export type CustomerDetail = CustomerSummary & { order_history: Order[] }
+
+/** What the order form sends for each item. */
+export type OrderItemInput = {
+  service_id: number
+  length_ft?: string
+  width_ft?: string
+  quantity?: string
+  unit_price?: string
+  notes?: string
+}
+
+export const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
+  received: 'washed',
+  washed: 'ready',
+  ready: 'completed',
+}

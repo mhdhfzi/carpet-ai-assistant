@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 
 /** Which business this deployment serves (GET /api/business, public). */
-export type Business = { name: string; demo: boolean; bookings: boolean }
+export type Business = { name: string; demo: boolean; bookings: boolean; orders: boolean }
 
 /**
- * The business, or null while loading or if the request fails. Callers treat null as "not
- * the demo", so the demo login is never offered unless the server says this is the demo.
+ * The business: undefined while loading, null if the request failed. Callers treat a missing
+ * value as "not the demo", so the demo login is never offered unless the server says so.
  */
-export function useBusiness(): Business | null {
-  const [business, setBusiness] = useState<Business | null>(null)
+export function useBusiness(): Business | null | undefined {
+  const [business, setBusiness] = useState<Business | null | undefined>(undefined)
 
   useEffect(() => {
     let current = true
@@ -20,7 +20,7 @@ export function useBusiness(): Business | null {
         document.title = `${shortName(data.name)} Dashboard`
       })
       .catch(() => {
-        /* keep null: the page still works, just without the name */
+        if (current) setBusiness(null) // the page still works, just without the name
       })
     return () => {
       current = false

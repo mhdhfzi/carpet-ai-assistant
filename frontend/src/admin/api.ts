@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-export type Owner = { id: number; email: string; name: string; role: 'owner' | 'demo' }
+export type Owner = { id: number; email: string; name: string; role: 'owner' | 'demo' | 'staff' }
 
 export type TokenResponse = { access_token: string; token_type: string; expires_in: number }
 
@@ -49,4 +49,13 @@ export function login(email: string, password: string): Promise<TokenResponse> {
 
 export function fetchMe(token: string): Promise<Owner> {
   return api<Owner>('/api/auth/me', { token })
+}
+
+/** The server's own explanation of a refused request (e.g. "Karpet Biasa: enter the size"),
+ * or `fallback` when there isn't a readable one. */
+export function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.status < 500 && !error.message.startsWith('Request failed')) {
+    return error.message
+  }
+  return fallback
 }
