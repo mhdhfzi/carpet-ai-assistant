@@ -94,3 +94,33 @@ def test_a_short_new_question_is_not_drowned_out_by_a_long_earlier_message(
     assert "Shop address" not in [c.heading for c in alone]  # the bug this fixes
     assert [c.heading for c in both][0] == "Shop address"
     assert len({c.heading for c in both}) == len(both) == 2
+
+
+def test_a_message_with_several_questions_is_searched_per_question() -> None:
+    messages = [ChatTurn("user", "Hari Jumaat buka tak? Berapa harga cuci tilam queen?")]
+
+    assert rag.retrieval_queries(messages) == [
+        "Hari Jumaat buka tak? Berapa harga cuci tilam queen?",
+        "Hari Jumaat buka tak?",
+        "Berapa harga cuci tilam queen?",
+    ]
+
+
+def test_each_question_gets_its_best_match(db: Session, tmp_path: Path) -> None:
+    """The bug this fixes: one strong topic took every result, the other question none."""
+    write_doc(
+        tmp_path,
+        "faq.md",
+        {
+            "Mattress prices": "Mattress cleaning price: single, queen and king mattress.",
+            "Mattress sizes": "Queen mattress and king mattress cleaning, mattress price.",
+            "Opening hours": "We are closed on Friday (Jumaat). Open other days.",
+        },
+    )
+    embedder = FakeEmbedder()
+    ingest(db, embedder, tmp_path)
+    message = "Jumaat buka? Berapa harga cuci mattress queen, mattress price?"
+
+    chunks = retrieve_for(db, embedder, rag.retrieval_queries([ChatTurn("user", message)]), limit=2)
+
+    assert "Opening hours" in [c.heading for c in chunks]
