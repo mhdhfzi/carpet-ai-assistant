@@ -69,7 +69,7 @@ export function CustomersPage() {
       {rows && rows.length > 0 && (
         // Wide on purpose: on a phone it scrolls sideways rather than squeezing the columns.
         <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-line">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[800px] text-left text-sm">
             <thead className="border-b border-line bg-foam text-xs uppercase tracking-wide text-ink-soft">
               <tr>
                 <th scope="col" className="px-4 py-3">Nama</th>
@@ -79,6 +79,7 @@ export function CustomersPage() {
                 <th scope="col" className="px-4 py-3 text-right">Pesanan</th>
                 <th scope="col" className="px-4 py-3">Terakhir</th>
                 <th scope="col" className="px-4 py-3 text-right">Jumlah</th>
+                <th scope="col" className="px-4 py-3 text-right">Baki</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -95,6 +96,9 @@ export function CustomersPage() {
                   <td className="px-4 py-3 text-right">{c.orders}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{c.last_order_on ? formatDay(c.last_order_on) : '–'}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">{formatMoney(c.total_value)}</td>
+                  <td className={`px-4 py-3 text-right whitespace-nowrap ${Number(c.unpaid) > 0 ? 'font-semibold text-danger' : 'text-ink-soft'}`}>
+                    {Number(c.unpaid) > 0 ? formatMoney(c.unpaid) : '–'}
+                  </td>
                 </tr>
               ))}
             </tbody>

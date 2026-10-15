@@ -5,6 +5,7 @@ import {
   ORDER_ACTION_LABEL,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_STYLE,
+  PAYMENT_LABEL,
   RETURN_LABEL,
   formatDateTime,
   formatDay,
@@ -14,7 +15,15 @@ import {
 } from './format'
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, rowsFromItems, rowsToInput } from './itemRows'
-import { NEXT_ORDER_STATUS, type Order, type OrderStatus, type ReturnMethod } from './types'
+import {
+  NEXT_ORDER_STATUS,
+  type Order,
+  type OrderStatus,
+  type PaymentMethod,
+  type Receipt,
+  type ReturnMethod,
+} from './types'
+import { readyMessage, receiptMessage } from './whatsappMessages'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
 
@@ -24,6 +33,7 @@ export function OrderPage({ id }: { id: number }) {
   const { request, state } = useAuth()
   const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const [order, setOrder] = useState<Order | null>(null)
+  const [business, setBusiness] = useState<Receipt['business'] | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -31,9 +41,12 @@ export function OrderPage({ id }: { id: number }) {
 
   useEffect(() => {
     let current = true
-    request<Order>(`/api/orders/${id}`)
+    // The receipt view: the order plus the business details the WhatsApp messages need.
+    request<Receipt>(`/api/orders/${id}/receipt`)
       .then((data) => {
-        if (current) setOrder(data)
+        if (!current) return
+        setOrder(data.order)
+        setBusiness(data.business)
       })
       .catch(() => {
         if (current) setLoadError(true)
@@ -43,11 +56,11 @@ export function OrderPage({ id }: { id: number }) {
     }
   }, [id, request])
 
-  const save = async (changes: Record<string, unknown>) => {
+  const send = async (path: string, method: string, body: Record<string, unknown>) => {
     setBusy(true)
     setError(null)
     try {
-      setOrder(await request<Order>(`/api/orders/${id}`, { method: 'PATCH', body: changes }))
+      setOrder(await request<Order>(`/api/orders/${id}${path}`, { method, body }))
       setEditing(false)
     } catch (err) {
       setError(errorMessage(err, 'Tak dapat simpan perubahan. Cuba lagi.'))
@@ -55,6 +68,7 @@ export function OrderPage({ id }: { id: number }) {
       setBusy(false)
     }
   }
+  const save = (changes: Record<string, unknown>) => send('', 'PATCH', changes)
 
   if (loadError) return <p role="alert" className="text-danger">Pesanan tak dijumpai.</p>
   if (!order) return <p className="text-ink-soft">Memuatkan…</p>
@@ -93,6 +107,11 @@ export function OrderPage({ id }: { id: number }) {
         >
           {ORDER_ACTION_LABEL[next]}
         </button>
+      )}
+      {next === 'completed' && Number(order.balance) > 0 && (
+        <p className="text-center text-sm font-semibold text-danger">
+          Baki {formatMoney(order.balance)} belum dibayar: rekod bayaran di bawah dulu.
+        </p>
       )}
       {order.status === 'washed' && order.ready_from && order.ready_by && (
         <p className="text-center text-sm text-ink-soft">
@@ -154,7 +173,15 @@ export function OrderPage({ id }: { id: number }) {
         </section>
       )}
 
-      <Money order={order} isOwner={isOwner} busy={busy} onSave={save} />
+      <Payments
+        order={order}
+        isOwner={isOwner}
+        busy={busy}
+        onPay={(payment) => send('/payments', 'POST', payment)}
+        onVoid={(paymentId, reason) => send(`/payments/${paymentId}/void`, 'POST', { reason })}
+      />
+
+      {business && <SendToCustomer order={order} business={business} />}
 
       <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
         <h2 className="font-semibold">Cara pulang</h2>
@@ -215,44 +242,138 @@ export function OrderPage({ id }: { id: number }) {
   )
 }
 
-function Money({
+function Payments({
   order,
   isOwner,
   busy,
-  onSave,
+  onPay,
+  onVoid,
 }: {
   order: Order
   isOwner: boolean
   busy: boolean
-  onSave: (changes: Record<string, unknown>) => Promise<void>
+  onPay: (payment: Record<string, unknown>) => Promise<void>
+  onVoid: (paymentId: number, reason: string) => Promise<void>
 }) {
-  const [deposit, setDeposit] = useState(String(Number(order.deposit)))
-  const [discount, setDiscount] = useState(String(Number(order.discount)))
-  const changed = Number(deposit) !== Number(order.deposit) || Number(discount) !== Number(order.discount)
+  const owed = Number(order.balance)
+  const [amount, setAmount] = useState('')
+  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const canPay = order.status !== 'cancelled' && (owed > 0 || order.price_pending)
 
   return (
-    <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
-      <Row label="Jumlah barang" value={formatMoney(order.subtotal)} />
-      {Number(order.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(order.discount)}`} />}
-      <Row label={order.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(order.total)} strong />
-      <Row label="Deposit" value={formatMoney(order.deposit)} />
-      <Row label="Baki" value={formatMoney(order.balance)} strong />
-      {order.status !== 'cancelled' && (
-        <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
-          <NumberField label="Deposit (RM)" value={deposit} onChange={setDeposit} />
-          {isOwner && <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />}
-          {changed && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onSave({ deposit: deposit || '0', ...(isOwner ? { discount: discount || '0' } : {}) })}
-              className="col-span-2 rounded-full bg-ink py-3 font-semibold text-white disabled:opacity-50"
-            >
-              Simpan bayaran
+    <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
+      <h2 className="font-semibold">Bayaran</h2>
+      <div className="space-y-1">
+        <Row label="Jumlah barang" value={formatMoney(order.subtotal)} />
+        {Number(order.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(order.discount)}`} />}
+        <Row label={order.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(order.total)} strong />
+        <Row label="Sudah dibayar" value={formatMoney(order.paid)} />
+        <Row label="Baki" value={formatMoney(order.balance)} strong />
+      </div>
+
+      {order.payments.length > 0 && (
+        <ul className="divide-y divide-line border-t border-line text-sm" aria-label="Senarai bayaran">
+          {order.payments.map((p) => (
+            <li key={p.id} className={`flex items-start justify-between gap-3 py-2 ${p.voided ? 'text-ink-soft' : ''}`}>
+              <div>
+                <p className={p.voided ? 'line-through' : ''}>
+                  {formatDay(p.paid_on)} · {PAYMENT_LABEL[p.method]}
+                  {p.note && ` · ${p.note}`}
+                </p>
+                <p className="text-xs text-ink-soft">
+                  {p.received_by && `Diterima oleh ${p.received_by}`}
+                  {p.voided && ` · Dibatalkan: ${p.void_reason}`}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className={`font-semibold ${p.voided ? 'line-through' : ''}`}>{formatMoney(p.amount)}</p>
+                {isOwner && !p.voided && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const reason = window.prompt('Sebab batalkan bayaran ini?')
+                      if (reason && reason.trim().length >= 3) void onVoid(p.id, reason.trim())
+                    }}
+                    className="text-xs text-danger underline"
+                  >
+                    Batalkan
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canPay && (
+        <div className="space-y-3 border-t border-line pt-3">
+          <p className="text-sm font-semibold">Rekod bayaran</p>
+          <NumberField label="Jumlah dibayar (RM)" value={amount} onChange={setAmount} />
+          {owed > 0 && (
+            <button type="button" onClick={() => setAmount(owed.toFixed(2))} className="text-sm underline">
+              Bayar penuh baki ({formatMoney(order.balance)})
             </button>
           )}
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Cara bayaran">
+            {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={method === m}
+                onClick={() => setMethod(m)}
+                className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
+              >
+                {PAYMENT_LABEL[m]}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={busy || !(Number(amount) > 0)}
+            onClick={async () => {
+              await onPay({ amount, method })
+              setAmount('')
+            }}
+            className="w-full rounded-full bg-ink py-3 font-semibold text-white disabled:opacity-40"
+          >
+            Simpan bayaran
+          </button>
         </div>
       )}
+    </section>
+  )
+}
+
+function SendToCustomer({ order, business }: { order: Order; business: Receipt['business'] }) {
+  const ready = order.status === 'ready' || order.status === 'completed'
+  return (
+    <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
+      <h2 className="font-semibold">Hantar kepada pelanggan</h2>
+      <p className="text-sm text-ink-soft">WhatsApp dibuka dengan mesej siap ditulis. Semak, kemudian tekan Hantar.</p>
+      <div className="flex flex-wrap gap-2">
+        {ready && (
+          <a
+            href={whatsAppUrl(order.customer.phone, readyMessage(order, business.name, business.payment_details))}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-full bg-[#1f9e4f] px-4 py-2 text-sm font-semibold text-white"
+          >
+            WhatsApp: barang siap
+          </a>
+        )}
+        <a
+          href={whatsAppUrl(order.customer.phone, receiptMessage(order, business.name))}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full bg-[#1f9e4f] px-4 py-2 text-sm font-semibold text-white"
+        >
+          WhatsApp: resit
+        </a>
+        <a href={href({ page: 'receipt', id: order.id })} className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line">
+          Lihat / cetak resit
+        </a>
+      </div>
     </section>
   )
 }

@@ -86,6 +86,18 @@ export type UnansweredQuestion = {
 
 export type OrderStatus = 'received' | 'washed' | 'ready' | 'completed' | 'cancelled'
 export type ReturnMethod = 'pickup' | 'delivery'
+export type PaymentMethod = 'cash' | 'transfer' | 'duitnow'
+
+export type Payment = {
+  id: number
+  amount: string
+  method: PaymentMethod
+  paid_on: string
+  note: string | null
+  received_by: string | null
+  voided: boolean
+  void_reason: string | null
+}
 export type PricingUnit = 'per_sqft' | 'per_item' | 'flat'
 
 export type Service = {
@@ -119,7 +131,6 @@ export type Order = {
   received_on: string
   status: OrderStatus
   return_method: ReturnMethod | null
-  deposit: string
   discount: string
   notes: string | null
   washed_on: string | null
@@ -130,13 +141,26 @@ export type Order = {
   price_pending: boolean
   subtotal: string
   total: string
+  paid: string
   balance: string
   items: OrderItem[]
+  payments: Payment[]
   events: { status: OrderStatus; note: string | null; by: string | null; at: string }[]
   created_at: string
 }
 
-export type CustomerSummary = OrderCustomer & { orders: number; last_order_on: string | null; total_value: string }
+export type CustomerSummary = OrderCustomer & {
+  orders: number
+  last_order_on: string | null
+  total_value: string
+  unpaid: string
+}
+
+export type Receipt = {
+  business: { name: string; reg_no: string; address: string; phone: string; payment_details: string }
+  order: Order
+  issued_on: string
+}
 export type CustomerDetail = CustomerSummary & { order_history: Order[] }
 
 /** What the order form sends for each item. */

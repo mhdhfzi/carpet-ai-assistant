@@ -9,6 +9,7 @@ import { LoginPage } from './LoginPage'
 import { NewOrderPage } from './NewOrderPage'
 import { OrderPage } from './OrderPage'
 import { OrdersPage } from './OrdersPage'
+import { ReceiptPage } from './ReceiptPage'
 import { type Route, href, useHashRoute } from './useHashRoute'
 
 type NavItem = { route: Route; label: string }
@@ -27,7 +28,14 @@ function navFor(business: Business | null | undefined, staff: boolean): NavItem[
   return items
 }
 
-const STAFF_PAGES = new Set<Route['page']>(['orders', 'customers', 'new-order', 'order', 'customer'])
+const STAFF_PAGES = new Set<Route['page']>([
+  'orders',
+  'customers',
+  'new-order',
+  'order',
+  'receipt',
+  'customer',
+])
 
 export function App() {
   const { state } = useAuth()
@@ -62,6 +70,8 @@ function Page({ route }: { route: Route }) {
       return <OrdersPage />
     case 'customers':
       return <CustomersPage />
+    case 'receipt':
+      return <ReceiptPage key={route.id} id={route.id} />
     case 'new-order':
       return <NewOrderPage />
     case 'order':
@@ -75,7 +85,7 @@ function Page({ route }: { route: Route }) {
 
 /** Which menu item a page belongs to: a single order under Pesanan, a customer under Pelanggan. */
 function section(route: Route): Route['page'] {
-  if (route.page === 'order' || route.page === 'new-order') return 'orders'
+  if (route.page === 'order' || route.page === 'new-order' || route.page === 'receipt') return 'orders'
   if (route.page === 'customer') return 'customers'
   return route.page
 }
@@ -95,8 +105,8 @@ function Layout({
   const owner = state.status === 'signed-in' ? state.owner : null
 
   return (
-    <div className="min-h-dvh bg-mist">
-      <header className="bg-ink text-white">
+    <div className="min-h-dvh bg-mist print:bg-white">
+      <header className="bg-ink text-white print:hidden">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <p className="font-display text-lg font-bold">
             {business && `${shortName(business.name)} `}
@@ -131,7 +141,7 @@ function Layout({
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl p-4 sm:p-6">{children}</main>
+      <main className="mx-auto max-w-6xl p-4 sm:p-6 print:p-0">{children}</main>
     </div>
   )
 }

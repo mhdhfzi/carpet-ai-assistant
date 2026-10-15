@@ -9,11 +9,12 @@ export type Route =
   | { page: 'customers' }
   | { page: 'new-order' }
   | { page: 'order'; id: number }
+  | { page: 'receipt'; id: number }
   | { page: 'customer'; id: number }
 
 /** The route in a hash, or null for an empty or unknown one (the app picks a default). */
 export function parseRoute(hash: string): Route | null {
-  const [name, id] = hash.replace(/^#\/?/, '').split('/')
+  const [name, id, rest] = hash.replace(/^#\/?/, '').split('/')
   const number = Number(id)
   switch (name) {
     case 'bookings':
@@ -21,6 +22,7 @@ export function parseRoute(hash: string): Route | null {
       return { page: name }
     case 'orders':
       if (id === 'new') return { page: 'new-order' }
+      if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
       return id && Number.isInteger(number) && number > 0 ? { page: 'order', id: number } : { page: 'orders' }
     case 'customers':
       return id && Number.isInteger(number) && number > 0 ? { page: 'customer', id: number } : { page: 'customers' }
@@ -35,6 +37,8 @@ export function href(route: Route): string {
       return '#/orders/new'
     case 'order':
       return `#/orders/${route.id}`
+    case 'receipt':
+      return `#/orders/${route.id}/resit`
     case 'customer':
       return `#/customers/${route.id}`
     default:

@@ -3,8 +3,8 @@ import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, emptyRow, rowPrice, rowsToInput } from './itemRows'
-import { RETURN_LABEL, formatMoney, todayInMalaysia } from './format'
-import type { CustomerSummary, Order, ReturnMethod } from './types'
+import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, todayInMalaysia } from './format'
+import type { CustomerSummary, Order, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
 
@@ -21,6 +21,7 @@ export function NewOrderPage() {
   const [receivedOn, setReceivedOn] = useState(todayInMalaysia())
   const [rows, setRows] = useState<ItemRow[]>(() => [emptyRow()])
   const [deposit, setDeposit] = useState('')
+  const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
   const [discount, setDiscount] = useState('')
   const [returnMethod, setReturnMethod] = useState<ReturnMethod | ''>('')
   const [notes, setNotes] = useState('')
@@ -72,6 +73,7 @@ export function NewOrderPage() {
           received_on: receivedOn,
           items: rowsToInput(rows),
           deposit: deposit || '0',
+          deposit_method: depositMethod,
           ...(isOwner && discount ? { discount } : {}),
           return_method: returnMethod || null,
           notes: notes.trim() || null,
@@ -117,6 +119,21 @@ export function NewOrderPage() {
       <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
         <h2 className="font-semibold">Bayaran & lain-lain</h2>
         <NumberField label="Deposit (RM)" value={deposit} onChange={setDeposit} />
+        {Number(deposit) > 0 && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Cara bayaran deposit">
+            {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={depositMethod === m}
+                onClick={() => setDepositMethod(m)}
+                className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
+              >
+                {PAYMENT_LABEL[m]}
+              </button>
+            ))}
+          </div>
+        )}
         {isOwner && <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />}
         <fieldset className="space-y-1">
           <legend className="text-sm font-semibold">Cara pulang</legend>

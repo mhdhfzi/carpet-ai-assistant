@@ -1,4 +1,4 @@
-import type { BookingLocation, BookingStatus, OrderStatus, ReturnMethod } from './types'
+import type { BookingLocation, BookingStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
 
 // The business runs on Malaysia time, whatever timezone the owner's device is set to.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'
@@ -58,9 +58,10 @@ export const LOCATION_LABEL: Record<BookingLocation, string> = {
   shop: 'At shop',
 }
 
-/** wa.me wants the number without "+" or spaces. */
-export function whatsAppUrl(phone: string): string {
-  return `https://wa.me/${phone.replace(/\D/g, '')}`
+/** wa.me wants the number without "+" or spaces; `text` pre-fills the message. */
+export function whatsAppUrl(phone: string, text?: string): string {
+  const url = `https://wa.me/${phone.replace(/\D/g, '')}`
+  return text ? `${url}?text=${encodeURIComponent(text)}` : url
 }
 
 // --- Back office (orders): labels in Malay, as the business writes them ---------------------
@@ -106,4 +107,10 @@ export function formatDay(isoDate: string): string {
 export function formatSize(item: { length_ft: string | null; width_ft: string | null; quantity: string }): string {
   if (item.length_ft && item.width_ft) return `${Number(item.length_ft)} x ${Number(item.width_ft)} kaki`
   return String(Number(item.quantity))
+}
+
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: 'Tunai',
+  transfer: 'Pindahan bank',
+  duitnow: 'DuitNow / e-wallet',
 }

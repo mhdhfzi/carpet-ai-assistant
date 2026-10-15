@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { AuthProvider } from './auth'
-import type { Order, Service } from './types'
+import type { Order, Receipt, Service } from './types'
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown }
 type Handler = (call: Call) => { status?: number; body?: unknown }
@@ -46,7 +46,6 @@ function order(overrides: Partial<Order> = {}): Order {
     received_on: '2026-10-10',
     status: 'received',
     return_method: null,
-    deposit: '50.00',
     discount: '0.00',
     notes: null,
     washed_on: null,
@@ -57,6 +56,7 @@ function order(overrides: Partial<Order> = {}): Order {
     price_pending: false,
     subtotal: '144.00',
     total: '144.00',
+    paid: '50.00',
     balance: '94.00',
     items: [
       {
@@ -73,8 +73,25 @@ function order(overrides: Partial<Order> = {}): Order {
       },
     ],
     events: [{ status: 'received', note: null, by: 'Pekerja', at: '2026-10-10T02:00:00Z' }],
+    payments: [
+      { id: 1, amount: '50.00', method: 'transfer', paid_on: '2026-10-10', note: 'Deposit', received_by: 'Pekerja', voided: false, void_reason: null },
+    ],
     created_at: '2026-10-10T02:00:00Z',
     ...overrides,
+  }
+}
+
+function receipt(overrides: Partial<Order> = {}): Receipt {
+  return {
+    business: {
+      name: 'Cuci-Cuci Senawang',
+      reg_no: '201903262495 (NS0229212-P)',
+      address: '89-G, Jalan Bandar Senawang 5',
+      phone: '019-276 2890',
+      payment_details: 'Maybank 1234 (Rizqiman Gemilang Legacy)',
+    },
+    order: order(overrides),
+    issued_on: '2026-10-17',
   }
 }
 
@@ -161,7 +178,7 @@ describe('back office', () => {
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
       'GET /api/services': () => ({ body: SERVICES }),
       'GET /api/customers': () => ({
-        body: [{ id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A', orders: 2, last_order_on: '2026-09-01' }],
+        body: [{ id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A', orders: 2, last_order_on: '2026-09-01', total_value: '200.00', unpaid: '0' }],
       }),
     })
     const user = renderSignedIn('#/orders/new')
@@ -192,7 +209,7 @@ describe('back office', () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
-      'GET /api/orders/7': () => ({ body: order() }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
       'PATCH /api/orders/7': () => ({ body: order({ status: 'washed', ready_from: '2026-10-15', ready_by: '2026-10-17' }) }),
     })
     const user = renderSignedIn('#/orders/7')
@@ -210,7 +227,7 @@ describe('back office', () => {
     mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
-      'GET /api/orders/7': () => ({ body: order() }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
       'PATCH /api/orders/7': () => ({ status: 403, body: { detail: 'Only the owner can give a discount' } }),
     })
     const user = renderSignedIn('#/orders/7')
@@ -247,8 +264,8 @@ describe('back office', () => {
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
       'GET /api/customers': () => ({
         body: [
-          { id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A', orders: 2, last_order_on: '2026-10-10', total_value: '324.00' },
-          { id: 4, name: 'Siti', phone: '+60191112222', area: null, address: null, orders: 0, last_order_on: null, total_value: '0' },
+          { id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A', orders: 2, last_order_on: '2026-10-10', total_value: '324.00', unpaid: '100.00' },
+          { id: 4, name: 'Siti', phone: '+60191112222', area: null, address: null, orders: 0, last_order_on: null, total_value: '0', unpaid: '0' },
         ],
       }),
     })
@@ -257,10 +274,65 @@ describe('back office', () => {
     const table = await screen.findByRole('table')
     const rows = within(table).getAllByRole('row')
     expect(within(rows[0]).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'Nama', 'Telefon', 'Kawasan', 'Alamat', 'Pesanan', 'Terakhir', 'Jumlah',
+      'Nama', 'Telefon', 'Kawasan', 'Alamat', 'Pesanan', 'Terakhir', 'Jumlah', 'Baki',
     ])
-    expect(rows[1]).toHaveTextContent('Ali+60123456789Seremban 25, Jalan A210 OctRM324.00')
+    expect(rows[1]).toHaveTextContent('Ali+60123456789Seremban 25, Jalan A210 OctRM324.00RM100.00')
     expect(within(rows[1]).getByRole('link', { name: 'Ali' })).toHaveAttribute('href', '#/customers/3')
-    expect(rows[2]).toHaveTextContent('Siti+60191112222––0–RM0.00')
+    expect(rows[2]).toHaveTextContent('Siti+60191112222––0–RM0.00–')
+  })
+
+  it('records the balance at pickup and offers the receipt on WhatsApp', async () => {
+    const paidUp = { paid: '144.00', balance: '0.00', status: 'ready' as const }
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ status: 'ready' }) }),
+      'POST /api/orders/7/payments': () => ({ status: 201, body: order(paidUp) }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText(/Baki RM94.00 belum dibayar/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Bayar penuh baki (RM94.00)' }))
+    await user.click(screen.getByRole('button', { name: 'Tunai' }))
+    await user.click(screen.getByRole('button', { name: 'Simpan bayaran' }))
+
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ amount: '94.00', method: 'cash' })
+    await waitFor(() => expect(screen.queryByText(/belum dibayar/)).toBeNull())
+    const ready = screen.getByRole('link', { name: 'WhatsApp: barang siap' })
+    const text = decodeURIComponent(ready.getAttribute('href')?.split('?text=')[1] ?? '')
+    expect(ready.getAttribute('href')).toMatch(/^https:\/\/wa\.me\/60123456789\?text=/)
+    expect(text).toContain('Assalamualaikum Ali')
+    expect(text).toContain('412-1 Karpet Biasa 8 x 10 kaki: RM144.00')
+    expect(text).toContain('Telah dibayar sepenuhnya')
+  })
+
+  it('lets only the owner void a payment', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+    renderSignedIn('#/orders/7')
+
+    const list = await screen.findByRole('list', { name: 'Senarai bayaran' })
+    expect(list).toHaveTextContent('Pindahan bank · Deposit')
+    expect(within(list).queryByRole('button', { name: 'Batalkan' })).toBeNull()
+  })
+
+  it('prints a receipt with the business details and payments', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+    renderSignedIn('#/orders/7/resit')
+
+    const receiptCard = await screen.findByRole('article')
+    expect(receiptCard).toHaveTextContent('No. SSM: 201903262495 (NS0229212-P)')
+    expect(receiptCard).toHaveTextContent('RESITNo. 412')
+    expect(receiptCard).toHaveTextContent('Dibayar 10 Oct (Pindahan bank, Deposit)− RM50.00')
+    expect(receiptCard).toHaveTextContent('BakiRM94.00')
+    expect(receiptCard).toHaveTextContent('Bayaran: Maybank 1234 (Rizqiman Gemilang Legacy)')
+    expect(screen.getByRole('button', { name: 'Cetak / simpan PDF' })).toBeInTheDocument()
   })
 })
