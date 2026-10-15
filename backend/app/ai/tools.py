@@ -8,7 +8,7 @@ not in the prompt.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -352,15 +352,34 @@ TOOLS: dict[str, Tool] = {
 }
 
 
-def tool_definitions() -> list[dict[str, Any]]:
-    return [tool.definition() for tool in TOOLS.values()]
+# What a deployment that doesn't take bookings offers: read-only answers, plus logging the
+# questions it couldn't answer. Hand-offs go to WhatsApp instead (see app/ai/prompts.py).
+ANSWER_TOOLS = ("get_services", "estimate_price", "flag_unanswered_question")
 
 
-def run_tool(ctx: ToolContext, name: str, raw_input: dict[str, Any]) -> ToolResult:
+def available_tools(bookings_enabled: bool) -> tuple[str, ...]:
+    return tuple(TOOLS) if bookings_enabled else ANSWER_TOOLS
+
+
+def tool_definitions(names: Collection[str] | None = None) -> list[dict[str, Any]]:
+    return [tool.definition() for tool in TOOLS.values() if names is None or tool.name in names]
+
+
+def run_tool(
+    ctx: ToolContext,
+    name: str,
+    raw_input: dict[str, Any],
+    *,
+    allowed: Collection[str] | None = None,
+) -> ToolResult:
     """Run a tool call from the model. Never raises for bad input or business-rule errors:
-    those go back to the model as error results so it can correct itself or explain."""
+    those go back to the model as error results so it can correct itself or explain.
+
+    `allowed` is enforced here, not just by which tools the model was shown: a model that
+    names a tool it wasn't offered (e.g. create_booking in an answers-only deployment)
+    gets an error, never the tool."""
     tool = TOOLS.get(name)
-    if tool is None:
+    if tool is None or (allowed is not None and name not in allowed):
         return _error(f"Unknown tool: {name}")
     try:
         data = tool.input_model.model_validate(raw_input)

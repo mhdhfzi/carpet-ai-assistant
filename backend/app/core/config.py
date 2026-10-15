@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     # Most AI replies per day (Malaysia time) across all customers: a cost guard for the
     # public demo. Beyond it customers get a polite fixed reply. 0 = no limit.
     ai_daily_reply_limit: int = 300
+
+    # The business this deployment serves. The defaults are the public portfolio demo; a
+    # deployment for a real business overrides them (one codebase, several deployments).
+    business_name: str = "Kilau Carpet Care"
+    business_location: str = "Seremban, serving all of Negeri Sembilan, Malaysia"
+    # True: the assistant tells customers the business is fictional and bookings aren't real.
+    demo_business: bool = True
+    # Folder of knowledge documents to ingest; unset = backend/knowledge (the demo's).
+    knowledge_dir: str | None = None
+    # False: the assistant answers questions and gives estimates only, and sends customers
+    # to WhatsApp to book. The booking tools are then not offered to the model at all.
+    bookings_enabled: bool = True
+    # The WhatsApp number customers are sent to when they need a person, as written for
+    # customers (e.g. "012-345 6789"). Required when bookings are disabled.
+    contact_whatsapp: str | None = None
 
     # WhatsApp Business Cloud API. All optional: without the app secret the webhook refuses
     # every request, so unsigned (forged) messages are never processed.
@@ -70,6 +85,14 @@ class Settings(BaseSettings):
         # .env.example ships `KEY=` lines; an empty value must count as missing,
         # not as a key made of an empty string.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _answers_only_needs_a_contact(self) -> "Settings":
+        # Fail at startup, not mid-conversation: without bookings the assistant's only way
+        # to help with a booking is to give this number.
+        if not self.bookings_enabled and not (self.contact_whatsapp or "").strip():
+            raise ValueError("CONTACT_WHATSAPP is required when BOOKINGS_ENABLED is false")
+        return self
 
     @property
     def json_logs(self) -> bool:
