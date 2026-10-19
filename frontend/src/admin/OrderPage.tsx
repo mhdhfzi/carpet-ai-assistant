@@ -31,6 +31,7 @@ import {
   type Receipt,
   type ReturnMethod,
 } from './types'
+import { notifyWorkChanged } from './summary'
 import { readyMessage, receiptMessage } from './whatsappMessages'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
@@ -69,6 +70,7 @@ export function OrderPage({ id }: { id: number }) {
     setError(null)
     try {
       setOrder(await request<Order>(`/api/orders/${id}${path}`, { method, body }))
+      notifyWorkChanged()
       setEditing(false)
     } catch (err) {
       setError(errorMessage(err, 'Tak dapat simpan perubahan. Cuba lagi.'))
@@ -390,7 +392,7 @@ function SendToCustomer({ order, business }: { order: Order; business: Receipt['
           </a>
         )}
         <a
-          href={whatsAppUrl(order.customer.phone, receiptMessage(order, business.name))}
+          href={whatsAppUrl(order.customer.phone, receiptMessage(order, business))}
           target="_blank"
           rel="noreferrer"
           className="rounded-full bg-[#1f9e4f] px-4 py-2 text-sm font-semibold text-white"

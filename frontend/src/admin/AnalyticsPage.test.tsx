@@ -115,7 +115,8 @@ describe('analytics page', () => {
     mockBackend(base)
     renderAnalytics()
 
-    const tile = (label: string) => screen.getByText(label).parentElement as HTMLElement
+    // The tiles come first; the questions list below may use the same words as a label.
+    const tile = (label: string) => screen.getAllByText(label)[0].parentElement as HTMLElement
     await screen.findByText('Chats')
     expect(tile('Chats')).toHaveTextContent('15')
     expect(tile('Bookings made')).toHaveTextContent('8')

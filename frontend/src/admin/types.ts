@@ -128,6 +128,7 @@ export type OrderItem = {
   status: ItemStatus
   washed_on: string | null
   washed_by: string | null
+  wash_note: string | null
   ready_on: string | null // the day it was packed
   packed_by: string | null
   fold: ItemFold | null
@@ -181,7 +182,17 @@ export type CustomerSummary = OrderCustomer & {
 }
 
 export type Receipt = {
-  business: { name: string; reg_no: string; address: string; phone: string; payment_details: string }
+  business: {
+    name: string // as printed on the receipt
+    logo: string
+    reg_no: string
+    address: string
+    phone: string
+    email: string
+    facebook: string
+    payment_details: string // one item per line
+    terms: string
+  }
   order: Order
   issued_on: string
 }
@@ -224,4 +235,23 @@ export type BusinessAnalytics = {
   services: { name: string; items: number; value: string }[]
   busy_days: { weekday: string; orders: number }[]
   average_days_to_ready: number | null
+}
+
+/** The cards at the top of the work pages (GET /api/work/summary). */
+export type WorkSummary = {
+  to_wash: number
+  to_pack: number
+  drying: number
+  ready_orders: number
+  unpaid: string
+  unpaid_orders: number
+}
+
+/** A carpet found without its tag ("XXX" on the washing form). */
+export type UntaggedItem = {
+  id: number
+  description: string
+  found_on: string
+  found_by: string | null
+  matched_tag: string | null
 }

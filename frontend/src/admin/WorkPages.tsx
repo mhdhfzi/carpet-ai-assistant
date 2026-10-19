@@ -1,11 +1,13 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
-import { FOLD_LABEL, formatDay, formatSize, todayInMalaysia } from './format'
-import type { ItemFold, ItemStatus, Order, WorkItem, WorkLog } from './types'
+import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, readyToPack, todayInMalaysia } from './format'
+import { AlertIcon, BoxIcon, CheckIcon, ClockIcon, DropIcon, PrintIcon, TagIcon } from './icons'
+import { notifyWorkChanged } from './summary'
+import type { ItemFold, ItemStatus, Order, UntaggedItem, WorkItem, WorkLog } from './types'
 import { href } from './useHashRoute'
 
-// The workers' screens, one per paper form: the washing list, the packing list (carpets
+// The workers' screens, one per paper form: the washing form, the packing form (carpets
 // washed 5-7 days ago), and the day's record of both. Each "done" button records the day
 // and the worker's name (from their own login), as the forms do.
 
@@ -62,146 +64,452 @@ function useWorkLog(day: string, version = 0) {
   return { log: log?.day === day ? log : null, error }
 }
 
+type Notice = { ok: boolean; text: string } | null
+
 /** Moves one item a step along; reports what happened in a single line. */
 function useMove(onDone: () => void) {
   const { request } = useAuth()
   const [busy, setBusy] = useState<number | null>(null)
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const [notice, setNotice] = useState<Notice>(null)
 
-  const move = async (item: WorkItem, status: ItemStatus, fold?: ItemFold) => {
+  const move = async (item: WorkItem, status: ItemStatus, extra: { fold?: ItemFold; note?: string } = {}) => {
     setBusy(item.id)
     setNotice(null)
     try {
       await request<Order>(`/api/orders/${item.order_id}/items/${item.id}`, {
         method: 'PATCH',
-        body: { status, fold },
+        body: { status, ...extra },
       })
-      const done = status === 'washed' ? 'dicuci' : `dipack${fold ? ` (${FOLD_LABEL[fold]})` : ''}`
+      const done = status === 'washed' ? 'dicuci' : `dipack${extra.fold ? ` (${FOLD_LABEL[extra.fold]})` : ''}`
       setNotice({ ok: true, text: `${item.tag} ${done}.` })
       onDone()
+      notifyWorkChanged()
     } catch (err) {
       setNotice({ ok: false, text: errorMessage(err, `Tak dapat simpan ${item.tag}. Cuba lagi.`) })
     } finally {
       setBusy(null)
     }
   }
-  return { move, busy, notice }
+  return { move, busy, notice, setNotice }
 }
 
-// --- Cuci ------------------------------------------------------------------------------------
+/** The logged-in worker: the "staf bertugas" on today's forms. */
+function useStaffName(): string {
+  const { state } = useAuth()
+  return state.status === 'signed-in' ? state.owner.name : ''
+}
+
+// --- Borang Cuci -----------------------------------------------------------------------------
 
 export function WashPage() {
   const today = todayInMalaysia()
+  const staff = useStaffName()
   const work = useWorkItems('received')
   const [version, setVersion] = useState(0)
   const { log } = useWorkLog(today, version)
+  const [notes, setNotes] = useState<Record<number, string>>({})
   const { move, busy, notice } = useMove(() => {
     work.reload()
     setVersion((v) => v + 1)
   })
+  const washedToday = log?.washed ?? []
 
   return (
-    <section className="space-y-5">
-      <PageHeader
-        title="Cuci"
-        lead="Karpet yang belum dicuci. Tekan Siap cuci bila selesai: tarikh dan nama anda direkod."
-        count={work.items?.length}
-      />
-      <Notice notice={notice} />
-      <Loading work={work} empty="Semua karpet sudah dicuci." />
+    <section className="space-y-6">
+      <Banner
+        tone="bg-sky-900"
+        badge="bg-sky-700"
+        boxTone="border-sky-600 bg-sky-800"
+        icon={<DropIcon className="size-5" />}
+        kicker="Borang cuci"
+        title="Rekod cuci karpet"
+        staffLabel="Staf bertugas"
+        staff={staff}
+      >
+        Bila staf tekan <strong>Tandakan siap cuci</strong>, tarikh cucian terus ditulis dalam Buku Utama dan kiraan{' '}
+        <strong>5–7 hari kering</strong> bermula sendiri.
+      </Banner>
+      <NoticeLine notice={notice} />
 
-      <div className="space-y-3">
-        {groupByOrder(work.items ?? []).map((group) => (
-          <OrderGroup key={group[0].order_id} items={group}>
-            {(item) => (
-              <ActionButton disabled={busy !== null} onClick={() => move(item, 'washed')}>
-                Siap cuci
-              </ActionButton>
-            )}
-          </OrderGroup>
-        ))}
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
+            <h2 className="text-sm font-bold text-slate-800">
+              Senarai karpet untuk dicuci
+              {work.items && work.items.length > 0 && ` (${work.items.length})`}
+            </h2>
+            <span className="text-xs text-slate-500">
+              Staf aktif: <strong>{staff}</strong>
+            </span>
+          </div>
+          <Loading work={work} empty="Semua karpet sudah dicuci." />
+          <ul className="divide-y divide-slate-200">
+            {work.items?.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 p-4 hover:bg-slate-50">
+                <CarpetSummary item={item} />
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                  <label className="min-w-0 flex-1 sm:flex-none">
+                    <span className="sr-only">Catatan cuci {item.tag}</span>
+                    <input
+                      type="text"
+                      maxLength={300}
+                      value={notes[item.id] ?? ''}
+                      onChange={(e) => setNotes({ ...notes, [item.id]: e.target.value })}
+                      placeholder="Catatan (cth: tompok tak hilang)"
+                      className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs sm:w-52"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => move(item, 'washed', notes[item.id]?.trim() ? { note: notes[item.id].trim() } : {})}
+                    className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-sky-700 disabled:opacity-50"
+                  >
+                    <CheckIcon className="size-3.5" /> Tandakan siap cuci
+                  </button>
+                </div>
+              </li>
+            ))}
+            {washedToday.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 bg-emerald-50/40 p-4">
+                <CarpetSummary item={item} />
+                <div className="text-right">
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                    <CheckIcon className="size-3.5" /> Telah dicuci ({formatShortDate(item.washed_on as string)})
+                  </span>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Oleh: {item.washed_by ?? 'Staf'}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <UntaggedPanel />
       </div>
-
-      <DoneToday title="Dicuci hari ini" items={log?.washed} by={(i) => i.washed_by} />
     </section>
   )
 }
 
-// --- Packing ---------------------------------------------------------------------------------
+/** "#412-1  Karpet Biasa  Saiz: 8 x 10 kaki", the customer, and any notes. */
+function CarpetSummary({ item }: { item: WorkItem }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="flex flex-wrap items-center gap-2">
+        <span className="rounded bg-slate-900 px-2.5 py-0.5 text-sm font-extrabold text-white">#{item.tag}</span>
+        <span className={`text-sm font-bold ${item.service.needs_fold ? 'text-purple-800' : 'text-slate-800'}`}>{item.service.name}</span>
+        <span className="rounded bg-slate-200 px-2 py-0.5 font-mono text-xs text-slate-800">Saiz: {formatSize(item)}</span>
+      </p>
+      <p className="text-xs text-slate-500">
+        Pelanggan:{' '}
+        <a href={href({ page: 'order', id: item.order_id })} className="font-semibold text-slate-700 hover:underline">
+          {item.customer_name}
+        </a>{' '}
+        (#{item.order_number})
+      </p>
+      {item.notes && <p className="text-xs font-semibold text-rose-700">Catatan pesanan: {item.notes}</p>}
+      {item.wash_note && <p className="text-xs font-semibold text-rose-700">Catatan cuci: {item.wash_note}</p>}
+    </div>
+  )
+}
 
-export function PackPage() {
-  const today = todayInMalaysia()
-  const work = useWorkItems('washed')
+/** Carpets whose tag came off ("XXX" on the paper form), until someone matches them. */
+function UntaggedPanel() {
+  const { request } = useAuth()
+  const [items, setItems] = useState<UntaggedItem[] | null>(null)
   const [version, setVersion] = useState(0)
-  const { log } = useWorkLog(today, version)
-  const { move, busy, notice } = useMove(() => {
-    work.reload()
-    setVersion((v) => v + 1)
-  })
-  // Carpets dry for 5-7 days; anything that isn't a carpet can be packed straight away.
-  const due = (work.items ?? []).filter((i) => !i.ready_from || i.ready_from <= today)
-  const drying = (work.items ?? []).filter((i) => i.ready_from && i.ready_from > today)
+  const [adding, setAdding] = useState(false)
+  const [description, setDescription] = useState('')
+  const [tags, setTags] = useState<Record<number, string>>({})
+  const [notice, setNotice] = useState<Notice>(null)
 
-  const actions = (item: WorkItem, early: boolean) => {
-    const style = early ? 'secondary' : 'primary'
-    if (item.service.needs_fold) {
-      return (['rolled', 'folded'] as const).map((fold) => (
-        <ActionButton key={fold} variant={style} disabled={busy !== null} onClick={() => move(item, 'ready', fold)}>
-          {FOLD_LABEL[fold]}
-        </ActionButton>
-      ))
+  useEffect(() => {
+    let current = true
+    request<UntaggedItem[]>('/api/work/untagged')
+      .then((data) => {
+        if (current) setItems(data)
+      })
+      .catch(() => {
+        if (current) setItems([])
+      })
+    return () => {
+      current = false
     }
-    return (
-      <ActionButton variant={style} disabled={busy !== null} onClick={() => move(item, 'ready')}>
-        Siap pack
-      </ActionButton>
-    )
+  }, [request, version])
+
+  const save = async (path: string, body: unknown, done: string) => {
+    setNotice(null)
+    try {
+      await request(path, { method: 'POST', body })
+      setNotice({ ok: true, text: done })
+      setVersion((v) => v + 1)
+      return true
+    } catch (err) {
+      setNotice({ ok: false, text: errorMessage(err, 'Tak dapat simpan. Cuba lagi.') })
+      return false
+    }
+  }
+
+  const log = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!description.trim()) return
+    if (await save('/api/work/untagged', { description: description.trim() }, 'Karpet tiada tag direkod.')) {
+      setDescription('')
+      setAdding(false)
+    }
   }
 
   return (
-    <section className="space-y-5">
-      <PageHeader
-        title="Packing"
-        lead="Karpet yang sudah 5 hari dicuci boleh dipack. Karpet velvet: pilih Gulung atau Lipat."
-        count={due.length}
-      />
-      <Notice notice={notice} />
-      <Loading work={work} empty="Tiada karpet untuk dipack." />
-
-      {due.length === 0 && drying.length > 0 && (
-        <p className="rounded-2xl bg-white p-4 text-center text-sm text-ink-soft ring-1 ring-line">
-          Tiada karpet cukup 5 hari lagi. Yang masih kering boleh dipack awal jika sudah kering.
+    <aside aria-label="Karpet hilang tag" className="h-fit space-y-4 rounded-xl border border-rose-200 bg-white p-4 shadow-sm">
+      <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+        <h2 className="flex items-center gap-1.5 text-sm font-bold text-rose-900">
+          <TagIcon /> Karpet hilang tag (XXX)
+        </h2>
+        <p className="mt-1 text-xs text-rose-800">
+          Tag tertanggal semasa cucian? Rekod jenis dan saiz di sini supaya kaunter boleh padankan semula dengan
+          no. siri yang betul.
         </p>
-      )}
-      {due.length > 0 && (
-        <ItemList title={`Sedia untuk pack (${due.length})`}>
-          {due.map((item) => (
-            <ItemRow key={item.id} item={item} detail={item.washed_on ? `dicuci ${formatDay(item.washed_on)}` : undefined}>
-              {actions(item, false)}
-            </ItemRow>
-          ))}
-        </ItemList>
-      )}
-      {drying.length > 0 && (
-        <ItemList title={`Masih kering (${drying.length})`}>
-          {drying.map((item) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              detail={`dicuci ${formatDay(item.washed_on as string)} · boleh pack ${formatDay(item.ready_from as string)}`}
-            >
-              {actions(item, true)}
-            </ItemRow>
-          ))}
-        </ItemList>
-      )}
+      </div>
+      <NoticeLine notice={notice} />
 
-      <DoneToday
-        title="Dipack hari ini"
-        items={log?.packed}
-        by={(i) => [i.packed_by, i.fold && FOLD_LABEL[i.fold]].filter(Boolean).join(' · ')}
-      />
+      {items?.length === 0 && <p className="text-center text-xs text-slate-500">Tiada karpet tanpa tag.</p>}
+      <ul className="space-y-2">
+        {items?.map((item) => (
+          <li key={item.id} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+            <p className="flex justify-between gap-2 font-bold text-rose-700">
+              <span>No. siri: XXX</span>
+              <span>{formatShortDate(item.found_on)}</span>
+            </p>
+            <p>
+              <strong>{item.description}</strong>
+            </p>
+            <p className="text-slate-500">Direkod oleh: {item.found_by ?? 'Staf'}</p>
+            <form
+              className="flex gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const tag = tags[item.id]?.trim()
+                if (tag) void save(`/api/work/untagged/${item.id}/match`, { tag }, `Dipadankan dengan ${tag}.`)
+              }}
+            >
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">No. siri sebenar</span>
+                <input
+                  value={tags[item.id] ?? ''}
+                  onChange={(e) => setTags({ ...tags, [item.id]: e.target.value })}
+                  placeholder="No. siri, cth 412-2"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1"
+                />
+              </label>
+              <button type="submit" className="rounded-md bg-slate-900 px-2.5 py-1 font-semibold text-white">
+                Padankan
+              </button>
+            </form>
+          </li>
+        ))}
+      </ul>
+
+      {adding ? (
+        <form onSubmit={log} className="space-y-2">
+          <label className="block text-xs font-semibold text-slate-700">
+            Jenis & saiz karpet tiada tag
+            <input
+              autoFocus
+              value={description}
+              maxLength={200}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="cth: Biasa 6.7 x 9.7, warna biru"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm font-normal"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="flex-1 rounded-lg bg-rose-600 py-2 text-xs font-bold text-white hover:bg-rose-700">
+              Simpan
+            </button>
+            <button type="button" onClick={() => setAdding(false)} className="rounded-lg bg-slate-100 px-3 text-xs font-bold text-slate-600">
+              Batal
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="w-full rounded-lg bg-rose-600 py-2.5 text-xs font-bold text-white shadow hover:bg-rose-700"
+        >
+          + Log karpet tiada tag (XXX)
+        </button>
+      )}
+    </aside>
+  )
+}
+
+// --- Borang Packing --------------------------------------------------------------------------
+
+export function PackPage() {
+  const today = todayInMalaysia()
+  const staff = useStaffName()
+  const work = useWorkItems('washed')
+  const [version, setVersion] = useState(0)
+  const { log } = useWorkLog(today, version)
+  const [folds, setFolds] = useState<Record<number, ItemFold>>({})
+  const { move, busy, notice, setNotice } = useMove(() => {
+    work.reload()
+    setVersion((v) => v + 1)
+  })
+
+  const pack = (item: WorkItem) => {
+    const fold = folds[item.id]
+    if (item.service.needs_fold && !fold) {
+      setNotice({ ok: false, text: `Pilih Gulung atau Lipat untuk karpet velvet ${item.tag} dulu.` })
+      return
+    }
+    void move(item, 'ready', fold ? { fold } : {})
+  }
+
+  const due = (work.items ?? []).filter((i) => readyToPack(i, today)).length
+
+  return (
+    <section className="space-y-6">
+      <Banner
+        tone="bg-amber-900"
+        badge="bg-amber-700"
+        boxTone="border-amber-600 bg-amber-800"
+        icon={<BoxIcon className="size-5" />}
+        kicker="Borang packing"
+        title="Rekod packing karpet (selepas 5–7 hari kering)"
+        staffLabel="Staf packing"
+        staff={staff}
+      >
+        Sistem menapis sendiri karpet yang dicuci <strong>5 hingga 7 hari lepas</strong>. Untuk karpet{' '}
+        <strong>velvet</strong>, staf wajib tanda sama ada <strong>Gulung</strong> atau <strong>Lipat</strong>.
+      </Banner>
+      <NoticeLine notice={notice} />
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
+          <h2 className="text-sm font-bold text-slate-800">
+            {due > 0 ? `${due} karpet sedia untuk pack` : 'Karpet yang sedang kering'}
+          </h2>
+          <span className="text-xs text-slate-500">
+            Staf aktif: <strong>{staff}</strong>
+          </span>
+        </div>
+        <Loading work={work} empty="Tiada karpet untuk dipack." />
+        {((work.items?.length ?? 0) > 0 || (log?.packed.length ?? 0) > 0) && (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm max-md:block">
+              <thead className="max-md:hidden">
+                <tr className="bg-slate-800 text-xs text-white uppercase">
+                  <th scope="col" className="px-4 py-3">No. siri karpet</th>
+                  <th scope="col" className="px-4 py-3">Jenis karpet</th>
+                  <th scope="col" className="px-4 py-3">Saiz (kaki)</th>
+                  <th scope="col" className="px-4 py-3">Tarikh cuci & tempoh kering</th>
+                  <th scope="col" className="px-4 py-3">Catatan (velvet: gulung @ lipat)</th>
+                  <th scope="col" className="px-4 py-3 text-right">Status / sahkan packing</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 max-md:block">
+                {work.items?.map((item) => {
+                  const days = item.washed_on ? daysBetween(item.washed_on, today) : 0
+                  const ready = readyToPack(item, today)
+                  return (
+                    <PackRow key={item.id} item={item} label={`Karpet ${item.tag}`} className="hover:bg-amber-50/40">
+                      <td className={packCell}>
+                        <p className="text-xs font-semibold text-slate-700">Dicuci: {item.washed_on && formatShortDate(item.washed_on)}</p>
+                        <span
+                          className={`mt-1 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold ${
+                            ready ? 'border border-amber-400 bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-800'
+                          }`}
+                        >
+                          <ClockIcon className="size-3" /> {days} hari kering {ready ? '(cukup 5–7 hari)' : ''}
+                        </span>
+                      </td>
+                      <td className={packCell}>
+                        {item.service.needs_fold ? (
+                          <div className="flex items-center gap-2" role="radiogroup" aria-label={`Cara pack ${item.tag}`}>
+                            {(['rolled', 'folded'] as const).map((fold) => (
+                              <button
+                                key={fold}
+                                type="button"
+                                role="radio"
+                                aria-checked={folds[item.id] === fold}
+                                onClick={() => setFolds({ ...folds, [item.id]: fold })}
+                                className="rounded border border-purple-300 bg-white px-3 py-1 text-xs font-bold text-purple-800 uppercase transition hover:bg-purple-50 aria-checked:border-purple-700 aria-checked:bg-purple-700 aria-checked:text-white"
+                              >
+                                {FOLD_LABEL[fold]}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">Tiada (bukan velvet)</span>
+                        )}
+                      </td>
+                      <td className={`${packCell} md:text-right`}>
+                        <button
+                          type="button"
+                          disabled={busy !== null}
+                          onClick={() => pack(item)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-xs font-extrabold text-slate-950 shadow transition hover:bg-amber-600 disabled:opacity-50"
+                        >
+                          <CheckIcon className="size-3.5" /> Tandakan siap pack
+                        </button>
+                      </td>
+                    </PackRow>
+                  )
+                })}
+                {log?.packed.map((item) => (
+                  <PackRow key={item.id} item={item} label={`Karpet ${item.tag}, sudah dipack`} className="bg-emerald-50/40">
+                    <td className={packCell}>
+                      <p className="text-xs font-semibold text-slate-700">Dicuci: {item.washed_on && formatShortDate(item.washed_on)}</p>
+                    </td>
+                    <td className={packCell}>
+                      {item.fold ? (
+                        <span className="rounded bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 uppercase">
+                          Velvet: {FOLD_LABEL[item.fold]}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">{item.service.needs_fold ? '—' : 'Tiada (bukan velvet)'}</span>
+                      )}
+                    </td>
+                    <td className={`${packCell} md:text-right`}>
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white">
+                        <CheckIcon className="size-3.5" /> Siap pack ({formatShortDate(item.ready_on as string)})
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-500">Oleh: {item.packed_by ?? 'Staf'}</p>
+                    </td>
+                  </PackRow>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </section>
+  )
+}
+
+const packCell = 'px-4 py-3.5 max-md:block max-md:px-0 max-md:py-1.5'
+
+/** The first three columns of a packing row (tag, type, size); the rest are passed in. */
+function PackRow({ item, label, className, children }: { item: WorkItem; label: string; className: string; children: ReactNode }) {
+  return (
+    <tr aria-label={label} className={`${className} align-top max-md:block max-md:px-4 max-md:py-3`}>
+      <td className={packCell}>
+        <span className="rounded border border-slate-300 bg-slate-100 px-2.5 py-1 font-extrabold text-slate-900">#{item.tag}</span>
+        <p className="mt-1 text-xs text-slate-500">{item.customer_name}</p>
+      </td>
+      <td className={packCell}>
+        <span
+          className={`rounded px-2.5 py-1 text-xs font-bold ${
+            item.service.needs_fold ? 'border border-purple-300 bg-purple-100 text-purple-900' : 'bg-slate-100 text-slate-800'
+          }`}
+        >
+          {item.service.name}
+        </span>
+      </td>
+      <td className={`${packCell} font-mono font-bold text-slate-700`}>{formatSize(item)}</td>
+      {children}
+    </tr>
   )
 }
 
@@ -213,28 +521,28 @@ export function LogPage() {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
         <div>
-          <h1 className="font-display text-2xl font-bold">Rekod harian</h1>
+          <h1 className="text-xl font-extrabold">Rekod harian</h1>
           <p className="text-sm text-ink-soft">Borang cuci dan borang packing untuk satu hari, sedia untuk dicetak.</p>
         </div>
         <div className="flex items-end gap-2">
           <label className="text-sm">
-            <span className="block font-semibold">Tarikh</span>
+            <span className="block text-xs font-bold text-slate-600">Tarikh</span>
             <input
               type="date"
               value={day}
               max={todayInMalaysia()}
               onChange={(e) => e.target.value && setDay(e.target.value)}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-line outline-none focus:ring-2 focus:ring-brand"
+              className="rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </label>
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-bold text-white"
           >
-            Cetak
+            <PrintIcon /> Cetak
           </button>
         </div>
       </div>
@@ -249,7 +557,7 @@ export function LogPage() {
             items={log.washed}
             staff={(i) => i.washed_by}
             lastHeading="Catatan"
-            last={(i) => i.notes ?? ''}
+            last={(i) => [i.notes, i.wash_note].filter(Boolean).join('; ')}
           />
           <FormTable
             title="Rekod packing karpet"
@@ -282,9 +590,12 @@ function FormTable({
 }) {
   const names = [...new Set(items.map(staff).filter((n): n is string => Boolean(n)))]
   return (
-    <section aria-label={title} className="rounded-2xl bg-white ring-1 ring-line print:break-inside-avoid print:rounded-none print:ring-0">
-      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="font-semibold">{title}</h2>
+    <section
+      aria-label={title}
+      className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm print:break-inside-avoid print:rounded-none print:border-slate-800 print:shadow-none"
+    >
+      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 px-4 py-3">
+        <h2 className="font-bold uppercase">{title}</h2>
         <p className="text-sm text-ink-soft">
           {formatLongDay(day)} · Staf bertugas: {names.length ? names.join(', ') : '-'}
         </p>
@@ -294,7 +605,7 @@ function FormTable({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs tracking-wide text-ink-soft uppercase">
+            <thead className="bg-slate-800 text-xs text-white uppercase">
               <tr>
                 <th className="px-4 py-2 font-semibold">Bil</th>
                 <th className="px-4 py-2 font-semibold">No. siri</th>
@@ -304,7 +615,7 @@ function FormTable({
                 <th className="px-4 py-2 font-semibold">Staf</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="divide-y divide-slate-200">
               {items.map((item, index) => (
                 <tr key={item.id}>
                   <td className="px-4 py-2 tabular-nums">{index + 1}</td>
@@ -325,141 +636,64 @@ function FormTable({
 
 // --- Shared pieces ---------------------------------------------------------------------------
 
-function PageHeader({ title, lead, count }: { title: string; lead: string; count?: number }) {
+/** The coloured strip at the top of a form page, with the worker on duty. */
+function Banner({
+  tone,
+  badge,
+  boxTone,
+  icon,
+  kicker,
+  title,
+  staffLabel,
+  staff,
+  children,
+}: {
+  tone: string
+  badge: string
+  boxTone: string
+  icon: ReactNode
+  kicker: string
+  title: string
+  staffLabel: string
+  staff: string
+  children: ReactNode
+}) {
   return (
-    <header>
-      <h1 className="font-display text-2xl font-bold">
-        {title}
-        {count !== undefined && count > 0 && (
-          <span className="ml-2 rounded-full bg-ink px-2.5 py-0.5 align-middle text-sm text-white">{count}</span>
-        )}
-      </h1>
-      <p className="text-sm text-ink-soft">{lead}</p>
-    </header>
+    <div className={`flex flex-wrap items-center justify-between gap-4 rounded-xl p-5 text-white shadow ${tone}`}>
+      <div className="max-w-2xl">
+        <span className={`rounded px-2.5 py-1 text-xs font-bold tracking-wider uppercase ${badge}`}>{kicker}</span>
+        <h1 className="mt-2 flex items-center gap-2 text-xl font-extrabold uppercase">
+          {icon} {title}
+        </h1>
+        <p className="mt-0.5 text-xs text-white/80">{children}</p>
+      </div>
+      <div className={`flex items-center gap-3 rounded-lg border p-3 ${boxTone}`}>
+        <span className="text-xs font-bold text-white/75 uppercase">{staffLabel}:</span>
+        <span className="rounded bg-white px-3 py-1.5 text-xs font-bold text-slate-900">{staff}</span>
+      </div>
+    </div>
   )
 }
 
-function Notice({ notice }: { notice: { ok: boolean; text: string } | null }) {
+function NoticeLine({ notice }: { notice: Notice }) {
   if (!notice) return null
   return (
     <p
       role={notice.ok ? 'status' : 'alert'}
-      className={`rounded-xl px-3 py-2 text-sm ring-1 ${notice.ok ? 'bg-emerald-50 text-emerald-900 ring-emerald-200' : 'bg-red-50 text-danger ring-red-200'}`}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+        notice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-800'
+      }`}
     >
-      {notice.text}
+      {notice.ok ? <CheckIcon /> : <AlertIcon />} {notice.text}
     </p>
   )
 }
 
 function Loading({ work, empty }: { work: { items: WorkItem[] | null; error: boolean }; empty: string }) {
-  if (work.error) return <p role="alert" className="text-danger">Tak dapat muatkan senarai. Cuba lagi.</p>
-  if (work.items === null) return <p className="text-ink-soft">Memuatkan…</p>
-  if (work.items.length === 0) return <p className="rounded-2xl bg-white p-6 text-center text-ink-soft ring-1 ring-line">{empty}</p>
+  if (work.error) return <p role="alert" className="p-4 text-danger">Tak dapat muatkan senarai. Cuba lagi.</p>
+  if (work.items === null) return <p className="p-4 text-ink-soft">Memuatkan…</p>
+  if (work.items.length === 0) return <p className="p-6 text-center text-sm text-ink-soft">{empty}</p>
   return null
-}
-
-/** One order's carpets together, as the tags are written: 12-1, 12-2, ... */
-function OrderGroup({ items, children }: { items: WorkItem[]; children: (item: WorkItem) => ReactNode }) {
-  const first = items[0]
-  return (
-    <ItemList
-      title={
-        <a href={href({ page: 'order', id: first.order_id })} className="hover:underline">
-          #{first.order_number} · {first.customer_name}
-        </a>
-      }
-      aside={`diterima ${formatDay(first.received_on)}`}
-    >
-      {items.map((item) => (
-        <ItemRow key={item.id} item={item}>
-          {children(item)}
-        </ItemRow>
-      ))}
-    </ItemList>
-  )
-}
-
-function ItemList({ title, aside, children }: { title: ReactNode; aside?: string; children: ReactNode }) {
-  return (
-    <section className="rounded-2xl bg-white ring-1 ring-line">
-      <header className="flex items-baseline justify-between gap-2 border-b border-line px-4 py-2.5">
-        <h2 className="font-semibold">{title}</h2>
-        {aside && <p className="text-xs text-ink-soft">{aside}</p>}
-      </header>
-      <ul className="divide-y divide-line">{children}</ul>
-    </section>
-  )
-}
-
-function ItemRow({ item, detail, children }: { item: WorkItem; detail?: string; children: ReactNode }) {
-  return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-      <span className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs font-semibold text-white">{item.tag}</span>
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">
-          {item.service.name} <span className="font-normal text-ink-soft">· {formatSize(item)}</span>
-        </p>
-        {(detail || item.notes) && (
-          <p className="text-xs text-ink-soft">{[detail, item.notes && `Catatan: ${item.notes}`].filter(Boolean).join(' · ')}</p>
-        )}
-      </div>
-      <div className="flex gap-2">{children}</div>
-    </li>
-  )
-}
-
-function ActionButton({
-  children,
-  onClick,
-  disabled,
-  variant = 'primary',
-}: {
-  children: ReactNode
-  onClick: () => void
-  disabled: boolean
-  variant?: 'primary' | 'secondary'
-}) {
-  const style =
-    variant === 'primary' ? 'bg-brand hover:bg-brand-hover' : 'bg-white ring-1 ring-line hover:ring-ink/30'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`min-h-10 rounded-full px-4 text-sm font-semibold disabled:opacity-50 ${style}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function DoneToday({
-  title,
-  items,
-  by,
-}: {
-  title: string
-  items: WorkItem[] | undefined
-  by: (item: WorkItem) => string | null
-}) {
-  if (!items?.length) return null
-  return (
-    <ItemList title={`${title} (${items.length})`} aside="Lihat Rekod harian untuk cetak">
-      {items.map((item) => (
-        <li key={item.id} className="flex items-center gap-3 px-4 py-2 text-sm">
-          <span className="font-mono font-semibold">{item.tag}</span>
-          <span className="min-w-0 flex-1 truncate">{item.service.name}</span>
-          <span className="text-ink-soft">{by(item)}</span>
-        </li>
-      ))}
-    </ItemList>
-  )
-}
-
-function groupByOrder(items: WorkItem[]): WorkItem[][] {
-  const groups = new Map<number, WorkItem[]>()
-  for (const item of items) groups.set(item.order_id, [...(groups.get(item.order_id) ?? []), item])
-  return [...groups.values()]
 }
 
 const longDay = new Intl.DateTimeFormat('ms-MY', {

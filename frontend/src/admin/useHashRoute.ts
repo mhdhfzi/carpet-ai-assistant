@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react'
 export type Route =
   | { page: 'bookings' }
   | { page: 'analytics' }
-  | { page: 'orders' }
+  | { page: 'orders'; filter?: string }
+  | { page: 'receipts' }
   | { page: 'customers' }
   | { page: 'wash' }
   | { page: 'pack' }
@@ -17,7 +18,8 @@ export type Route =
 
 /** The route in a hash, or null for an empty or unknown one (the app picks a default). */
 export function parseRoute(hash: string): Route | null {
-  const [name, id, rest] = hash.replace(/^#\/?/, '').split('/')
+  const [path, query = ''] = hash.replace(/^#\/?/, '').split('?')
+  const [name, id, rest] = path.split('/')
   const number = Number(id)
   switch (name) {
     case 'bookings':
@@ -26,7 +28,10 @@ export function parseRoute(hash: string): Route | null {
     case 'orders':
       if (id === 'new') return { page: 'new-order' }
       if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
-      return id && Number.isInteger(number) && number > 0 ? { page: 'order', id: number } : { page: 'orders' }
+      if (id && Number.isInteger(number) && number > 0) return { page: 'order', id: number }
+      return { page: 'orders', filter: new URLSearchParams(query).get('tapis') ?? undefined }
+    case 'resit':
+      return { page: 'receipts' }
     case 'cuci':
       return { page: 'wash' }
     case 'packing':
@@ -42,6 +47,10 @@ export function parseRoute(hash: string): Route | null {
 
 export function href(route: Route): string {
   switch (route.page) {
+    case 'orders':
+      return route.filter ? `#/orders?tapis=${route.filter}` : '#/orders'
+    case 'receipts':
+      return '#/resit'
     case 'new-order':
       return '#/orders/new'
     case 'order':

@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 
 /** Which business this deployment serves (GET /api/business, public). */
-export type Business = { name: string; demo: boolean; bookings: boolean; orders: boolean }
+export type Business = {
+  name: string
+  demo: boolean
+  bookings: boolean
+  orders: boolean
+  brand: string // the name on receipts and in the header, e.g. a trading name
+  logo: string // the short mark in the round badge
+  address: string
+}
 
 /**
  * The business: undefined while loading, null if the request failed. Callers treat a missing

@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     business_email: str = ""
     business_facebook: str = ""  # the Facebook page's name
     business_phones: str = ""  # e.g. "019-276 2890 / 013-397 9447"; blank = contact_whatsapp
-    # How to pay; each line is printed on its own line, e.g. bank, account number, name.
+    # How to pay, one item per line (new lines or "|"), e.g. "Name|Bank Islam|0506...".
     payment_details: str = ""
     receipt_terms: str = ""  # small print, e.g. how long unclaimed items are kept
 

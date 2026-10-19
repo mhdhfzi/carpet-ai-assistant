@@ -146,3 +146,19 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   transfer: 'Pindahan bank',
   duitnow: 'DuitNow / e-wallet',
 }
+
+/** Whole days from one calendar date to another (both "YYYY-MM-DD"). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+}
+
+/** "10/10/26", as the book and the receipt write dates. */
+export function formatShortDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-')
+  return `${day}/${month}/${year.slice(2)}`
+}
+
+/** A washed carpet can be packed from 5 days after washing; anything else straight away. */
+export function readyToPack(item: { status: ItemStatus; ready_from: string | null }, today: string): boolean {
+  return item.status === 'washed' && (!item.ready_from || item.ready_from <= today)
+}
