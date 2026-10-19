@@ -3,7 +3,7 @@ Clock frozen at Saturday 10 Oct 2026 (Malaysia)."""
 
 import re
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import create_access_token
-from app.db.models import Owner, OwnerRole, Service
+from app.db.models import OrderItem, Owner, OwnerRole, Service
 from app.seed import seed_services
 from tests.conftest import _OWNER_PASSWORD_HASH
 from tests.test_auth import PROTECTED_ROUTES
@@ -469,6 +469,73 @@ def test_the_day_s_forms_list_what_was_washed_and_packed(
     assert other_day["washed"] == other_day["packed"] == []
 
 
+def test_a_wash_note_is_kept_for_the_washing_form(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(staff_client, services)
+    item_id = order["items"][0]["id"]
+
+    washed = staff_client.patch(
+        f"/api/orders/{order['id']}/items/{item_id}",
+        json={"status": "washed", "note": "tompok tak hilang"},
+    ).json()
+    log = staff_client.get("/api/work/log").json()
+
+    assert washed["items"][0]["wash_note"] == "tompok tak hilang"
+    assert log["washed"][0]["wash_note"] == "tompok tak hilang"
+
+
+def test_the_summary_counts_today_s_work_and_what_is_owed(
+    client: TestClient, services: dict[str, int], db: Session
+) -> None:
+    drying = two_carpets(client, services)  # 144 + 80
+    move(client, drying, 1, "washed")
+    db.get(OrderItem, drying["items"][0]["id"]).washed_on = TODAY - timedelta(days=5)
+    db.flush()
+    sofa = new_order(client, services, deposit="50.00")  # 144 + 180, 50 paid
+    move(client, sofa, 2, "washed")  # sofa seats don't dry for days: pack straight away
+    packed = two_carpets(client, services)
+    client.patch(f"/api/orders/{packed['id']}", json={"status": "washed"})
+    client.patch(f"/api/orders/{packed['id']}", json={"status": "ready"})
+    cancelled = two_carpets(client, services)
+    client.patch(f"/api/orders/{cancelled['id']}", json={"status": "cancelled"})
+
+    summary = client.get("/api/work/summary").json()
+
+    assert summary == {
+        "to_wash": 2,
+        "to_pack": 2,
+        "drying": 0,
+        "ready_orders": 1,
+        "unpaid": "722.00",
+        "unpaid_orders": 3,
+    }
+
+
+def test_a_carpet_without_its_tag_is_logged_and_matched_later(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    two_carpets(staff_client, services)
+    logged = staff_client.post("/api/work/untagged", json={"description": "Biasa 7.7 x 5.3"})
+    untagged_id = logged.json()["id"]
+    match = f"/api/work/untagged/{untagged_id}/match"
+
+    waiting = staff_client.get("/api/work/untagged").json()
+    badly_written = staff_client.post(match, json={"tag": "abc"})
+    unknown = staff_client.post(match, json={"tag": "9-1"})
+    matched = staff_client.post(match, json={"tag": " 1-2 "})
+    again = staff_client.post(match, json={"tag": "1-1"})
+
+    assert logged.status_code == 201
+    assert [(u["description"], u["found_by"], u["found_on"]) for u in waiting] == [
+        ("Biasa 7.7 x 5.3", "Worker", TODAY.isoformat())
+    ]
+    assert (badly_written.status_code, unknown.status_code) == (422, 404)
+    assert matched.json()["matched_tag"] == "1-2"
+    assert again.status_code == 422
+    assert staff_client.get("/api/work/untagged").json() == []
+
+
 # --- Finding orders and customers ------------------------------------------------------------
 
 
@@ -626,14 +693,22 @@ def test_a_receipt_has_the_business_details_and_the_order(
     monkeypatch.setenv("BUSINESS_NAME", "Cuci-Cuci Senawang")
     monkeypatch.setenv("BUSINESS_REG_NO", "201903262495 (NS0229212-P)")
     monkeypatch.setenv("PAYMENT_DETAILS", "Maybank 1234")
+    monkeypatch.setenv("RECEIPT_NAME", "Dobi Karpet Xpress")
+    monkeypatch.setenv("RECEIPT_LOGO", "RGL")
+    monkeypatch.setenv("CONTACT_WHATSAPP", "019-111 1111")
+    monkeypatch.setenv("BUSINESS_PHONES", "019-111 1111 / 013-222 2222")
+    monkeypatch.setenv("RECEIPT_TERMS", "Barang tidak dituntut dalam 3 bulan akan dilupuskan.")
     get_settings.cache_clear()
     order = new_order(client, services)
 
     receipt = client.get(f"/api/orders/{order['id']}/receipt").json()
 
-    assert receipt["business"]["name"] == "Cuci-Cuci Senawang"
-    assert receipt["business"]["reg_no"] == "201903262495 (NS0229212-P)"
-    assert receipt["business"]["payment_details"] == "Maybank 1234"
+    business = receipt["business"]
+    assert (business["name"], business["logo"]) == ("Dobi Karpet Xpress", "RGL")
+    assert business["reg_no"] == "201903262495 (NS0229212-P)"
+    assert business["payment_details"] == "Maybank 1234"
+    assert business["phone"] == "019-111 1111 / 013-222 2222"
+    assert business["terms"].startswith("Barang tidak dituntut")
     assert receipt["order"]["number"] == order["number"]
     assert receipt["issued_on"] == TODAY.isoformat()
 
@@ -676,13 +751,8 @@ def test_staff_cannot_set_prices(staff_client: TestClient, services: dict[str, i
     assert response.status_code == 403
 
 
-STAFF_ROUTES = re.compile(r"^/api/(orders|customers)(/|$)")
-STAFF_READS = {
-    ("GET", "/api/services"),
-    ("GET", "/api/services/{service_id}"),
-    ("GET", "/api/work/items"),
-    ("GET", "/api/work/log"),
-}
+STAFF_ROUTES = re.compile(r"^/api/(orders|customers|work)(/|$)")
+STAFF_READS = {("GET", "/api/services"), ("GET", "/api/services/{service_id}")}
 OFF_LIMITS = [
     (method, path)
     for method, path in PROTECTED_ROUTES

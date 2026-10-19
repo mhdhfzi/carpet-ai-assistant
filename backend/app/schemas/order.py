@@ -51,6 +51,7 @@ class PaymentIn(BaseModel):
 
 class ItemStatusUpdate(BaseModel):
     status: ItemStatus
+    # Kept on the timeline; when washing, also the carpet's wash note ("catatan").
     note: str | None = Field(default=None, max_length=300)
     # Packing a velvet carpet: rolled (gulung) or folded (lipat). Ignored for other items.
     fold: ItemFold | None = None
@@ -115,6 +116,7 @@ class OrderItemRead(BaseModel):
     status: ItemStatus
     washed_on: date | None
     washed_by: str | None
+    wash_note: str | None
     ready_on: date | None  # the day it was packed
     packed_by: str | None
     fold: ItemFold | None
@@ -193,12 +195,41 @@ class CustomerDetail(CustomerSummary):
     order_history: list[OrderRead]
 
 
+class WorkSummaryRead(BaseModel):
+    to_wash: int
+    to_pack: int
+    drying: int
+    ready_orders: int
+    unpaid: Decimal
+    unpaid_orders: int
+
+
+class UntaggedIn(BaseModel):
+    description: str = Field(min_length=2, max_length=200)  # e.g. "Biasa 7.7 x 5.3, biru"
+
+
+class UntaggedMatch(BaseModel):
+    tag: str = Field(min_length=3, max_length=20)  # e.g. "412-2"
+
+
+class UntaggedRead(BaseModel):
+    id: int
+    description: str
+    found_on: date
+    found_by: str | None
+    matched_tag: str | None
+
+
 class ReceiptBusiness(BaseModel):
-    name: str
+    name: str  # as printed on the receipt
+    logo: str  # the short mark in the round badge
     reg_no: str
     address: str
     phone: str
-    payment_details: str
+    email: str
+    facebook: str
+    payment_details: str  # one item per line
+    terms: str
 
 
 class ReceiptRead(BaseModel):

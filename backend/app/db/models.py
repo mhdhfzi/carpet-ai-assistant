@@ -469,6 +469,7 @@ class OrderItem(Base):
     # The washing and packing forms: the day, and who did it (from their own login).
     washed_on: Mapped[date | None] = mapped_column(Date)
     washed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    wash_note: Mapped[str | None] = mapped_column(Text)  # e.g. "tompok tak hilang"
     ready_on: Mapped[date | None] = mapped_column(Date)  # the day it was packed
     packed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
     fold: Mapped[ItemFold | None] = mapped_column(str_enum(ItemFold, "item_fold"))
@@ -495,6 +496,25 @@ class OrderEvent(Base):
 
     order: Mapped[Order] = relationship(back_populates="events")
     by: Mapped["Owner | None"] = relationship()
+
+
+class UntaggedItem(Base):
+    """A carpet found without its tag while washing ("XXX" on the paper form), kept on a
+    list until someone matches it back to its order."""
+
+    __tablename__ = "untagged_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    description: Mapped[str] = mapped_column(String(200))  # type, size, colour
+    found_on: Mapped[date] = mapped_column(Date)
+    found_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    matched_tag: Mapped[str | None] = mapped_column(String(20))  # e.g. "412-2"
+    matched_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    found_by: Mapped["Owner | None"] = relationship(foreign_keys=[found_by_id])
+    matched_by: Mapped["Owner | None"] = relationship(foreign_keys=[matched_by_id])
 
 
 class Payment(Base):

@@ -35,6 +35,7 @@ from app.db.models import (
     Payment,
     PricingUnit,
     Service,
+    UntaggedItem,
 )
 from app.schemas.booking import CustomerIn, normalize_phone
 from app.schemas.order import OrderCreate, OrderItemIn, OrderUpdate, PaymentIn
@@ -66,7 +67,15 @@ ITEM_STEP = {
     OrderStatus.COMPLETED: ItemStatus.READY,
 }
 # An item's progress: kept when the order's items are edited.
-_PROGRESS = ("status", "washed_on", "washed_by_id", "ready_on", "packed_by_id", "fold")
+_PROGRESS = (
+    "status",
+    "washed_on",
+    "washed_by_id",
+    "wash_note",
+    "ready_on",
+    "packed_by_id",
+    "fold",
+)
 # Any fixed number: serialises order creation so two saves never get the same number.
 _NUMBER_LOCK = 774_101
 
@@ -172,6 +181,116 @@ def work_log(db: Session, day: date) -> tuple[list[OrderItem], list[OrderItem]]:
         return list(db.scalars(query))
 
     return on(OrderItem.washed_on), on(OrderItem.ready_on)
+
+
+@dataclass(frozen=True)
+class WorkSummary:
+    """The numbers at the top of the dashboard: what needs doing today."""
+
+    to_wash: int  # items not washed yet
+    to_pack: int  # washed at least 5 days ago (or not a carpet): pack them
+    drying: int  # washed, still drying
+    ready_orders: int  # every item packed: waiting to be picked up or delivered
+    unpaid: Decimal  # still owed, across all orders except cancelled ones
+    unpaid_orders: int
+
+
+def work_summary(db: Session) -> WorkSummary:
+    rows = db.execute(
+        select(OrderItem.status, OrderItem.washed_on, Service.pricing_unit)
+        .join(OrderItem.order)
+        .join(OrderItem.service)
+        .where(Order.status.not_in(CLOSED), OrderItem.status != ItemStatus.READY)
+    ).all()
+    to_wash = sum(1 for status, _, _ in rows if status is ItemStatus.RECEIVED)
+    due = today() - timedelta(days=DRYING_DAYS[0])
+    to_pack = sum(
+        1
+        for status, washed_on, unit in rows
+        if status is ItemStatus.WASHED
+        and (unit is not PricingUnit.PER_SQFT or washed_on is None or washed_on <= due)
+    )
+    ready = db.scalar(select(func.count()).where(Order.status == OrderStatus.READY)) or 0
+    _, owed = _order_value_and_owed()
+    owing = (
+        select(owed.label("owed"))
+        .select_from(Order)
+        .where(Order.status != OrderStatus.CANCELLED)
+        .subquery()
+    )
+    unpaid, unpaid_orders = db.execute(
+        select(func.coalesce(func.sum(owing.c.owed), 0), func.count()).where(owing.c.owed > 0)
+    ).one()
+    return WorkSummary(
+        to_wash=to_wash,
+        to_pack=to_pack,
+        drying=sum(1 for status, _, _ in rows if status is ItemStatus.WASHED) - to_pack,
+        ready_orders=ready,
+        unpaid=Decimal(unpaid),
+        unpaid_orders=unpaid_orders,
+    )
+
+
+def _order_value_and_owed():
+    """Per order, as SQL expressions over Order: its value (priced items less discount; an
+    item without a price yet counts as 0) and what is still owed on it."""
+    items = (
+        select(func.coalesce(func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0))
+        .where(OrderItem.order_id == Order.id)
+        .scalar_subquery()
+    )
+    paid = (
+        select(func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.order_id == Order.id, Payment.voided_at.is_(None))
+        .scalar_subquery()
+    )
+    value = func.greatest(items - Order.discount, 0)
+    return value, func.greatest(value - paid, 0)
+
+
+# --- Untagged carpets ------------------------------------------------------------------------
+
+
+def list_untagged(db: Session) -> list[UntaggedItem]:
+    """Carpets still waiting to be matched to their order, oldest first."""
+    query = (
+        select(UntaggedItem)
+        .where(UntaggedItem.matched_tag.is_(None))
+        .options(selectinload(UntaggedItem.found_by))
+        .order_by(UntaggedItem.id)
+    )
+    return list(db.scalars(query))
+
+
+def log_untagged(db: Session, description: str, actor: Owner) -> UntaggedItem:
+    item = UntaggedItem(description=description, found_on=today(), found_by_id=actor.id)
+    db.add(item)
+    db.commit()
+    return item
+
+
+def match_untagged(db: Session, untagged_id: int, tag_text: str, actor: Owner) -> UntaggedItem:
+    """Someone recognised the carpet: record which tag it is (it must exist)."""
+    untagged = db.get(UntaggedItem, untagged_id)
+    if untagged is None:
+        raise NotFoundError(f"Untagged carpet {untagged_id} not found")
+    if untagged.matched_tag is not None:
+        raise BusinessRuleError(f"Already matched to {untagged.matched_tag}")
+    number, _, position = tag_text.strip().partition("-")
+    if not (number.isdigit() and position.isdigit()):
+        raise BusinessRuleError("Write the tag as order-item, e.g. 412-2")
+    exists = db.scalar(
+        select(OrderItem.id)
+        .join(OrderItem.order)
+        .where(Order.number == int(number), OrderItem.position == int(position))
+    )
+    if exists is None:
+        raise NotFoundError(f"There is no carpet {number}-{position}")
+    untagged.matched_tag = f"{int(number)}-{int(position)}"
+    untagged.matched_by_id = actor.id
+    untagged.matched_at = clock.now()
+    db.commit()
+    return untagged
 
 
 def _item_details():
@@ -441,6 +560,8 @@ def update_item_status(
             else f"{tag(order, item)} is already {item.status.value}"
         )
     _move_item(item, new, actor, fold)
+    if new is ItemStatus.WASHED and note:
+        item.wash_note = note  # the washing form's "catatan"
     order.events.append(
         OrderEvent(status=ORDER_STEP[new], item_tag=tag(order, item), note=note, by_id=actor.id)
     )
@@ -497,7 +618,7 @@ def _move_item(
         )
     item.status = new
     if reached < 1:
-        item.washed_on = item.washed_by_id = None
+        item.washed_on = item.washed_by_id = item.wash_note = None
     elif item.washed_on is None:
         item.washed_on, item.washed_by_id = today(), actor.id
     if reached < 2:

@@ -7,9 +7,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
+from app.api.business import initials
 from app.api.deps import CurrentOwner, DbSession, RequireOrdersEnabled, RequireOwner
 from app.core.config import get_settings
-from app.db.models import Customer, ItemStatus, Order, OrderItem, OrderStatus
+from app.db.models import Customer, ItemStatus, Order, OrderItem, OrderStatus, UntaggedItem
 from app.schemas.order import (
     CustomerDetail,
     CustomerSummary,
@@ -26,8 +27,12 @@ from app.schemas.order import (
     PaymentVoid,
     ReceiptBusiness,
     ReceiptRead,
+    UntaggedIn,
+    UntaggedMatch,
+    UntaggedRead,
     WorkItemRead,
     WorkLogRead,
+    WorkSummaryRead,
 )
 from app.services import orders
 from app.services.errors import NotFoundError
@@ -102,13 +107,18 @@ def void_payment(
 def receipt(order_id: int, db: DbSession) -> ReceiptRead:
     """What a printed receipt shows: the business's details and the order."""
     settings = get_settings()
+    name = settings.receipt_name or settings.business_name
     return ReceiptRead(
         business=ReceiptBusiness(
-            name=settings.business_name,
+            name=name,
+            logo=settings.receipt_logo or initials(name),
             reg_no=settings.business_reg_no,
             address=settings.business_address,
-            phone=settings.contact_whatsapp or "",
+            phone=settings.business_phones or settings.contact_whatsapp or "",
+            email=settings.business_email,
+            facebook=settings.business_facebook,
             payment_details=settings.payment_details,
+            terms=settings.receipt_terms,
         ),
         order=to_read(orders.get_order(db, order_id)),
         issued_on=orders.today(),
@@ -121,6 +131,42 @@ def work_items(
 ) -> list[WorkItemRead]:
     """The washing list (?status=received) or the packing list (?status=washed)."""
     return [_work_item(item) for item in orders.work_items(db, status)]
+
+
+@work_router.get("/summary", response_model=WorkSummaryRead)
+def work_summary(db: DbSession) -> WorkSummaryRead:
+    """The cards at the top: to wash, ready to pack, waiting for pickup, still unpaid."""
+    summary = orders.work_summary(db)
+    return WorkSummaryRead(**summary.__dict__)
+
+
+@work_router.get("/untagged", response_model=list[UntaggedRead])
+def list_untagged(db: DbSession) -> list[UntaggedRead]:
+    """Carpets found without a tag ("XXX"), not yet matched to an order."""
+    return [_untagged(u) for u in orders.list_untagged(db)]
+
+
+@work_router.post("/untagged", response_model=UntaggedRead, status_code=status.HTTP_201_CREATED)
+def log_untagged(data: UntaggedIn, db: DbSession, actor: CurrentOwner) -> UntaggedRead:
+    return _untagged(orders.log_untagged(db, data.description, actor))
+
+
+@work_router.post("/untagged/{untagged_id}/match", response_model=UntaggedRead)
+def match_untagged(
+    untagged_id: int, data: UntaggedMatch, db: DbSession, actor: CurrentOwner
+) -> UntaggedRead:
+    """It's been recognised: record which tag it is."""
+    return _untagged(orders.match_untagged(db, untagged_id, data.tag, actor))
+
+
+def _untagged(item: UntaggedItem) -> UntaggedRead:
+    return UntaggedRead(
+        id=item.id,
+        description=item.description,
+        found_on=item.found_on,
+        found_by=item.found_by.name if item.found_by else None,
+        matched_tag=item.matched_tag,
+    )
 
 
 @work_router.get("/log", response_model=WorkLogRead)
@@ -258,6 +304,7 @@ def _item_read(order: Order, item: OrderItem) -> OrderItemRead:
         status=item.status,
         washed_on=item.washed_on,
         washed_by=item.washed_by.name if item.washed_by else None,
+        wash_note=item.wash_note,
         ready_on=item.ready_on,
         packed_by=item.packed_by.name if item.packed_by else None,
         fold=item.fold,

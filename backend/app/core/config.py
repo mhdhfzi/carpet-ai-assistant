@@ -41,10 +41,16 @@ class Settings(BaseSettings):
     # The back office (orders, customers) in the dashboard: for a real business.
     orders_enabled: bool = False
     # Printed on receipts. All optional; blank lines are left out.
+    receipt_name: str = ""  # the name on the receipt, if not the business name
+    receipt_logo: str = ""  # the short mark in the round badge, e.g. "RGL"; blank = initials
     business_reg_no: str = ""  # e.g. the SSM registration number
     business_address: str = ""
-    # How to pay, e.g. "Maybank 1234 5678 9012 (Rizqiman Gemilang Legacy) / DuitNow QR".
+    business_email: str = ""
+    business_facebook: str = ""  # the Facebook page's name
+    business_phones: str = ""  # e.g. "019-276 2890 / 013-397 9447"; blank = contact_whatsapp
+    # How to pay; each line is printed on its own line, e.g. bank, account number, name.
     payment_details: str = ""
+    receipt_terms: str = ""  # small print, e.g. how long unclaimed items are kept
 
     # The business this deployment serves. The defaults are the public portfolio demo; a
     # deployment for a real business overrides them (one codebase, several deployments).
