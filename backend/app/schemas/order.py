@@ -4,7 +4,14 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import ItemStatus, OrderStatus, PaymentMethod, PricingUnit, ReturnMethod
+from app.db.models import (
+    ItemFold,
+    ItemStatus,
+    OrderStatus,
+    PaymentMethod,
+    PricingUnit,
+    ReturnMethod,
+)
 from app.schemas.booking import CustomerIn
 
 Feet = Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)]
@@ -45,6 +52,8 @@ class PaymentIn(BaseModel):
 class ItemStatusUpdate(BaseModel):
     status: ItemStatus
     note: str | None = Field(default=None, max_length=300)
+    # Packing a velvet carpet: rolled (gulung) or folded (lipat). Ignored for other items.
+    fold: ItemFold | None = None
 
 
 class PaymentVoid(BaseModel):
@@ -89,6 +98,7 @@ class OrderServiceRead(BaseModel):
     id: int
     name: str
     pricing_unit: PricingUnit
+    needs_fold: bool  # velvet: packed rolled or folded
 
 
 class OrderItemRead(BaseModel):
@@ -104,10 +114,31 @@ class OrderItemRead(BaseModel):
     notes: str | None
     status: ItemStatus
     washed_on: date | None
-    ready_on: date | None
-    # A washed carpet dries in 5-7 days; None once dry (or for items that aren't carpets).
+    washed_by: str | None
+    ready_on: date | None  # the day it was packed
+    packed_by: str | None
+    fold: ItemFold | None
+    # A washed carpet can be packed 5-7 days later, once dry; None once packed (or for items
+    # that aren't carpets).
     ready_from: date | None
     ready_by: date | None
+
+
+class WorkItemRead(OrderItemRead):
+    """An item on the washing or packing list, with the order it belongs to."""
+
+    order_id: int
+    order_number: int
+    customer_name: str
+    received_on: date
+
+
+class WorkLogRead(BaseModel):
+    """One day's washing and packing forms."""
+
+    day: date
+    washed: list[WorkItemRead]
+    packed: list[WorkItemRead]
 
 
 class OrderEventRead(BaseModel):
@@ -133,8 +164,8 @@ class OrderRead(BaseModel):
     # Carpets dry in 5-7 days after washing; None until washed (or with no carpets).
     ready_from: date | None
     ready_by: date | None
-    items_washed: int  # items washed or dry: "2 / 3 dicuci"
-    items_ready: int  # items dry: "2 / 3 siap"
+    items_washed: int  # items washed or packed: "2 / 3 dicuci"
+    items_ready: int  # items packed: "2 / 3 siap"
     price_pending: bool  # some item has no price yet: totals are partial
     subtotal: Decimal
     total: Decimal  # subtotal - discount

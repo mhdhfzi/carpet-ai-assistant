@@ -1,4 +1,5 @@
-"""The back office: orders and customers, for the owner and staff (ORDERS_ENABLED)."""
+"""The back office: orders, customers and the day's work, for the owner and staff
+(ORDERS_ENABLED)."""
 
 from datetime import date
 from decimal import Decimal
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentOwner, DbSession, RequireOrdersEnabled, RequireOwner
 from app.core.config import get_settings
-from app.db.models import Customer, Order, OrderStatus
+from app.db.models import Customer, ItemStatus, Order, OrderItem, OrderStatus
 from app.schemas.order import (
     CustomerDetail,
     CustomerSummary,
@@ -25,6 +26,8 @@ from app.schemas.order import (
     PaymentVoid,
     ReceiptBusiness,
     ReceiptRead,
+    WorkItemRead,
+    WorkLogRead,
 )
 from app.services import orders
 from app.services.errors import NotFoundError
@@ -35,6 +38,9 @@ router = APIRouter(
 )
 customers_router = APIRouter(
     prefix="/api/customers", tags=["orders"], dependencies=[RequireOwner, RequireOrdersEnabled]
+)
+work_router = APIRouter(
+    prefix="/api/work", tags=["orders"], dependencies=[RequireOwner, RequireOrdersEnabled]
 )
 
 
@@ -71,7 +77,9 @@ def update_item_status(
 ) -> OrderRead:
     """Move one carpet along (dicuci, siap). The order follows its slowest item."""
     order = orders.get_order(db, order_id)
-    return to_read(orders.update_item_status(db, order, item_id, data.status, data.note, actor))
+    return to_read(
+        orders.update_item_status(db, order, item_id, data.status, data.note, actor, data.fold)
+    )
 
 
 @router.post("/{order_id}/payments", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -104,6 +112,35 @@ def receipt(order_id: int, db: DbSession) -> ReceiptRead:
         ),
         order=to_read(orders.get_order(db, order_id)),
         issued_on=orders.today(),
+    )
+
+
+@work_router.get("/items", response_model=list[WorkItemRead])
+def work_items(
+    db: DbSession, status: Annotated[ItemStatus, Query()] = ItemStatus.RECEIVED
+) -> list[WorkItemRead]:
+    """The washing list (?status=received) or the packing list (?status=washed)."""
+    return [_work_item(item) for item in orders.work_items(db, status)]
+
+
+@work_router.get("/log", response_model=WorkLogRead)
+def work_log(db: DbSession, day: Annotated[date | None, Query()] = None) -> WorkLogRead:
+    """What was washed and packed on a day (default today), and by whom: the paper forms."""
+    day = day or orders.today()
+    washed, packed = orders.work_log(db, day)
+    return WorkLogRead(
+        day=day, washed=[_work_item(i) for i in washed], packed=[_work_item(i) for i in packed]
+    )
+
+
+def _work_item(item: OrderItem) -> WorkItemRead:
+    order = item.order
+    return WorkItemRead(
+        **_item_read(order, item).model_dump(),
+        order_id=order.id,
+        order_number=order.number,
+        customer_name=order.customer.name,
+        received_on=order.received_on,
     )
 
 
@@ -190,26 +227,7 @@ def to_read(order: Order) -> OrderRead:
             )
             for p in order.payments
         ],
-        items=[
-            OrderItemRead(
-                id=item.id,
-                position=item.position,
-                tag=orders.tag(order, item),
-                service=OrderServiceRead.model_validate(item.service),
-                length_ft=item.length_ft,
-                width_ft=item.width_ft,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
-                line_total=orders.line_total(item),
-                notes=item.notes,
-                status=item.status,
-                washed_on=item.washed_on,
-                ready_on=item.ready_on,
-                ready_from=item_window[0] if item_window else None,
-                ready_by=item_window[1] if item_window else None,
-            )
-            for item, item_window in ((i, orders.item_ready_window(i)) for i in order.items)
-        ],
+        items=[_item_read(order, item) for item in order.items],
         events=[
             OrderEventRead(
                 status=event.status,
@@ -221,4 +239,28 @@ def to_read(order: Order) -> OrderRead:
             for event in order.events
         ],
         created_at=order.created_at,
+    )
+
+
+def _item_read(order: Order, item: OrderItem) -> OrderItemRead:
+    window = orders.item_ready_window(item)
+    return OrderItemRead(
+        id=item.id,
+        position=item.position,
+        tag=orders.tag(order, item),
+        service=OrderServiceRead.model_validate(item.service),
+        length_ft=item.length_ft,
+        width_ft=item.width_ft,
+        quantity=item.quantity,
+        unit_price=item.unit_price,
+        line_total=orders.line_total(item),
+        notes=item.notes,
+        status=item.status,
+        washed_on=item.washed_on,
+        washed_by=item.washed_by.name if item.washed_by else None,
+        ready_on=item.ready_on,
+        packed_by=item.packed_by.name if item.packed_by else None,
+        fold=item.fold,
+        ready_from=window[0] if window else None,
+        ready_by=window[1] if window else None,
     )

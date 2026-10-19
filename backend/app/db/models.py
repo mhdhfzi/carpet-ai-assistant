@@ -64,7 +64,7 @@ class OwnerRole(StrEnum):
 class OrderStatus(StrEnum):
     RECEIVED = "received"  # Diterima: recorded in the system and tagged
     WASHED = "washed"  # Dicuci: washed, now drying (5-7 days for carpets)
-    READY = "ready"  # Siap: dry, the customer can be told
+    READY = "ready"  # Siap: dried and packed, the customer can be told
     COMPLETED = "completed"  # Selesai: picked up by the customer or delivered
     CANCELLED = "cancelled"
 
@@ -73,8 +73,15 @@ class ItemStatus(StrEnum):
     """Where one carpet (one tag) is. The order follows its slowest item."""
 
     RECEIVED = "received"  # Diterima
-    WASHED = "washed"  # Dicuci: drying
-    READY = "ready"  # Siap: dry
+    WASHED = "washed"  # Dicuci: drying (5-7 days for carpets)
+    READY = "ready"  # Siap: dried and packed (the packing form), waiting to go back
+
+
+class ItemFold(StrEnum):
+    """How a velvet carpet was packed: the packing form asks for one of the two."""
+
+    ROLLED = "rolled"  # gulung
+    FOLDED = "folded"  # lipat
 
 
 class PaymentMethod(StrEnum):
@@ -124,6 +131,8 @@ class Service(TimestampMixin, Base):
     # (cleaned at the shop, returned in 5-7 days), 2 hours to clean a sofa on site.
     visit_minutes: Mapped[int] = mapped_column(Integer, default=120, server_default="120")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Packed rolled or folded, and staff must record which (velvet carpets).
+    needs_fold: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Customer(TimestampMixin, Base):
@@ -451,17 +460,23 @@ class OrderItem(Base):
     # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
     unit_price: Mapped[Decimal | None] = mapped_column(Money)
     notes: Mapped[str | None] = mapped_column(Text)
-    # Each carpet moves on its own: washed one day, dry 5-7 days later.
+    # Each carpet moves on its own: washed one day, packed 5-7 days later once dry.
     status: Mapped[ItemStatus] = mapped_column(
         str_enum(ItemStatus, "order_item_status"),
         default=ItemStatus.RECEIVED,
         server_default=ItemStatus.RECEIVED.value,
     )
+    # The washing and packing forms: the day, and who did it (from their own login).
     washed_on: Mapped[date | None] = mapped_column(Date)
-    ready_on: Mapped[date | None] = mapped_column(Date)
+    washed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    ready_on: Mapped[date | None] = mapped_column(Date)  # the day it was packed
+    packed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    fold: Mapped[ItemFold | None] = mapped_column(str_enum(ItemFold, "item_fold"))
 
     order: Mapped[Order] = relationship(back_populates="items")
     service: Mapped["Service"] = relationship()
+    washed_by: Mapped["Owner | None"] = relationship(foreign_keys=[washed_by_id])
+    packed_by: Mapped["Owner | None"] = relationship(foreign_keys=[packed_by_id])
 
 
 class OrderEvent(Base):

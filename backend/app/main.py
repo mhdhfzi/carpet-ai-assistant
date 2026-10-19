@@ -40,6 +40,7 @@ ROUTERS = [
     closed_dates.router,
     orders.router,
     orders.customers_router,
+    orders.work_router,
     chat.router,
     conversations.router,
     unanswered.router,

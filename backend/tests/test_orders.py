@@ -344,6 +344,131 @@ def test_a_finished_order_s_carpets_cannot_move(
     assert move(client, order, 1, "received").status_code == 422
 
 
+# --- Washing and packing forms --------------------------------------------------------------
+
+
+def velvet_order(client: TestClient, services: dict[str, int]) -> dict:
+    response = client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [
+                carpet(services, "Karpet Velvet", "5", "8"),
+                carpet(services, "Karpet Biasa", "8", "10"),
+            ],
+        },
+    )
+    return response.json()
+
+
+def pack(client: TestClient, order: dict, position: int, fold: str | None = None):
+    item_id = order["items"][position - 1]["id"]
+    return client.patch(
+        f"/api/orders/{order['id']}/items/{item_id}", json={"status": "ready", "fold": fold}
+    )
+
+
+def test_washing_and_packing_record_the_day_and_who_did_it(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(staff_client, services)
+
+    washed = move(staff_client, order, 1, "washed").json()["items"][0]
+    packed = move(staff_client, order, 1, "ready").json()["items"][0]
+
+    assert (washed["washed_on"], washed["washed_by"]) == (TODAY.isoformat(), "Worker")
+    assert (packed["ready_on"], packed["packed_by"]) == (TODAY.isoformat(), "Worker")
+
+
+def test_a_velvet_carpet_is_packed_rolled_or_folded(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = velvet_order(staff_client, services)
+    staff_client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
+
+    unsaid = pack(staff_client, order, 1)
+    rolled = pack(staff_client, order, 1, "rolled").json()
+    other = pack(staff_client, order, 2, "folded").json()
+
+    assert unsaid.status_code == 422
+    assert "1-1" in unsaid.json()["detail"]
+    assert rolled["items"][0]["fold"] == "rolled"
+    assert rolled["items"][0]["service"]["needs_fold"] is True
+    assert other["items"][1]["fold"] is None  # only velvet is rolled or folded
+
+
+def test_the_whole_order_cannot_be_packed_without_choosing_for_velvet(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = velvet_order(client, services)
+    client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
+
+    response = client.patch(f"/api/orders/{order['id']}", json={"status": "ready"})
+
+    assert response.status_code == 422
+    assert client.get(f"/api/orders/{order['id']}").json()["status"] == "washed"
+
+
+def test_going_back_clears_the_packing_record(client: TestClient, services: dict[str, int]) -> None:
+    order = velvet_order(client, services)
+    move(client, order, 1, "washed")
+    pack(client, order, 1, "folded")
+
+    back = move(client, order, 1, "washed").json()["items"][0]
+
+    assert (back["status"], back["ready_on"], back["packed_by"], back["fold"]) == (
+        "washed",
+        None,
+        None,
+        None,
+    )
+    assert back["washed_on"] == TODAY.isoformat()  # the wash still happened
+
+
+def test_the_washing_and_packing_lists(staff_client: TestClient, services: dict[str, int]) -> None:
+    first = two_carpets(staff_client, services)
+    second = new_order(staff_client, services)
+    move(staff_client, first, 1, "washed")
+
+    to_wash = staff_client.get("/api/work/items", params={"status": "received"}).json()
+    to_pack = staff_client.get("/api/work/items", params={"status": "washed"}).json()
+
+    assert [i["tag"] for i in to_wash] == ["1-2", "2-1", "2-2"]
+    assert to_wash[0]["customer_name"] == "Ali"
+    assert to_wash[1]["order_id"] == second["id"]
+    assert [i["tag"] for i in to_pack] == ["1-1"]
+    assert to_pack[0]["ready_from"] == "2026-10-15"  # 5 days after washing
+
+
+def test_a_cancelled_order_is_not_on_the_washing_list(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+    client.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
+
+    assert client.get("/api/work/items", params={"status": "received"}).json() == []
+
+
+def test_the_day_s_forms_list_what_was_washed_and_packed(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(staff_client, services)
+    move(staff_client, order, 1, "washed")
+    move(staff_client, order, 2, "washed")
+    move(staff_client, order, 1, "ready")
+
+    today = staff_client.get("/api/work/log").json()
+    other_day = staff_client.get("/api/work/log", params={"day": "2026-10-09"}).json()
+
+    assert today["day"] == TODAY.isoformat()
+    assert [(i["tag"], i["washed_by"]) for i in today["washed"]] == [
+        ("1-1", "Worker"),
+        ("1-2", "Worker"),
+    ]
+    assert [(i["tag"], i["packed_by"]) for i in today["packed"]] == [("1-1", "Worker")]
+    assert other_day["washed"] == other_day["packed"] == []
+
+
 # --- Finding orders and customers ------------------------------------------------------------
 
 
@@ -552,7 +677,12 @@ def test_staff_cannot_set_prices(staff_client: TestClient, services: dict[str, i
 
 
 STAFF_ROUTES = re.compile(r"^/api/(orders|customers)(/|$)")
-STAFF_READS = {("GET", "/api/services"), ("GET", "/api/services/{service_id}")}
+STAFF_READS = {
+    ("GET", "/api/services"),
+    ("GET", "/api/services/{service_id}"),
+    ("GET", "/api/work/items"),
+    ("GET", "/api/work/log"),
+}
 OFF_LIMITS = [
     (method, path)
     for method, path in PROTECTED_ROUTES

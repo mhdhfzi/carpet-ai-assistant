@@ -56,10 +56,11 @@ def current_owner(
     return owner
 
 
-# Staff (workers) record orders and look up customers and prices; everything else (chats,
-# analytics, bookings, settings) is the owner's. Allow-listed, so anything new is denied.
+# Staff (workers) record orders, work through the washing and packing lists, and look up
+# customers and prices; everything else (chats, analytics, bookings, settings) is the
+# owner's. Allow-listed, so anything new is denied.
 STAFF_PATHS = ("/api/orders", "/api/customers")
-STAFF_READ_PATHS = ("/api/services", "/api/auth/me")
+STAFF_READ_PATHS = ("/api/services", "/api/auth/me", "/api/work")
 
 
 def _staff_may(request: Request) -> bool:

@@ -6,8 +6,10 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
 - staff record orders and move them one step along; the owner can set prices and
   discounts, cancel, and correct a status
 - payments are never edited or deleted: the owner voids a wrong one, with a reason
-- each item (each tagged carpet) is washed and dries on its own; the order follows its
-  slowest item, and is handed back only when every item is dry
+- each item (each tagged carpet) is washed, dries and is packed on its own, recording who
+  did each step (the washing and packing forms); velvet is packed rolled or folded, and
+  staff must say which
+- the order follows its slowest item, and is handed back only when every item is packed
 """
 
 from collections.abc import Collection
@@ -22,6 +24,7 @@ from app.core import clock
 from app.core.security import ForbiddenError
 from app.db.models import (
     Customer,
+    ItemFold,
     ItemStatus,
     Order,
     OrderEvent,
@@ -55,13 +58,15 @@ ORDER_STEP = {
     ItemStatus.WASHED: OrderStatus.WASHED,
     ItemStatus.READY: OrderStatus.READY,
 }
-# Moving the whole order to a step moves its items there (handed back = all dry).
+# Moving the whole order to a step moves its items there (handed back = all packed).
 ITEM_STEP = {
     OrderStatus.RECEIVED: ItemStatus.RECEIVED,
     OrderStatus.WASHED: ItemStatus.WASHED,
     OrderStatus.READY: ItemStatus.READY,
     OrderStatus.COMPLETED: ItemStatus.READY,
 }
+# An item's progress: kept when the order's items are edited.
+_PROGRESS = ("status", "washed_on", "washed_by_id", "ready_on", "packed_by_id", "fold")
 # Any fixed number: serialises order creation so two saves never get the same number.
 _NUMBER_LOCK = 774_101
 
@@ -95,6 +100,8 @@ def _with_details():
     return (
         selectinload(Order.customer),
         selectinload(Order.items).selectinload(OrderItem.service),
+        selectinload(Order.items).selectinload(OrderItem.washed_by),
+        selectinload(Order.items).selectinload(OrderItem.packed_by),
         selectinload(Order.events).selectinload(OrderEvent.by),
         selectinload(Order.payments).selectinload(Payment.received_by),
     )
@@ -137,6 +144,45 @@ def _search(q: str):
     return or_(*conditions)
 
 
+def work_items(db: Session, status: ItemStatus, *, limit: int = 300) -> list[OrderItem]:
+    """Items waiting for their next step across open orders: the washing list (received)
+    or the packing list (washed). Longest-waiting first."""
+    query = (
+        select(OrderItem)
+        .join(OrderItem.order)
+        .where(OrderItem.status == status, Order.status.not_in(CLOSED))
+        .options(*_item_details())
+        .order_by(OrderItem.washed_on.asc().nulls_first(), Order.number, OrderItem.position)
+        .limit(limit)
+    )
+    return list(db.scalars(query))
+
+
+def work_log(db: Session, day: date) -> tuple[list[OrderItem], list[OrderItem]]:
+    """(items washed that day, items packed that day): the day's washing and packing forms."""
+
+    def on(column) -> list[OrderItem]:
+        query = (
+            select(OrderItem)
+            .join(OrderItem.order)
+            .where(column == day)
+            .options(*_item_details())
+            .order_by(Order.number, OrderItem.position)
+        )
+        return list(db.scalars(query))
+
+    return on(OrderItem.washed_on), on(OrderItem.ready_on)
+
+
+def _item_details():
+    return (
+        selectinload(OrderItem.order).selectinload(Order.customer),
+        selectinload(OrderItem.service),
+        selectinload(OrderItem.washed_by),
+        selectinload(OrderItem.packed_by),
+    )
+
+
 def totals(order: Order) -> Totals:
     lines = [line_total(item) for item in order.items]
     subtotal = sum((line for line in lines if line is not None), Decimal("0"))
@@ -153,17 +199,17 @@ def line_total(item: OrderItem) -> Decimal | None:
 
 
 def ready_window(order: Order) -> tuple[date, date] | None:
-    """When the carpets should all be dry: 5-7 days after the last one was washed."""
+    """When the carpets should all be dry enough to pack: 5-7 days after the last wash."""
     carpets = [i for i in order.items if i.service.pricing_unit is PricingUnit.PER_SQFT]
     if not carpets or any(i.washed_on is None for i in carpets):
         return None
-    if all(i.status is ItemStatus.READY for i in carpets):
+    if all(i.status is ItemStatus.READY for i in carpets):  # all packed
         return None
     return item_ready_window(max(carpets, key=lambda i: i.washed_on))
 
 
 def item_ready_window(item: OrderItem) -> tuple[date, date] | None:
-    """When one washed carpet should be dry."""
+    """When one washed carpet should be dry enough to pack."""
     if item.washed_on is None or item.status is not ItemStatus.WASHED:
         return None
     if item.service.pricing_unit is not PricingUnit.PER_SQFT:
@@ -174,7 +220,7 @@ def item_ready_window(item: OrderItem) -> tuple[date, date] | None:
 
 
 def progress(order: Order) -> tuple[int, int]:
-    """(items washed or dry, items dry): shown as "2 / 3 siap" on the order list."""
+    """(items washed or packed, items packed): shown as "2 / 3 siap" on the order list."""
     washed = sum(1 for i in order.items if i.status is not ItemStatus.RECEIVED)
     ready = sum(1 for i in order.items if i.status is ItemStatus.READY)
     return washed, ready
@@ -182,6 +228,10 @@ def progress(order: Order) -> tuple[int, int]:
 
 def tag(order: Order, item: OrderItem) -> str:
     return f"{order.number}-{item.position}"
+
+
+def _tag(item: OrderItem) -> str:
+    return tag(item.order, item)
 
 
 # --- Customers -------------------------------------------------------------------------------
@@ -371,9 +421,11 @@ def update_item_status(
     new: ItemStatus,
     note: str | None,
     actor: Owner,
+    fold: ItemFold | None = None,
 ) -> Order:
     """Move one carpet along (e.g. "412-2 dicuci"). Staff go one step forward; going back is
-    a correction for the owner. The order then follows its slowest item."""
+    a correction for the owner. Packing a velvet carpet needs `fold` (gulung or lipat). The
+    order then follows its slowest item."""
     if order.status in CLOSED:
         raise BusinessRuleError(f"This order is {order.status.value}")
     item = next((i for i in order.items if i.id == item_id), None)
@@ -388,7 +440,7 @@ def update_item_status(
             if step + 1 < len(ITEM_STEPS)
             else f"{tag(order, item)} is already {item.status.value}"
         )
-    _move_item(item, new)
+    _move_item(item, new, actor, fold)
     order.events.append(
         OrderEvent(status=ORDER_STEP[new], item_tag=tag(order, item), note=note, by_id=actor.id)
     )
@@ -417,7 +469,7 @@ def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owne
             # Forward: items behind catch up (items ahead stay ahead). Back, an owner's
             # correction: items ahead return to that step.
             if here < target or (backward and here > target):
-                _move_item(item, ITEM_STEPS[target])
+                _move_item(item, ITEM_STEPS[target], actor)
     order.status = new
     _set_step_dates(order, new)
     order.events.append(OrderEvent(status=new, note=note, by_id=actor.id))
@@ -430,12 +482,28 @@ def _rank(status: OrderStatus) -> int:
     return path.index(status) if status in path else 0
 
 
-def _move_item(item: OrderItem, new: ItemStatus) -> None:
-    """Set an item's step, recording the day each step was reached (going back clears)."""
+def _move_item(
+    item: OrderItem, new: ItemStatus, actor: Owner, fold: ItemFold | None = None
+) -> None:
+    """Set an item's step, recording the day each step was reached and who did it, as the
+    washing and packing forms do. Going back clears the later steps."""
     reached = ITEM_STEPS.index(new)
+    packing = reached >= 2 and item.ready_on is None
+    fold = fold if item.service.needs_fold else None
+    if packing and item.service.needs_fold and fold is None:
+        raise BusinessRuleError(
+            f"{_tag(item)}: {item.service.name} is packed rolled or folded; "
+            "pack it on its own and choose which"
+        )
     item.status = new
-    item.washed_on = (item.washed_on or today()) if reached >= 1 else None
-    item.ready_on = (item.ready_on or today()) if reached >= 2 else None
+    if reached < 1:
+        item.washed_on = item.washed_by_id = None
+    elif item.washed_on is None:
+        item.washed_on, item.washed_by_id = today(), actor.id
+    if reached < 2:
+        item.ready_on = item.packed_by_id = item.fold = None
+    elif packing:
+        item.ready_on, item.packed_by_id, item.fold = today(), actor.id, fold
 
 
 def _follow_items(order: Order) -> None:
@@ -512,9 +580,8 @@ def _build_items(
         )
         before = keep.get((service.id, position)) if keep else None
         if before is not None:
-            built[-1].status = before.status
-            built[-1].washed_on = before.washed_on
-            built[-1].ready_on = before.ready_on
+            for field in _PROGRESS:
+                setattr(built[-1], field, getattr(before, field))
     return built
 
 
