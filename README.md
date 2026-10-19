@@ -61,6 +61,16 @@ flowchart LR
 | **Daily record** | Each day's washing and packing forms (who did what), printable. |
 | **For the owner** | Summary cards (to wash, ready to pack, waiting for pickup, unpaid), customers with what they owe, and business analytics: money received by method, busy days, average days to finish. |
 
+The screenshots use fictional customers in a local copy (the bank account is masked):
+
+| Buku Utama: every order, its carpets and what's owed | Receipt, laid out like the paper one |
+|---|---|
+| ![The book of orders](docs/screenshots/backoffice-book.png) | ![Receipt with the PAID stamp and the WhatsApp message](docs/screenshots/backoffice-receipt.png) |
+
+| Borang Packing: carpets dry enough to pack | Borang Cuci on a worker's phone |
+|---|---|
+| ![The packing form](docs/screenshots/backoffice-packing.png) | ![The washing form on a phone](docs/screenshots/backoffice-wash-phone.png) |
+
 **Roles.** Workers record orders, wash, pack and take payments. Prices, discounts, cancelling, moving a carpet back a step, voiding a payment and analytics are the owner's. Like the rest of the API, staff access is deny-by-default: only an explicit allow-list of routes is open to them, and a test enumerates every route to prove it.
 
 ### Design decisions (back office)

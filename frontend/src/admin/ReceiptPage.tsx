@@ -210,16 +210,7 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
         </div>
       </div>
 
-      <div className="relative my-4 overflow-x-auto">
-        {paid && (
-          <div
-            aria-label={`Dibayar ${formatShortDate(paid)}`}
-            className="pointer-events-none absolute top-8 right-6 z-10 -rotate-8 rounded border-4 border-red-600 bg-white/85 px-6 py-2 text-center text-red-600 shadow-[inset_0_0_0_2px_#dc2626] sm:right-12"
-          >
-            <p className="text-3xl font-black tracking-widest">PAID</p>
-            <p className="border-t border-red-600 pt-0.5 text-xs font-bold">Date : {formatShortDate(paid)}</p>
-          </div>
-        )}
+      <div className="my-4 overflow-x-auto">
         <table className="w-full border-2 border-slate-800 text-sm">
           <thead>
             <tr className="bg-slate-900 text-xs text-white uppercase">
@@ -278,7 +269,17 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-6 text-xs text-slate-600">
+      {/* The stamp sits by the signature, as on paper, clear of every amount. */}
+      <div className="relative mt-4 grid grid-cols-2 gap-6 pt-20 text-xs text-slate-600">
+        {paid && (
+          <div
+            aria-label={`Dibayar ${formatShortDate(paid)}`}
+            className="pointer-events-none absolute top-1 left-[55%] -rotate-8 rounded border-4 border-red-600 px-6 py-1.5 text-center text-red-600 shadow-[inset_0_0_0_2px_#dc2626]"
+          >
+            <p className="text-3xl font-black tracking-widest">PAID</p>
+            <p className="border-t border-red-600 pt-0.5 text-xs font-bold">Date : {formatShortDate(paid)}</p>
+          </div>
+        )}
         <p className="border-t border-slate-400 pt-1">Terima oleh</p>
         <p className="border-t border-slate-400 pt-1">Tandatangan</p>
       </div>
