@@ -10,6 +10,7 @@ import { NewOrderPage } from './NewOrderPage'
 import { OrderPage } from './OrderPage'
 import { OrdersPage } from './OrdersPage'
 import { ReceiptPage } from './ReceiptPage'
+import { LogPage, PackPage, WashPage } from './WorkPages'
 import { type Route, href, useHashRoute } from './useHashRoute'
 
 type NavItem = { route: Route; label: string }
@@ -17,8 +18,12 @@ type NavItem = { route: Route; label: string }
 /** The menu depends on the business (does it use orders? bookings?) and on the role:
  * staff only work with orders; the server refuses them everything else anyway. */
 function navFor(business: Business | null | undefined, staff: boolean): NavItem[] {
+  // In the order the work happens: record, wash, pack (5-7 days later), the day's forms.
   const backOffice: NavItem[] = [
     { route: { page: 'orders' }, label: 'Pesanan' },
+    { route: { page: 'wash' }, label: 'Cuci' },
+    { route: { page: 'pack' }, label: 'Packing' },
+    { route: { page: 'log' }, label: 'Rekod harian' },
     { route: { page: 'customers' }, label: 'Pelanggan' },
   ]
   if (staff) return backOffice
@@ -35,6 +40,9 @@ const STAFF_PAGES = new Set<Route['page']>([
   'order',
   'receipt',
   'customer',
+  'wash',
+  'pack',
+  'log',
 ])
 
 export function App() {
@@ -70,6 +78,12 @@ function Page({ route }: { route: Route }) {
       return <OrdersPage />
     case 'customers':
       return <CustomersPage />
+    case 'wash':
+      return <WashPage />
+    case 'pack':
+      return <PackPage />
+    case 'log':
+      return <LogPage />
     case 'receipt':
       return <ReceiptPage key={route.id} id={route.id} />
     case 'new-order':
@@ -112,13 +126,13 @@ function Layout({
             {business && `${shortName(business.name)} `}
             <span className="text-brand">Dashboard</span>
           </p>
-          <nav aria-label="Main" className="flex gap-1">
+          <nav aria-label="Main" className="-mx-1 flex max-w-full gap-1 overflow-x-auto">
             {nav.map((item) => (
               <a
                 key={item.route.page}
                 href={href(item.route)}
                 aria-current={section(current) === item.route.page ? 'page' : undefined}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-white/70 hover:text-white aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
+                className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold text-white/70 hover:text-white aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
               >
                 {item.label}
               </a>

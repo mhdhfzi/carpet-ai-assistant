@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { AuthProvider } from './auth'
-import type { Order, Receipt, Service } from './types'
+import type { Order, Receipt, Service, WorkItem } from './types'
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown }
 type Handler = (call: Call) => { status?: number; body?: unknown }
@@ -65,7 +65,7 @@ function order(overrides: Partial<Order> = {}): Order {
         id: 1,
         position: 1,
         tag: '412-1',
-        service: { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft' },
+        service: { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', needs_fold: false },
         length_ft: '8.00',
         width_ft: '10.00',
         quantity: '80.00',
@@ -74,7 +74,10 @@ function order(overrides: Partial<Order> = {}): Order {
         notes: 'tompok kopi',
         status: 'received',
         washed_on: null,
+        washed_by: null,
         ready_on: null,
+        packed_by: null,
+        fold: null,
         ready_from: null,
         ready_by: null,
       },
@@ -134,7 +137,7 @@ describe('back office', () => {
     expect(card).toHaveTextContent('Karpet Biasa 8 x 10 kaki')
     expect(card).toHaveTextContent('Diterima')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Pelanggan'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Cuci', 'Packing', 'Rekod harian', 'Pelanggan'])
     expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received'])
   })
 
@@ -148,7 +151,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Pelanggan', 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pesanan', 'Cuci', 'Packing', 'Rekod harian', 'Pelanggan', 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
@@ -227,7 +230,7 @@ describe('back office', () => {
 
     expect(await screen.findByText(/Jangka kering: 15 Oct – 17 Oct/)).toBeInTheDocument()
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed' })
-    expect(screen.getByRole('button', { name: 'Tanda siap (kering)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tanda siap (sudah dipack)' })).toBeInTheDocument()
   })
 
   it('shows the server explanation when a change is refused', async () => {
@@ -349,7 +352,7 @@ describe('back office', () => {
       id: 2,
       position: 2,
       tag: '412-2',
-      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const },
+      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const, needs_fold: false },
     }
     const twoCarpets = order({ items: [order().items[0], second] })
     const firstWashed = order({
@@ -369,7 +372,7 @@ describe('back office', () => {
 
     expect(await screen.findByRole('button', { name: 'Tanda semua sudah dicuci' })).toBeInTheDocument()
     const lines = screen.getAllByRole('listitem').filter((li) => /412-\d/.test(li.textContent ?? ''))
-    await user.click(within(lines[0]).getByRole('button', { name: 'Dicuci' }))
+    await user.click(within(lines[0]).getByRole('button', { name: 'Siap cuci' }))
 
     expect(calls.find((c) => c.method === 'PATCH')?.path).toBe('/api/orders/7/items/1')
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed' })
@@ -426,4 +429,85 @@ describe('back office', () => {
     expect(screen.queryByText('Chat to booking, by channel')).toBeNull()
     expect(calls.find((c) => c.path === '/api/analytics/business')?.query.get('days')).toBe('30')
   })
+
+  it('lists carpets to wash by order and records one as washed', async () => {
+    let washed = false
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: washed ? [] : [workItem()] }),
+      'GET /api/work/log': (call) => ({
+        body: { day: call.query.get('day'), washed: washed ? [workItem({ washed_by: 'Amir' })] : [], packed: [] },
+      }),
+      'PATCH /api/orders/7/items/1': () => {
+        washed = true
+        return { body: order() }
+      },
+    })
+    const user = renderSignedIn('#/cuci')
+
+    expect(await screen.findByText('#412 · Ali')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Siap cuci' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('412-1 dicuci.')
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed' })
+    expect(await screen.findByText('Dicuci hari ini (1)')).toBeInTheDocument()
+    expect(screen.getByText('Semua karpet sudah dicuci.')).toBeInTheDocument()
+  })
+
+  it('packs velvet rolled or folded and keeps drying carpets apart', async () => {
+    const velvet = workItem({
+      id: 1,
+      service: { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', needs_fold: true },
+      status: 'washed',
+      washed_on: '2020-01-01',
+      ready_from: '2020-01-06',
+      ready_by: '2020-01-08',
+    })
+    const drying = workItem({ id: 2, position: 2, tag: '412-2', status: 'washed', washed_on: '2099-01-01', ready_from: '2099-01-06', ready_by: '2099-01-08' })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: [velvet, drying] }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'PATCH /api/orders/7/items/1': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/packing')
+
+    expect(await screen.findByText('Sedia untuk pack (1)')).toBeInTheDocument()
+    expect(screen.getByText('Masih kering (1)')).toBeInTheDocument()
+    expect(screen.getByText(/boleh pack 6 Jan/)).toBeInTheDocument()
+    expect(screen.queryAllByRole('button', { name: 'Siap pack' })).toHaveLength(1) // the drying one
+    await user.click(screen.getByRole('button', { name: 'Gulung' }))
+
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready', fold: 'rolled' })
+    expect(await screen.findByRole('status')).toHaveTextContent('412-1 dipack (Gulung).')
+  })
+
+  it("prints the day's washing and packing forms with who did them", async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/log': (call) => ({
+        body: {
+          day: call.query.get('day'),
+          washed: [workItem({ washed_by: 'Amir' }), workItem({ id: 2, tag: '412-2', washed_by: 'Ammar' })],
+          packed: [workItem({ id: 3, tag: '410-1', packed_by: 'Razi', fold: 'folded' })],
+        },
+      }),
+    })
+    renderSignedIn('#/rekod')
+
+    const washing = await screen.findByRole('region', { name: 'Rekod cuci karpet' })
+    expect(washing).toHaveTextContent('Staf bertugas: Amir, Ammar')
+    expect(washing).toHaveTextContent('1412-1Karpet Biasa8 x 10 kakitompok kopiAmir')
+    const packing = screen.getByRole('region', { name: 'Rekod packing karpet' })
+    expect(packing).toHaveTextContent('1410-1Karpet Biasa8 x 10 kakiLipatRazi')
+    expect(screen.getByRole('button', { name: 'Cetak' })).toBeInTheDocument()
+  })
 })
+
+function workItem(overrides: Partial<WorkItem> = {}): WorkItem {
+  return { ...order().items[0], order_id: 7, order_number: 412, customer_name: 'Ali', received_on: '2026-10-10', ...overrides }
+}
+

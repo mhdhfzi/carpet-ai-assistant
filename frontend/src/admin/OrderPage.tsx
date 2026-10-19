@@ -5,6 +5,7 @@ import {
   ORDER_ACTION_LABEL,
   ORDER_STATUS_LABEL,
   ALL_ITEMS_ACTION_LABEL,
+  FOLD_LABEL,
   ITEM_ACTION_LABEL,
   ITEM_STATUS_LABEL,
   ITEM_STATUS_STYLE,
@@ -20,6 +21,7 @@ import {
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, rowsFromItems, rowsToInput } from './itemRows'
 import {
+  type ItemFold,
   type ItemStatus,
   NEXT_ITEM_STATUS,
   NEXT_ORDER_STATUS,
@@ -81,6 +83,8 @@ export function OrderPage({ id }: { id: number }) {
 
   const next = NEXT_ORDER_STATUS[order.status]
   const closed = order.status === 'completed' || order.status === 'cancelled'
+  // Velvet is packed rolled or folded, so it can't be packed with the rest in one go.
+  const velvetToPack = order.items.some((i) => i.status === 'washed' && i.service.needs_fold)
 
   return (
     <article className="mx-auto max-w-xl space-y-5">
@@ -104,7 +108,11 @@ export function OrderPage({ id }: { id: number }) {
         </p>
       )}
 
-      {next && (
+      {next === 'ready' && velvetToPack ? (
+        <p className="rounded-2xl bg-white p-4 text-center text-sm ring-1 ring-line">
+          Ada karpet velvet: pack setiap karpet di bawah dan pilih Gulung atau Lipat.
+        </p>
+      ) : next && (
         <button
           type="button"
           disabled={busy}
@@ -180,7 +188,7 @@ export function OrderPage({ id }: { id: number }) {
                   open={!closed}
                   isOwner={isOwner}
                   busy={busy}
-                  onMove={(status) => send(`/items/${item.id}`, 'PATCH', { status })}
+                  onMove={(status, fold) => send(`/items/${item.id}`, 'PATCH', { status, fold })}
                 />
               </li>
             ))}
@@ -409,29 +417,35 @@ function ItemProgress({
   open: boolean
   isOwner: boolean
   busy: boolean
-  onMove: (status: ItemStatus) => Promise<void>
+  onMove: (status: ItemStatus, fold?: ItemFold) => Promise<void>
 }) {
   const next = NEXT_ITEM_STATUS[item.status]
+  // Packing velvet: one button per way of packing it.
+  const choices: { label: string; fold?: ItemFold }[] =
+    next === 'ready' && item.service.needs_fold
+      ? (['rolled', 'folded'] as const).map((fold) => ({ label: `Pack: ${FOLD_LABEL[fold]}`, fold }))
+      : next
+        ? [{ label: ITEM_ACTION_LABEL[next] }]
+        : []
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${ITEM_STATUS_STYLE[item.status]}`}>
         {ITEM_STATUS_LABEL[item.status]}
       </span>
-      {item.ready_from && item.ready_by && (
-        <span className="text-xs text-ink-soft">
-          dicuci {formatDay(item.washed_on as string)} · kering {formatDay(item.ready_from)}–{formatDay(item.ready_by)}
-        </span>
-      )}
-      {open && next && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onMove(next)}
-          className="ml-auto rounded-full bg-brand px-3 py-1.5 text-xs font-semibold hover:bg-brand-hover disabled:opacity-50"
-        >
-          {ITEM_ACTION_LABEL[next]}
-        </button>
-      )}
+      <span className="text-xs text-ink-soft">{stepHistory(item)}</span>
+      {open &&
+        next &&
+        choices.map((choice, index) => (
+          <button
+            key={choice.label}
+            type="button"
+            disabled={busy}
+            onClick={() => onMove(next, choice.fold)}
+            className={`${index === 0 ? 'ml-auto ' : ''}rounded-full bg-brand px-3 py-1.5 text-xs font-semibold hover:bg-brand-hover disabled:opacity-50`}
+          >
+            {choice.label}
+          </button>
+        ))}
       {open && isOwner && item.status !== 'received' && (
         <button
           type="button"
@@ -444,6 +458,18 @@ function ItemProgress({
       )}
     </div>
   )
+}
+
+/** "dicuci 15 Oct (Amir) · kering 20–22 Oct" or "dipack 21 Oct (Razi), Gulung". */
+function stepHistory(item: Order['items'][number]): string {
+  const by = (name: string | null) => (name ? ` (${name})` : '')
+  const parts: string[] = []
+  if (item.washed_on) parts.push(`dicuci ${formatDay(item.washed_on)}${by(item.washed_by)}`)
+  if (item.ready_from && item.ready_by) parts.push(`kering ${formatDay(item.ready_from)}–${formatDay(item.ready_by)}`)
+  if (item.ready_on) {
+    parts.push(`dipack ${formatDay(item.ready_on)}${by(item.packed_by)}${item.fold ? `, ${FOLD_LABEL[item.fold]}` : ''}`)
+  }
+  return parts.join(' · ')
 }
 
 function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {

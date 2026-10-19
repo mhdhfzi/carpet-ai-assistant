@@ -86,6 +86,8 @@ export type UnansweredQuestion = {
 
 export type OrderStatus = 'received' | 'washed' | 'ready' | 'completed' | 'cancelled'
 export type ItemStatus = 'received' | 'washed' | 'ready'
+/** How a velvet carpet was packed: gulung or lipat. */
+export type ItemFold = 'rolled' | 'folded'
 export type ReturnMethod = 'pickup' | 'delivery'
 export type PaymentMethod = 'cash' | 'transfer' | 'duitnow'
 
@@ -116,7 +118,7 @@ export type OrderItem = {
   id: number
   position: number
   tag: string
-  service: { id: number; name: string; pricing_unit: PricingUnit }
+  service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean }
   length_ft: string | null
   width_ft: string | null
   quantity: string
@@ -125,10 +127,24 @@ export type OrderItem = {
   notes: string | null
   status: ItemStatus
   washed_on: string | null
-  ready_on: string | null
+  washed_by: string | null
+  ready_on: string | null // the day it was packed
+  packed_by: string | null
+  fold: ItemFold | null
   ready_from: string | null
   ready_by: string | null
 }
+
+/** An item on the washing or packing list, with its order. */
+export type WorkItem = OrderItem & {
+  order_id: number
+  order_number: number
+  customer_name: string
+  received_on: string
+}
+
+/** One day's washing and packing forms. */
+export type WorkLog = { day: string; washed: WorkItem[]; packed: WorkItem[] }
 
 export type Order = {
   id: number

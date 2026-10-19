@@ -7,6 +7,9 @@ export type Route =
   | { page: 'analytics' }
   | { page: 'orders' }
   | { page: 'customers' }
+  | { page: 'wash' }
+  | { page: 'pack' }
+  | { page: 'log' }
   | { page: 'new-order' }
   | { page: 'order'; id: number }
   | { page: 'receipt'; id: number }
@@ -24,6 +27,12 @@ export function parseRoute(hash: string): Route | null {
       if (id === 'new') return { page: 'new-order' }
       if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
       return id && Number.isInteger(number) && number > 0 ? { page: 'order', id: number } : { page: 'orders' }
+    case 'cuci':
+      return { page: 'wash' }
+    case 'packing':
+      return { page: 'pack' }
+    case 'rekod':
+      return { page: 'log' }
     case 'customers':
       return id && Number.isInteger(number) && number > 0 ? { page: 'customer', id: number } : { page: 'customers' }
     default:
@@ -41,6 +50,12 @@ export function href(route: Route): string {
       return `#/orders/${route.id}/resit`
     case 'customer':
       return `#/customers/${route.id}`
+    case 'wash':
+      return '#/cuci'
+    case 'pack':
+      return '#/packing'
+    case 'log':
+      return '#/rekod'
     default:
       return `#/${route.page}`
   }
