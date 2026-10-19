@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 from app.ai.embeddings import Embedder, get_embedder
 from app.ai.llm import ChatModel, get_chat_model
 from app.core.config import get_settings
-from app.core.security import AuthError, ReadOnlyAccountError, decode_access_token
+from app.core.security import AuthError, ForbiddenError, ReadOnlyAccountError, decode_access_token
 from app.db.models import Owner, OwnerRole
 from app.db.session import SessionLocal, get_db
+from app.services.errors import NotFoundError
 from app.services.whatsapp import (
     GraphWhatsAppClient,
     SessionFactory,
@@ -50,7 +51,36 @@ def current_owner(
         raise AuthError("This account no longer exists")
     if owner.role is OwnerRole.DEMO and request.method not in SAFE_METHODS:
         raise ReadOnlyAccountError("The demo account is read-only")
+    if owner.role is OwnerRole.STAFF and not _staff_may(request):
+        raise ForbiddenError("Staff accounts can't do this")
     return owner
+
+
+# Staff (workers) record orders, work through the washing and packing lists, and look up
+# customers and prices; everything else (chats, analytics, bookings, settings) is the
+# owner's. Allow-listed, so anything new is denied.
+STAFF_PATHS = ("/api/orders", "/api/customers", "/api/work")
+STAFF_READ_PATHS = ("/api/services", "/api/auth/me")
+
+
+def _staff_may(request: Request) -> bool:
+    path = request.url.path
+    if _under(path, STAFF_PATHS):
+        return True
+    return request.method in SAFE_METHODS and _under(path, STAFF_READ_PATHS)
+
+
+def _under(path: str, prefixes: tuple[str, ...]) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
+
+
+def orders_enabled() -> None:
+    """Router dependency: the back office exists only where ORDERS_ENABLED is on."""
+    if not get_settings().orders_enabled:
+        raise NotFoundError("Not found")
+
+
+RequireOrdersEnabled = Depends(orders_enabled)
 
 
 CurrentOwner = Annotated[Owner, Depends(current_owner)]

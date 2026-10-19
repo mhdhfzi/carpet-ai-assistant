@@ -1,4 +1,4 @@
-import type { BookingLocation, BookingStatus } from './types'
+import type { BookingLocation, BookingStatus, ItemFold, ItemStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
 
 // The business runs on Malaysia time, whatever timezone the owner's device is set to.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'
@@ -58,7 +58,107 @@ export const LOCATION_LABEL: Record<BookingLocation, string> = {
   shop: 'At shop',
 }
 
-/** wa.me wants the number without "+" or spaces. */
-export function whatsAppUrl(phone: string): string {
-  return `https://wa.me/${phone.replace(/\D/g, '')}`
+/** wa.me wants the number without "+" or spaces; `text` pre-fills the message. */
+export function whatsAppUrl(phone: string, text?: string): string {
+  const url = `https://wa.me/${phone.replace(/\D/g, '')}`
+  return text ? `${url}?text=${encodeURIComponent(text)}` : url
+}
+
+// --- Back office (orders): labels in Malay, as the business writes them ---------------------
+
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  received: 'Diterima',
+  washed: 'Dicuci',
+  ready: 'Siap',
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan',
+}
+
+export const ORDER_STATUS_STYLE: Record<OrderStatus, string> = {
+  received: 'bg-brand/25 text-ink',
+  washed: 'bg-sky-100 text-sky-900',
+  ready: 'bg-emerald-100 text-emerald-900',
+  completed: 'bg-foam text-ink-soft',
+  cancelled: 'bg-red-50 text-danger',
+}
+
+/** The button that moves an order to this status. */
+export const ORDER_ACTION_LABEL: Record<OrderStatus, string> = {
+  received: 'Tanda diterima',
+  washed: 'Tanda sudah dicuci',
+  ready: 'Tanda siap (sudah dipack)',
+  completed: 'Tanda selesai (diambil / dihantar)',
+  cancelled: 'Batalkan pesanan',
+}
+
+/** The big button when an order has several items: it moves all of them. */
+export const ALL_ITEMS_ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
+  washed: 'Tanda semua sudah dicuci',
+  ready: 'Tanda semua siap (sudah dipack)',
+}
+
+/** One carpet's step. */
+export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
+  received: 'Belum dicuci',
+  washed: 'Sedang kering',
+  ready: 'Siap dipack',
+}
+
+export const ITEM_STATUS_STYLE: Record<ItemStatus, string> = {
+  received: 'bg-brand/25 text-ink',
+  washed: 'bg-sky-100 text-sky-900',
+  ready: 'bg-emerald-100 text-emerald-900',
+}
+
+/** The button that moves one carpet to this step. */
+export const ITEM_ACTION_LABEL: Record<ItemStatus, string> = {
+  received: 'Belum dicuci',
+  washed: 'Siap cuci',
+  ready: 'Siap pack',
+}
+
+/** Velvet is packed one of two ways; the packing form asks which. */
+export const FOLD_LABEL: Record<ItemFold, string> = {
+  rolled: 'Gulung',
+  folded: 'Lipat',
+}
+
+export const RETURN_LABEL: Record<ReturnMethod, string> = {
+  pickup: 'Pelanggan ambil di kedai',
+  delivery: 'Kami hantar',
+}
+
+const dateFormat = new Intl.DateTimeFormat('en-MY', { timeZone: TIME_ZONE, day: 'numeric', month: 'short' })
+
+/** "15 Oct" from "2026-10-15" (a calendar date, not a moment in time). */
+export function formatDay(isoDate: string): string {
+  return dateFormat.format(new Date(`${isoDate}T12:00:00+08:00`))
+}
+
+/** "8 x 10 ft" for a measured carpet, "3" for counted items. */
+export function formatSize(item: { length_ft: string | null; width_ft: string | null; quantity: string }): string {
+  if (item.length_ft && item.width_ft) return `${Number(item.length_ft)} x ${Number(item.width_ft)} kaki`
+  return String(Number(item.quantity))
+}
+
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: 'Tunai',
+  transfer: 'Pindahan bank',
+  duitnow: 'DuitNow / e-wallet',
+}
+
+/** Whole days from one calendar date to another (both "YYYY-MM-DD"). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+}
+
+/** "10/10/26", as the book and the receipt write dates. */
+export function formatShortDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-')
+  return `${day}/${month}/${year.slice(2)}`
+}
+
+/** A washed carpet can be packed from 5 days after washing; anything else straight away. */
+export function readyToPack(item: { status: ItemStatus; ready_from: string | null }, today: string): boolean {
+  return item.status === 'washed' && (!item.ready_from || item.ready_from <= today)
 }

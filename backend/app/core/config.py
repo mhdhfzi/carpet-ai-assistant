@@ -38,6 +38,19 @@ class Settings(BaseSettings):
     ai_daily_reply_limit: int = 300
     # The owner's on/off switch for the chat. Off: the widget hides its button.
     chat_enabled: bool = True
+    # The back office (orders, customers) in the dashboard: for a real business.
+    orders_enabled: bool = False
+    # Printed on receipts. All optional; blank lines are left out.
+    receipt_name: str = ""  # the name on the receipt, if not the business name
+    receipt_logo: str = ""  # the short mark in the round badge, e.g. "RGL"; blank = initials
+    business_reg_no: str = ""  # e.g. the SSM registration number
+    business_address: str = ""
+    business_email: str = ""
+    business_facebook: str = ""  # the Facebook page's name
+    business_phones: str = ""  # e.g. "019-276 2890 / 013-397 9447"; blank = contact_whatsapp
+    # How to pay, one item per line (new lines or "|"), e.g. "Name|Bank Islam|0506...".
+    payment_details: str = ""
+    receipt_terms: str = ""  # small print, e.g. how long unclaimed items are kept
 
     # The business this deployment serves. The defaults are the public portfolio demo; a
     # deployment for a real business overrides them (one codebase, several deployments).

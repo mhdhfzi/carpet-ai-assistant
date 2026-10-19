@@ -17,6 +17,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -57,6 +58,41 @@ class Channel(StrEnum):
 class OwnerRole(StrEnum):
     OWNER = "owner"  # full access
     DEMO = "demo"  # the public demo login: can see everything, change nothing
+    STAFF = "staff"  # a worker: records orders, can't change prices or see the business side
+
+
+class OrderStatus(StrEnum):
+    RECEIVED = "received"  # Diterima: recorded in the system and tagged
+    WASHED = "washed"  # Dicuci: washed, now drying (5-7 days for carpets)
+    READY = "ready"  # Siap: dried and packed, the customer can be told
+    COMPLETED = "completed"  # Selesai: picked up by the customer or delivered
+    CANCELLED = "cancelled"
+
+
+class ItemStatus(StrEnum):
+    """Where one carpet (one tag) is. The order follows its slowest item."""
+
+    RECEIVED = "received"  # Diterima
+    WASHED = "washed"  # Dicuci: drying (5-7 days for carpets)
+    READY = "ready"  # Siap: dried and packed (the packing form), waiting to go back
+
+
+class ItemFold(StrEnum):
+    """How a velvet carpet was packed: the packing form asks for one of the two."""
+
+    ROLLED = "rolled"  # gulung
+    FOLDED = "folded"  # lipat
+
+
+class PaymentMethod(StrEnum):
+    CASH = "cash"  # tunai
+    TRANSFER = "transfer"  # pindahan bank
+    DUITNOW = "duitnow"  # DuitNow QR or an e-wallet
+
+
+class ReturnMethod(StrEnum):
+    PICKUP = "pickup"  # the customer collects from the shop
+    DELIVERY = "delivery"  # we deliver
 
 
 class MessageRole(StrEnum):
@@ -95,6 +131,8 @@ class Service(TimestampMixin, Base):
     # (cleaned at the shop, returned in 5-7 days), 2 hours to clean a sofa on site.
     visit_minutes: Mapped[int] = mapped_column(Integer, default=120, server_default="120")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Packed rolled or folded, and staff must record which (velvet carpets).
+    needs_fold: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Customer(TimestampMixin, Base):
@@ -109,6 +147,7 @@ class Customer(TimestampMixin, Base):
 
     bookings: Mapped[list["Booking"]] = relationship(back_populates="customer")
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="customer")
+    orders: Mapped[list["Order"]] = relationship(back_populates="customer")
 
 
 class Booking(TimestampMixin, Base):
@@ -339,3 +378,166 @@ class AssistantPause(Base):
     # Pauses in a row without a successful reply in between: each one lasts longer.
     consecutive: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     reason: Mapped[str | None] = mapped_column(Text)
+
+
+class Order(TimestampMixin, Base):
+    """A job, as written in the owner's book: one customer's items received together.
+
+    Prices are copied onto the items when recorded, so later price-list changes never
+    rewrite an old order. Totals are computed from the items (app/services/orders.py).
+    """
+
+    __tablename__ = "orders"
+    __table_args__ = (
+        CheckConstraint("number > 0", name="number_positive"),
+        CheckConstraint("discount >= 0", name="discount_non_negative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # The book's "Bilangan": a running number staff write on the carpet tags.
+    number: Mapped[int] = mapped_column(Integer, unique=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="RESTRICT"), index=True
+    )
+    received_on: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[OrderStatus] = mapped_column(
+        str_enum(OrderStatus, "order_status"),
+        default=OrderStatus.RECEIVED,
+        server_default=OrderStatus.RECEIVED.value,
+        index=True,
+    )
+    return_method: Mapped[ReturnMethod | None] = mapped_column(
+        str_enum(ReturnMethod, "return_method")
+    )
+    discount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    notes: Mapped[str | None] = mapped_column(Text)
+    # When each step happened, for the ready-date estimate and reports.
+    washed_on: Mapped[date | None] = mapped_column(Date)
+    ready_on: Mapped[date | None] = mapped_column(Date)
+    completed_on: Mapped[date | None] = mapped_column(Date)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+
+    customer: Mapped[Customer] = relationship(back_populates="orders")
+    items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="OrderItem.position",
+    )
+    events: Mapped[list["OrderEvent"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="OrderEvent.id",
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Payment.id",
+    )
+
+
+class OrderItem(Base):
+    """One line of an order: a carpet with its measured size, or a number of sofa seats,
+    mattresses or cars. Its tag is "<order number>-<position>", e.g. 412-2."""
+
+    __tablename__ = "order_items"
+    __table_args__ = (
+        UniqueConstraint("order_id", "position", name="uq_order_items_position"),
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint("unit_price >= 0", name="unit_price_non_negative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="RESTRICT"))
+    # Carpets: measured length and width in feet; quantity is then the square feet.
+    length_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    width_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
+    unit_price: Mapped[Decimal | None] = mapped_column(Money)
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Each carpet moves on its own: washed one day, packed 5-7 days later once dry.
+    status: Mapped[ItemStatus] = mapped_column(
+        str_enum(ItemStatus, "order_item_status"),
+        default=ItemStatus.RECEIVED,
+        server_default=ItemStatus.RECEIVED.value,
+    )
+    # The washing and packing forms: the day, and who did it (from their own login).
+    washed_on: Mapped[date | None] = mapped_column(Date)
+    washed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    wash_note: Mapped[str | None] = mapped_column(Text)  # e.g. "tompok tak hilang"
+    ready_on: Mapped[date | None] = mapped_column(Date)  # the day it was packed
+    packed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    fold: Mapped[ItemFold | None] = mapped_column(str_enum(ItemFold, "item_fold"))
+
+    order: Mapped[Order] = relationship(back_populates="items")
+    service: Mapped["Service"] = relationship()
+    washed_by: Mapped["Owner | None"] = relationship(foreign_keys=[washed_by_id])
+    packed_by: Mapped["Owner | None"] = relationship(foreign_keys=[packed_by_id])
+
+
+class OrderEvent(Base):
+    """Who moved an order to which status, and when: the order's timeline."""
+
+    __tablename__ = "order_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    status: Mapped[OrderStatus] = mapped_column(str_enum(OrderStatus, "order_event_status"))
+    # Set when one item moved (its tag, e.g. "412-2"); empty for the whole order.
+    item_tag: Mapped[str | None] = mapped_column(String(20))
+    note: Mapped[str | None] = mapped_column(Text)
+    by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    order: Mapped[Order] = relationship(back_populates="events")
+    by: Mapped["Owner | None"] = relationship()
+
+
+class UntaggedItem(Base):
+    """A carpet found without its tag while washing ("XXX" on the paper form), kept on a
+    list until someone matches it back to its order."""
+
+    __tablename__ = "untagged_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    description: Mapped[str] = mapped_column(String(200))  # type, size, colour
+    found_on: Mapped[date] = mapped_column(Date)
+    found_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    matched_tag: Mapped[str | None] = mapped_column(String(20))  # e.g. "412-2"
+    matched_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    found_by: Mapped["Owner | None"] = relationship(foreign_keys=[found_by_id])
+    matched_by: Mapped["Owner | None"] = relationship(foreign_keys=[matched_by_id])
+
+
+class Payment(Base):
+    """Money received for an order: the deposit, the balance at pickup, anything between.
+
+    Never edited or deleted. A mistake is voided (by the owner, with a reason), so the
+    record always shows what happened and who did it.
+    """
+
+    __tablename__ = "payments"
+    __table_args__ = (CheckConstraint("amount > 0", name="amount_positive"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Money)
+    method: Mapped[PaymentMethod] = mapped_column(str_enum(PaymentMethod, "payment_method"))
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)  # e.g. "Deposit"
+    received_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    voided_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    void_reason: Mapped[str | None] = mapped_column(Text)
+
+    order: Mapped[Order] = relationship(back_populates="payments")
+    received_by: Mapped["Owner | None"] = relationship(foreign_keys=[received_by_id])

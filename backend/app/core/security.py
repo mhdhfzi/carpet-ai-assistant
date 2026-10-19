@@ -23,8 +23,12 @@ class AuthError(Exception):
     pass
 
 
-class ReadOnlyAccountError(Exception):
-    """A logged-in account that may look but not change anything (the public demo): a 403."""
+class ForbiddenError(Exception):
+    """Logged in, but this account may not do this: a 403."""
+
+
+class ReadOnlyAccountError(ForbiddenError):
+    """A logged-in account that may look but not change anything (the public demo)."""
 
 
 class AuthNotConfiguredError(Exception):

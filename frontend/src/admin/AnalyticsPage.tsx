@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth'
 import { BarList, ChartCard, ColumnChart, ColumnLabels, DataTable, Meter, StatTile } from './charts'
+import { useBusiness } from './business'
+import { BusinessSection } from './BusinessSection'
 import { formatDateTime } from './format'
 import type { AnalyticsSummary, UnansweredQuestion, UnansweredReason } from './types'
 
@@ -30,6 +32,9 @@ function percent(rate: number | null): string {
 
 export function AnalyticsPage() {
   const { request } = useAuth()
+  const business = useBusiness()
+  // A real business whose assistant sends bookings to WhatsApp has no AI bookings to show.
+  const bookings = business?.bookings !== false
   const [days, setDays] = useState<(typeof PERIODS)[number]>(30)
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -84,16 +89,20 @@ export function AnalyticsPage() {
       )}
       {!summary && !error && <p className="text-ink-soft">Loading analytics…</p>}
 
+      {business?.orders && <BusinessSection days={days} />}
+
       {summary && (
         <div className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {business?.orders && <h2 className="pt-4 font-display text-xl font-bold">Pembantu AI (chat)</h2>}
+          <div className={`grid grid-cols-2 gap-3 ${bookings ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}>
             <StatTile label="Chats" value={String(summary.conversations)} />
-            <StatTile label="Bookings made" value={String(summary.bookings)} />
-            <StatTile label="Chats that booked" value={percent(summary.conversion_rate)} />
+            {bookings && <StatTile label="Bookings made" value={String(summary.bookings)} />}
+            {bookings && <StatTile label="Chats that booked" value={percent(summary.conversion_rate)} />}
             <StatTile label="Handed to you" value={String(summary.handed_off)} />
             <StatTile label="Open questions" value={String(openUnanswered)} hint="Needing an answer" />
           </div>
 
+          {bookings && (
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard
               title="Chat to booking, by channel"
@@ -143,6 +152,7 @@ export function AnalyticsPage() {
               }
             />
           </div>
+          )}
 
           <ChartCard
             title="What customers ask about"

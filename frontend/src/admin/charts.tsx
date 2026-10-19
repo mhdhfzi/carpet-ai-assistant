@@ -76,7 +76,15 @@ export function Meter({ label, value, max, detail }: { label: string; value: num
 type Datum = { label: string; value: number; description: string }
 
 /** Vertical columns from one baseline: thin bars, rounded data-end, value on the cap. */
-export function ColumnChart({ data, valueLabel }: { data: Datum[]; valueLabel: string }) {
+export function ColumnChart({
+  data,
+  valueLabel,
+  formatValue = String,
+}: {
+  data: Datum[]
+  valueLabel: string
+  formatValue?: (value: number) => string
+}) {
   const max = Math.max(1, ...data.map((d) => d.value))
   return (
     <div className="flex h-48 items-end gap-2 border-b border-line" role="list" aria-label={valueLabel}>
@@ -91,7 +99,7 @@ export function ColumnChart({ data, valueLabel }: { data: Datum[]; valueLabel: s
             <span className="pointer-events-none absolute -top-8 z-10 hidden rounded-lg bg-ink px-2 py-1 text-xs whitespace-nowrap text-white group-hover:block group-focus:block">
               {d.description}
             </span>
-            <span className="mb-1 text-xs font-semibold">{d.value}</span>
+            <span className="mb-1 text-xs font-semibold">{formatValue(d.value)}</span>
             <div
               className="w-full max-w-6 rounded-t-[4px] bg-chart transition-opacity group-hover:opacity-80 group-focus:ring-2 group-focus:ring-ink"
               style={{ height: `${(d.value / max) * 100}%`, minHeight: d.value ? 2 : 0 }}
@@ -116,7 +124,13 @@ export function ColumnLabels({ labels }: { labels: string[] }) {
 }
 
 /** Horizontal bars, longest first, value at the tip. */
-export function BarList({ data }: { data: (Datum & { sublabel?: string })[] }) {
+export function BarList({
+  data,
+  formatValue = String,
+}: {
+  data: (Datum & { sublabel?: string })[]
+  formatValue?: (value: number) => string
+}) {
   const max = Math.max(1, ...data.map((d) => d.value))
   return (
     <ul className="space-y-3">
@@ -128,7 +142,7 @@ export function BarList({ data }: { data: (Datum & { sublabel?: string })[] }) {
           </p>
           <div className="flex items-center gap-2">
             <div className="h-3 rounded-r-[4px] bg-chart" style={{ width: `${(d.value / max) * 85}%` }} />
-            <span className="text-xs font-semibold">{d.value}</span>
+            <span className="text-xs font-semibold">{formatValue(d.value)}</span>
           </div>
         </li>
       ))}

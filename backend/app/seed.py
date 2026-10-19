@@ -25,7 +25,9 @@ CARPET_PROCESS = (
 ON_SITE_PROCESS = "Cleaned at your home (about 2 hours) or you can bring it to our shop."
 
 
-def carpet(name: str, kind: str, price: str, price_max: str | None = None) -> dict:
+def carpet(
+    name: str, kind: str, price: str, price_max: str | None = None, *, fold: bool = False
+) -> dict:
     priced = f"Priced per square foot. {CARPET_PROCESS}"
     if price_max:
         priced = (
@@ -39,6 +41,7 @@ def carpet(name: str, kind: str, price: str, price_max: str | None = None) -> di
         "unit_price": D(price),
         "unit_price_max": D(price_max) if price_max else None,
         "visit_minutes": 30,  # the visit is only to collect the carpet
+        "needs_fold": fold,  # velvet: packed rolled (gulung) or folded (lipat)
     }
 
 
@@ -52,11 +55,24 @@ def on_site(name: str, kind: str, per: str, price: str) -> dict:
     }
 
 
+def car_seats(size: str, price: str) -> dict:
+    return {
+        "name": f"Cucian Seat Kereta {size}",
+        "description": (
+            f"Car interior cleaning for a {size}: fabric seats, car carpet and dashboard, "
+            f"priced per car. {ON_SITE_PROCESS}"
+        ),
+        "pricing_unit": PricingUnit.PER_ITEM,
+        "unit_price": D(price),
+        "visit_minutes": 120,
+    }
+
+
 SERVICES: list[dict] = [
     carpet("Karpet Biasa", "Standard carpet", "1.80"),
     carpet("Karpet Shaggy", "Shaggy (long-pile) carpet", "2.00"),
-    carpet("Karpet Velvet", "Velvet carpet", "0.90"),
-    carpet("Karpet Premium Velvet", "Premium velvet carpet", "1.00"),
+    carpet("Karpet Velvet", "Velvet carpet", "0.90", fold=True),
+    carpet("Karpet Premium Velvet", "Premium velvet carpet", "1.00", fold=True),
     carpet("Karpet Span", "Span carpet", "0.90"),
     carpet("Karpet Tatami", "Tatami carpet", "0.90"),
     carpet("Karpet Handmade", "Handmade carpet", "2.50", price_max="4.00"),
@@ -64,9 +80,11 @@ SERVICES: list[dict] = [
     on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
     on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),
     on_site("Cucian Tilam King", "King mattress", "mattress", "160.00"),
-    # TODO: Cucian Seat Kereta (car seats, car carpet, dashboard) by car size (sedan, MPV,
-    # ...): waiting for prices. Mosque/surau/office carpets are quoted after a site visit,
-    # so they have no catalogue price (the assistant hands those requests to the owner).
+    car_seats("Sedan", "130.00"),
+    car_seats("SUV", "150.00"),
+    car_seats("MPV", "170.00"),
+    # Mosque/surau/office carpets are quoted after a site visit, so they have no catalogue
+    # price (the assistant sends those requests to the owner).
 ]
 
 
@@ -75,7 +93,7 @@ def seed_services(db: Session) -> tuple[int, int]:
     existing = {s.name: s for s in db.scalars(select(Service))}
     created = updated = 0
     for data in SERVICES:
-        values = {"unit_price_max": None, "minimum_charge": D("0"), **data}
+        values = {"unit_price_max": None, "minimum_charge": D("0"), "needs_fold": False, **data}
         service = existing.get(data["name"])
         if service is None:
             db.add(Service(**values))
