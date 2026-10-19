@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/mhdhfzi/carpet-ai-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/mhdhfzi/carpet-ai-assistant/actions/workflows/ci.yml)
 
-An AI customer assistant for a small carpet-cleaning business in Malaysia. Customers chat on the website or WhatsApp, in English or Bahasa Melayu; the assistant answers from the business's own documents with citations, prices jobs from the real price list, finds free slots and books them once the customer confirms. The owner gets a dashboard with every booking, the chat behind it, and what customers keep asking.
+An AI customer assistant and a back-office system for a small carpet-cleaning business in Malaysia.
+
+- **The assistant:** customers chat on the website or WhatsApp, in English or Bahasa Melayu. It answers from the business's own documents with citations, prices jobs from the real price list, finds free slots and books them once the customer confirms.
+- **The back office:** the owner and workers run the shop from their phones: orders, every carpet's washing and packing, payments, receipts and WhatsApp messages to customers. It replaces the paper book and forms the business used before.
 
 **Live demo: https://kilau-918469824880.asia-southeast1.run.app**
 
@@ -10,7 +13,12 @@ An AI customer assistant for a small carpet-cleaning business in Malaysia. Custo
 - Owner dashboard: [`/admin.html`](https://kilau-918469824880.asia-southeast1.run.app/admin.html), **Try the demo account** (or `demo@example.com` / `kilau-demo-2026`). It is read-only and the data resets every night.
 - Demo video: _to be added_
 
-**In production for a real business:** the same code also runs the chat assistant on [cucicucisenawang.com](https://cucicucisenawang.com), my family's carpet-cleaning business in Senawang. There it answers questions and gives price estimates, and sends customers to WhatsApp to book. See [One codebase, two deployments](#one-codebase-two-deployments).
+**In production for a real business:** the same code runs my family's carpet-cleaning business in Senawang, [Cuci-Cuci Senawang](https://cucicucisenawang.com) (trading as Dobi Karpet Xpress):
+
+- the chat assistant on the website answers questions and gives price estimates, and sends customers to WhatsApp to book;
+- the [back office](#back-office) gives the owner and five workers each their own login to record orders, track every carpet from washing to packing, take payments and send receipts.
+
+See [One codebase, two deployments](#one-codebase-two-deployments).
 
 > Kilau Carpet Care, the public demo, is fictional, so recruiters trying it never contact the real business. It's a portfolio project: applied AI (RAG + tool calling), backend engineering, cloud deployment and DevOps.
 
@@ -30,6 +38,39 @@ An assistant helps only if it can be trusted: it must never invent a price or a 
 | **Hands off** | Upset customers, out-of-scope requests and low-confidence answers go to the owner. Questions it couldn't answer are logged for the dashboard. |
 | **Two channels** | An embeddable web widget (one `<script>` tag, shadow DOM) and a WhatsApp Business webhook (signature-verified, deduplicated). |
 | **Owner dashboard** | Bookings with status changes, the chat behind each booking, and analytics: chat-to-booking conversion by channel, busy days, common topics, unanswered questions. |
+| **Back office** | Orders, per-carpet washing and packing, payments, receipts and WhatsApp messages for a real business, with owner and staff roles. See [Back office](#back-office). |
+
+## Back office
+
+Before this system, the business ran on paper: a master book of orders, a washing form, a packing form filled in 5–7 days later once the carpets were dry, and a receipt sent to the customer on WhatsApp. The back office follows the same flow, one screen per paper form, in Bahasa Melayu, built for phones:
+
+```mermaid
+flowchart LR
+    A["Buku Utama<br/>order recorded,<br/>each carpet tagged 12-1, 12-2…"] --> B["Borang Cuci<br/>washed: day, worker,<br/>wash note"]
+    B --> C["Drying<br/>5–7 days,<br/>counted automatically"]
+    C --> D["Borang Packing<br/>packed: day, worker,<br/>velvet rolled or folded"]
+    D --> E["Resit & WhatsApp<br/>paid, receipt sent,<br/>picked up or delivered"]
+```
+
+| | |
+|---|---|
+| **Orders (Buku Utama)** | Running order numbers with a tag per carpet. Sizes in feet are priced from the price list; handmade carpets wait for the owner to price them. Deposit, discount (owner only), notes. Search by number, tag, name or phone; filters for not washed, ready to pack, packed, unpaid and history. |
+| **Every carpet tracked on its own** | Washed → drying → packed, each step with the day and the worker (from their own login). The order is ready only when every carpet is packed. Carpets washed 5 or more days ago appear on the packing list by themselves. |
+| **The forms' own rules** | Velvet must be packed rolled (*gulung*) or folded (*lipat*), and the server refuses it otherwise. A carpet that lost its tag ("XXX" on the paper form) is logged and matched back to its order later. |
+| **Payments and receipts** | Deposit then balance, by cash, bank transfer or DuitNow. The receipt is laid out like the business's paper one. Its PAID stamp appears only when the recorded payments cover the total, so it can't be switched on by mistake. Ready-written WhatsApp messages for "your carpets are ready" and the receipt. |
+| **Daily record** | Each day's washing and packing forms (who did what), printable. |
+| **For the owner** | Summary cards (to wash, ready to pack, waiting for pickup, unpaid), customers with what they owe, and business analytics: money received by method, busy days, average days to finish. |
+
+**Roles.** Workers record orders, wash, pack and take payments. Prices, discounts, cancelling, moving a carpet back a step, voiding a payment and analytics are the owner's. Like the rest of the API, staff access is deny-by-default: only an explicit allow-list of routes is open to them, and a test enumerates every route to prove it.
+
+### Design decisions (back office)
+
+- **Order numbers never repeat**, even when two phones save at the same moment: creation takes a Postgres advisory lock, so the next number is read and written by one request at a time.
+- **Prices are copied onto each item** when the order is recorded, so a later price-list change never rewrites an old receipt.
+- **Money is never edited or deleted.** A wrong payment is voided by the owner with a reason and stays on record; orders are cancelled, not deleted; every step is logged with who did it and when.
+- **The order follows its slowest carpet.** Its status is derived from its items, so it can't say "ready" while a carpet is still drying, and the rules hold whichever screen (or API client) is used.
+- **Business rules live in the service layer, not the dashboard.** The velvet rule, the one-step-forward rule for staff and the balance check on payments are enforced by the server and covered by tests.
+- **Off unless switched on.** The back office is a feature flag (`ORDERS_ENABLED`): the real business has it, the public demo doesn't. Database migrations only add tables and columns, so they run safely before the new code goes live.
 
 ## Screenshots
 
@@ -48,13 +89,13 @@ flowchart LR
     subgraph Clients
         W["Web chat widget<br/>(React, shadow DOM)"]
         WA["WhatsApp"]
-        D["Owner dashboard<br/>(React)"]
+        D["Dashboard: owner + staff<br/>(React, phones and desktop)"]
     end
 
     subgraph CR["Google Cloud Run: one container"]
         API["FastAPI<br/>rate limits · JWT auth · request IDs"]
         AG["Agent loop"]
-        SV["Services<br/>pricing · availability · bookings"]
+        SV["Services<br/>pricing · availability · bookings<br/>orders · payments"]
         ST["Built frontend<br/>(static files)"]
     end
 
@@ -116,12 +157,12 @@ sequenceDiagram
 | Messaging | WhatsApp Business Cloud API |
 | Auth | Argon2id password hashes, JWT (HS256) |
 | Infra | Docker, GitHub Actions, Google Cloud Run, Artifact Registry, Secret Manager, Cloud Scheduler |
-| Tests | pytest (300+ tests against a real Postgres), Vitest + Testing Library |
+| Tests | pytest (430+ tests against a real Postgres), Vitest + Testing Library (75 tests) |
 
 ## Testing
 
-- **Backend:** pytest against a real Postgres + pgvector (the same image as production). The tests cover pricing and availability rules, the agent loop with a scripted fake model (tool calls, confirmation step, hand-off, tool-round cap), the WhatsApp signature check and deduplication, auth (forged, expired and `alg: none` tokens, route protection), rate limits, the daily AI cap and a migration round-trip with a model/migration drift check.
-- **Frontend:** Vitest and Testing Library for the widget (sending, retrying, restoring history, the hand-off notice, keyboard use) and the dashboard (login, session expiry, filters, status changes, demo mode, charts with table views).
+- **Backend:** pytest against a real Postgres + pgvector (the same image as production). The tests cover pricing and availability rules, the agent loop with a scripted fake model (tool calls, confirmation step, hand-off, tool-round cap), the WhatsApp signature check and deduplication, auth (forged, expired and `alg: none` tokens, route protection), rate limits, the daily AI cap and a migration round-trip with a model/migration drift check. For the back office: order numbering, pricing and discounts, per-carpet steps and dates, the velvet rule, payments and voids, the summary numbers, and what staff may and may not do.
+- **Frontend:** Vitest and Testing Library for the widget (sending, retrying, restoring history, the hand-off notice, keyboard use) and the dashboard (login, session expiry, filters, status changes, demo mode, charts with table views, and the back office's order, washing, packing and receipt screens).
 - **CI:** every pull request runs lint, format check, type check, both test suites and a production image build.
 
 ## Running locally
@@ -143,11 +184,13 @@ alembic upgrade head           # apply database migrations
 python -m app.seed             # load the service price list (safe to re-run)
 python -m app.ai.ingest        # embed knowledge docs + prices (needs VOYAGE_API_KEY in .env)
 python -m app.create_owner owner@example.com "Owner Name"  # dashboard login (prompts for a password)
+python -m app.create_owner worker@example.com "Worker" --staff  # a worker's login (back office)
 python -m app.seed_demo        # optional: fictional chats and bookings, plus the read-only demo login
 python -m app.ai.ask           # chat with the assistant in the terminal (needs ANTHROPIC_API_KEY)
 ruff check . && ruff format --check .
 pytest                         # needs the database running; uses a separate carpet_test DB
 uvicorn app.main:app --reload  # API docs at http://127.0.0.1:8000/docs
+                               # set ORDERS_ENABLED=true in .env for the back office
 ```
 
 ```bash
@@ -191,7 +234,7 @@ docker compose --profile app up --build                          # http://localh
 | Secrets | Secret Manager: `database-url`, `jwt-secret`, `voyage-api-key`, `anthropic-api-key` |
 | Migrations / one-off commands | Cloud Run jobs `migrate` (`alembic upgrade head`) and `manage` (`python -m ...`) |
 | Nightly demo reset | Cloud Scheduler `demo-reset-nightly` (03:00 MYT) runs the `demo-reset` job: `python -m app.seed_demo --reset` |
-| Real business | Cloud Run service `cuci-cuci` with jobs `cc-migrate` / `cc-manage`: its own Neon database, secrets (`cc-*`) and runtime account `cuci-run`. No reset job. |
+| Real business | Cloud Run service `cuci-cuci` with jobs `cc-migrate` / `cc-manage`: its own Neon database, secrets (`cc-*`) and runtime account `cuci-run`. No reset job. Back office on (`ORDERS_ENABLED=true`), with the receipt's details as settings (`RECEIPT_NAME`, `BUSINESS_ADDRESS`, `BUSINESS_PHONES`, `PAYMENT_DETAILS`, `RECEIPT_TERMS`, …). |
 
 **Continuous deployment.** On every push to `main`, CI runs the tests, then builds the image, pushes it, runs the `migrate` job and rolls Cloud Run onto the new image. Migrations run before the new code goes live, so they must stay compatible with the code still serving (add first, remove in a later release). GitHub authenticates through Workload Identity Federation (no stored key; only this repository is trusted) as `github-deployer`, which can push images and deploy but not read secrets. The app runs as `kilau-run`, which can only read its secrets.
 
@@ -222,11 +265,15 @@ The same image runs twice, and configuration decides the business and what the a
 | Knowledge | `backend/knowledge/` | `backend/knowledge-cucicuci/` |
 | Assistant | Quotes and takes bookings | Answers and estimates; bookings go to WhatsApp (`BOOKINGS_ENABLED=false`) |
 | Where | Its own landing page | Embedded on cucicucisenawang.com (only that site may call it) |
-| Dashboard | Public read-only demo login, data reset nightly | Private owner login, real data kept |
+| Back office | Off | On: orders, washing, packing, payments, receipts |
+| Dashboard | Public read-only demo login, data reset nightly | Private logins (one owner, staff for each worker), real data kept |
 
 The difference in what the assistant may do is enforced in code, not only in the prompt: in answers-only mode the booking tools are never offered to the model, and the server refuses them even if the model names one. The two deployments share nothing but the code and the AI keys: separate databases, secrets and runtime service accounts, so the public demo can't read the real business's data. `seed_demo` refuses to run when `DEMO_BUSINESS=false`, and a test checks the two knowledge bases never mention each other.
 ## What I'd improve next
 
+- **Nightly database backups** for the real business (a dump to Cloud Storage, kept 30 days), and a monthly spreadsheet export the owner keeps himself.
+- **Live updates in the back office**, so a page refreshes when another worker changes something, and password resets from the dashboard instead of the command line.
+- **Linking the two halves:** a customer could ask the assistant on WhatsApp whether their carpets are ready, answered from the order's real status.
 - **An evaluation set for the assistant.** The agent is tested with a scripted fake model, which proves the plumbing but not the answers. Next: a fixed set of real-style questions in BM, EN and a mix of both, with expected facts, tool calls and hand-offs, scored automatically on every prompt or model change.
 - **Hybrid retrieval.** Add keyword search alongside vectors, so exact service names and Malay spelling variants ("tilam", "tilam queen", "mattress") match reliably.
 - **Streaming replies** in the widget (server-sent events), so long answers start appearing at once.
