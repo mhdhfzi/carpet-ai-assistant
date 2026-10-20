@@ -235,24 +235,27 @@ export function OrderPage({ id }: { id: number }) {
 
       {business && <SendToCustomer order={order} business={business} />}
 
-      <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
-        <h2 className="font-semibold">Cara pulang</h2>
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
-            <button
-              key={method}
-              type="button"
-              disabled={busy || order.status === 'cancelled'}
-              aria-pressed={order.return_method === method}
-              onClick={() => save({ return_method: method })}
-              className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
-            >
-              {RETURN_LABEL[method]}
-            </button>
-          ))}
-        </div>
-        <Notes order={order} busy={busy} onSave={save} />
-      </section>
+      {/* Only carpets go back to the customer; a home job is finished at their house. */}
+      {order.items.some((i) => !i.service.on_site) && (
+        <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
+          <h2 className="font-semibold">Cara pulang</h2>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
+              <button
+                key={method}
+                type="button"
+                disabled={busy || order.status === 'cancelled'}
+                aria-pressed={order.return_method === method}
+                onClick={() => save({ return_method: method })}
+                className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
+              >
+                {RETURN_LABEL[method]}
+              </button>
+            ))}
+          </div>
+          <Notes order={order} busy={busy} onSave={save} />
+        </section>
+      )}
 
       {isOwner && (
         <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
@@ -285,7 +288,7 @@ export function OrderPage({ id }: { id: number }) {
             <li key={i}>
               {event.item_tag && <span className="mr-1 rounded bg-ink px-1 font-mono text-xs text-white">{event.item_tag}</span>}
               <span className="font-semibold">
-                {event.item_tag ? ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status] : ORDER_STATUS_LABEL[event.status]}
+                {eventLabel(order, event)}
               </span>{' '}
               · {formatDateTime(event.at)}
               {event.by && ` · ${event.by}`}
@@ -401,8 +404,17 @@ function Payments({
   )
 }
 
+/** "Siap dipack" for a carpet, "Siap (di rumah)" for a job done at the customer's home. */
+function eventLabel(order: Order, event: Order['events'][number]): string {
+  if (!event.item_tag) return ORDER_STATUS_LABEL[event.status]
+  const item = order.items.find((i) => i.tag === event.item_tag)
+  if (item?.service.on_site) return event.status === 'ready' ? 'Siap (di rumah)' : 'Belum dibuat (di rumah)'
+  return ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status]
+}
+
 function SendToCustomer({ order, business }: { order: Order; business: Receipt['business'] }) {
-  const ready = order.status === 'ready' || order.status === 'completed'
+  // "Your carpets are ready to collect" is about carpets; a home job is done in front of them.
+  const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
   return (
     <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
       <h2 className="font-semibold">Hantar kepada pelanggan</h2>

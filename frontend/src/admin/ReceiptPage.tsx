@@ -62,7 +62,8 @@ export function ReceiptPage({ id }: { id?: number }) {
   const { business, order } = receipt
   const choices = orders && !orders.some((o) => o.id === order.id) ? [order, ...orders] : (orders ?? [order])
   const message = receiptMessage(order, business)
-  const ready = order.status === 'ready' || order.status === 'completed'
+  // The "carpets are ready" message is for carpets; home jobs are done at the customer's house.
+  const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
   const paid = paidOn(order)
 
   return (
