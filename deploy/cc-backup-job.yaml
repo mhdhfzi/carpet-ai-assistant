@@ -1,0 +1,61 @@
+# Nightly backup of the real business's database (Cloud Run job `cc-backup`).
+# Apply:  gcloud run jobs replace deploy/cc-backup-job.yaml --region asia-southeast1
+# It dumps the Neon database with pg_dump 18 (Neon runs Postgres 18), checks the archive is
+# readable, and copies it to the private bucket mounted at /backups. The bucket deletes copies
+# after 30 days. The job runs as `cc-backup`, which can read only the database secret and only
+# add files to that bucket (it can't change or delete a backup).
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: cc-backup
+  labels:
+    cloud.googleapis.com/location: asia-southeast1
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          serviceAccountName: cc-backup@kilau-assistant.iam.gserviceaccount.com
+          maxRetries: 1
+          timeoutSeconds: 900
+          containers:
+            - image: asia-southeast1-docker.pkg.dev/kilau-assistant/kilau/postgres:18-bookworm
+              command: [bash]
+              args:
+                - -c
+                - |
+                  set -euo pipefail
+                  # The app's URL may name the SQLAlchemy driver and Neon's pooled host;
+                  # pg_dump wants plain libpq and the direct host.
+                  url="${DATABASE_URL/+psycopg/}"
+                  url="${url/-pooler./.}"
+                  name="cuci-cuci-$(date -u +%Y-%m-%dT%H%M%SZ).dump"
+                  pg_dump --format=custom --compress=9 --no-owner --no-privileges --dbname="$url" --file="/tmp/$name"
+                  pg_restore --list "/tmp/$name" > /dev/null
+                  cp "/tmp/$name" "/backups/$name"
+                  echo "backup ok: $name $(stat -c %s "/tmp/$name") bytes"
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: cc-database-url
+                      key: latest
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              csi:
+                driver: gcsfuse.run.googleapis.com
+                volumeAttributes:
+                  bucketName: kilau-assistant-cc-backups
