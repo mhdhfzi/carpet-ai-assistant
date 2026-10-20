@@ -22,6 +22,7 @@ class ServiceCreate(BaseModel):
     unit_price_max: Money | None = None
     minimum_charge: Money = Decimal("0")
     visit_minutes: VisitMinutes = 120
+    on_site: bool = False  # done at the customer's home (no washing or packing forms)
 
 
 class ServiceUpdate(BaseModel):
@@ -37,6 +38,7 @@ class ServiceUpdate(BaseModel):
     unit_price_max: Money | None = None
     minimum_charge: Money | None = None
     visit_minutes: VisitMinutes | None = None
+    on_site: bool | None = None
     is_active: bool | None = None
 
     @model_validator(mode="after")
@@ -58,6 +60,7 @@ class ServiceRead(BaseModel):
     name: str
     description: str
     pricing_unit: PricingUnit
+    on_site: bool
     unit_price: Decimal
     unit_price_max: Decimal | None
     minimum_charge: Decimal

@@ -147,3 +147,11 @@ export const ArrowIcon = (p: IconProps) => (
     <path d="M5 12h14M13 6l6 6-6 6" />
   </Icon>
 )
+
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m3 11 9-7 9 7" />
+    <path d="M5 10v10h14V10M10 20v-6h4v6" />
+  </Icon>
+)
+

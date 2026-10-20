@@ -33,6 +33,7 @@ class OrderItemIn(BaseModel):
 class OrderCreate(BaseModel):
     customer: CustomerIn
     received_on: date | None = None  # defaults to today
+    visit_at: datetime | None = None  # the house visit, for sofa / mattress / car jobs
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     return_method: ReturnMethod | None = None
     # The book's "Depo": recorded as the order's first payment.
@@ -81,6 +82,7 @@ class OrderUpdate(BaseModel):
     status: OrderStatus | None = None
     status_note: str | None = Field(default=None, max_length=300)
     items: list[OrderItemIn] | None = Field(default=None, min_length=1, max_length=50)
+    visit_at: datetime | None = None
     return_method: ReturnMethod | None = None
     discount: Amount | None = None
     notes: str | None = Field(default=None, max_length=1000)
@@ -103,6 +105,7 @@ class OrderServiceRead(BaseModel):
     name: str
     pricing_unit: PricingUnit
     needs_fold: bool  # velvet: packed rolled or folded
+    on_site: bool  # done at the customer's home: no washing or packing forms
 
 
 class OrderItemRead(BaseModel):
@@ -120,7 +123,7 @@ class OrderItemRead(BaseModel):
     washed_on: date | None
     washed_by: str | None
     wash_note: str | None
-    ready_on: date | None  # the day it was packed
+    ready_on: date | None  # the day it was packed (an on-site job: done)
     packed_by: str | None
     fold: ItemFold | None
     # A washed carpet can be packed 5-7 days later, once dry; None once packed (or for items
@@ -139,11 +142,12 @@ class WorkItemRead(OrderItemRead):
 
 
 class WorkLogRead(BaseModel):
-    """One day's washing and packing forms."""
+    """One day's washing and packing forms, and the jobs done at customers' homes."""
 
     day: date
     washed: list[WorkItemRead]
     packed: list[WorkItemRead]
+    on_site: list[WorkItemRead]
 
 
 class OrderEventRead(BaseModel):
@@ -159,7 +163,9 @@ class OrderRead(BaseModel):
     number: int
     customer: OrderCustomerRead
     received_on: date
+    visit_at: datetime | None
     status: OrderStatus
+    next_status: OrderStatus | None  # the button's step (home jobs only: straight to ready)
     return_method: ReturnMethod | None
     discount: Decimal
     notes: str | None
@@ -205,6 +211,7 @@ class WorkSummaryRead(BaseModel):
     ready_orders: int
     unpaid: Decimal
     unpaid_orders: int
+    house_jobs: int  # sofa / mattress / car jobs not done yet
 
 
 class UntaggedIn(BaseModel):

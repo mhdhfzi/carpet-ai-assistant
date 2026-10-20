@@ -11,6 +11,7 @@ import { OrderPage } from './OrderPage'
 import { OrdersPage } from './OrdersPage'
 import { ReceiptPage } from './ReceiptPage'
 import { LogPage, PackPage, WashPage } from './WorkPages'
+import { HouseJobsPage } from './HouseJobsPage'
 import {
   BookIcon,
   BoxIcon,
@@ -18,6 +19,7 @@ import {
   ChartIcon,
   ClipboardIcon,
   DropIcon,
+  HomeIcon,
   ReceiptIcon,
   UsersIcon,
 } from './icons'
@@ -42,6 +44,7 @@ function navFor(business: Business | null | undefined, staff: boolean, summary: 
     { route: { page: 'orders' }, label: 'Buku Utama', icon: BookIcon },
     { route: { page: 'wash' }, label: 'Borang Cuci', icon: DropIcon, active: 'bg-sky-500 text-white', count: summary?.to_wash },
     { route: { page: 'pack' }, label: 'Borang Packing', icon: BoxIcon, count: summary?.to_pack },
+    { route: { page: 'visits' }, label: 'Kerja Rumah', icon: HomeIcon, active: 'bg-emerald-500 text-white', count: summary?.house_jobs },
     { route: { page: 'receipts' }, label: 'Resit & WhatsApp', icon: ReceiptIcon, active: 'bg-emerald-500 text-white' },
     { route: { page: 'log' }, label: 'Rekod harian', icon: ClipboardIcon },
     { route: { page: 'customers' }, label: 'Pelanggan', icon: UsersIcon },
@@ -63,6 +66,7 @@ const STAFF_PAGES = new Set<Route['page']>([
   'customer',
   'wash',
   'pack',
+  'visits',
   'log',
 ])
 
@@ -106,7 +110,7 @@ function SignedIn({
 }
 
 /** The pages that open with today's numbers, as in the reference design. */
-const WORK_PAGES = new Set<Route['page']>(['orders', 'wash', 'pack', 'receipts', 'receipt'])
+const WORK_PAGES = new Set<Route['page']>(['orders', 'wash', 'pack', 'visits', 'receipts', 'receipt'])
 
 function Page({ route }: { route: Route }) {
   switch (route.page) {
@@ -120,6 +124,8 @@ function Page({ route }: { route: Route }) {
       return <WashPage />
     case 'pack':
       return <PackPage />
+    case 'visits':
+      return <HouseJobsPage />
     case 'log':
       return <LogPage />
     case 'receipt':

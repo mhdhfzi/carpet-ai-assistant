@@ -133,6 +133,9 @@ class Service(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Packed rolled or folded, and staff must record which (velvet carpets).
     needs_fold: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Done at the customer's home in one visit (sofa, mattress, car seats): no washing or
+    # packing form, just "done". Carpets (False) go through the shop.
+    on_site: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Customer(TimestampMixin, Base):
@@ -411,6 +414,8 @@ class Order(TimestampMixin, Base):
     )
     discount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     notes: Mapped[str | None] = mapped_column(Text)
+    # When the team visits the customer's home for the on-site jobs (sofa, mattress, car).
+    visit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     # When each step happened, for the ready-date estimate and reports.
     washed_on: Mapped[date | None] = mapped_column(Date)
     ready_on: Mapped[date | None] = mapped_column(Date)
@@ -471,7 +476,8 @@ class OrderItem(Base):
     washed_on: Mapped[date | None] = mapped_column(Date)
     washed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
     wash_note: Mapped[str | None] = mapped_column(Text)  # e.g. "tompok tak hilang"
-    ready_on: Mapped[date | None] = mapped_column(Date)  # the day it was packed
+    # The day it was packed (an on-site job: the day it was done), and by whom.
+    ready_on: Mapped[date | None] = mapped_column(Date)
     packed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
     fold: Mapped[ItemFold | None] = mapped_column(str_enum(ItemFold, "item_fold"))
 

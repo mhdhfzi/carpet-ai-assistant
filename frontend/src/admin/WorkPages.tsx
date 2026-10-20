@@ -609,6 +609,15 @@ export function LogPage() {
             lastHeading="Gulung / Lipat"
             last={(i) => (i.fold ? FOLD_LABEL[i.fold] : '')}
           />
+          <FormTable
+            title="Kerja di rumah pelanggan"
+            day={log.day}
+            items={log.on_site}
+            staff={(i) => i.packed_by}
+            sizeHeading="Kuantiti"
+            lastHeading="Catatan"
+            last={(i) => i.notes ?? ''}
+          />
         </>
       )}
     </section>
@@ -620,6 +629,7 @@ function FormTable({
   day,
   items,
   staff,
+  sizeHeading = 'Saiz',
   lastHeading,
   last,
 }: {
@@ -627,6 +637,7 @@ function FormTable({
   day: string
   items: WorkItem[]
   staff: (item: WorkItem) => string | null
+  sizeHeading?: string
   lastHeading: string
   last: (item: WorkItem) => string
 }) {
@@ -652,7 +663,7 @@ function FormTable({
                 <th className="px-4 py-2 font-semibold">Bil</th>
                 <th className="px-4 py-2 font-semibold">No. siri</th>
                 <th className="px-4 py-2 font-semibold">Jenis</th>
-                <th className="px-4 py-2 font-semibold">Saiz</th>
+                <th className="px-4 py-2 font-semibold">{sizeHeading}</th>
                 <th className="px-4 py-2 font-semibold">{lastHeading}</th>
                 <th className="px-4 py-2 font-semibold">Staf</th>
               </tr>

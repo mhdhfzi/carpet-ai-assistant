@@ -492,7 +492,7 @@ def test_the_washing_and_packing_lists(staff_client: TestClient, services: dict[
     to_wash = staff_client.get("/api/work/items", params={"status": "received"}).json()
     to_pack = staff_client.get("/api/work/items", params={"status": "washed"}).json()
 
-    assert [i["tag"] for i in to_wash] == ["1-2", "2-1", "2-2"]
+    assert [i["tag"] for i in to_wash] == ["1-2", "2-1"]  # 2-2 is a sofa: done at home
     assert to_wash[0]["customer_name"] == "Ali"
     assert to_wash[1]["order_id"] == second["id"]
     assert [i["tag"] for i in to_pack] == ["1-1"]
@@ -551,8 +551,7 @@ def test_the_summary_counts_today_s_work_and_what_is_owed(
     move(client, drying, 1, "washed")
     db.get(OrderItem, drying["items"][0]["id"]).washed_on = TODAY - timedelta(days=5)
     db.flush()
-    sofa = new_order(client, services, deposit="50.00")  # 144 + 180, 50 paid
-    move(client, sofa, 2, "washed")  # sofa seats don't dry for days: pack straight away
+    new_order(client, services, deposit="50.00")  # 144 + 180, 50 paid; the sofa is a home job
     packed = two_carpets(client, services)
     client.patch(f"/api/orders/{packed['id']}", json={"status": "washed"})
     client.patch(f"/api/orders/{packed['id']}", json={"status": "ready"})
@@ -562,12 +561,13 @@ def test_the_summary_counts_today_s_work_and_what_is_owed(
     summary = client.get("/api/work/summary").json()
 
     assert summary == {
-        "to_wash": 2,
-        "to_pack": 2,
+        "to_wash": 2,  # carpets only
+        "to_pack": 1,
         "drying": 0,
         "ready_orders": 1,
         "unpaid": "722.00",
         "unpaid_orders": 3,
+        "house_jobs": 1,
     }
 
 
@@ -593,6 +593,101 @@ def test_a_carpet_without_its_tag_is_logged_and_matched_later(
     assert matched.json()["matched_tag"] == "1-2"
     assert again.status_code == 422
     assert staff_client.get("/api/work/untagged").json() == []
+
+
+# --- Jobs at the customer's home --------------------------------------------------------------
+
+
+def home_job(client: TestClient, services: dict[str, int], **extra) -> dict:
+    response = client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [counted(services, "Cucian Sofa", 3)], **extra},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_a_home_job_is_just_marked_done(staff_client: TestClient, services: dict[str, int]) -> None:
+    order = home_job(staff_client, services)
+
+    washed = move(staff_client, order, 1, "washed")
+    done = move(staff_client, order, 1, "ready").json()
+
+    assert order["items"][0]["service"]["on_site"] is True
+    assert order["next_status"] == "ready"  # no washing step
+    assert washed.status_code == 422  # a sofa isn't washed at the shop
+    assert (done["items"][0]["ready_on"], done["items"][0]["packed_by"]) == (
+        TODAY.isoformat(),
+        "Worker",
+    )
+    assert done["status"] == "ready"
+    assert done["next_status"] == "completed"  # then paid and closed, as usual
+
+
+def test_staff_finish_a_home_only_order_in_one_step(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = home_job(staff_client, services)
+    url = f"/api/orders/{order['id']}"
+
+    refused = staff_client.patch(url, json={"status": "washed"})
+    done = staff_client.patch(url, json={"status": "ready"}).json()
+
+    assert refused.status_code == 409
+    assert done["status"] == "ready"
+    assert done["items"][0]["status"] == "ready"
+
+
+def test_a_mixed_order_is_ready_only_when_the_home_job_is_done_too(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services)  # a carpet and a sofa
+    url = f"/api/orders/{order['id']}"
+
+    washed = client.patch(url, json={"status": "washed"}).json()
+    move(client, order, 1, "ready")
+    carpet_packed = client.get(url).json()
+    move(client, order, 2, "ready")
+    all_done = client.get(url).json()
+
+    assert [i["status"] for i in washed["items"]] == ["washed", "received"]
+    assert carpet_packed["status"] == "washed"  # the sofa is still to do
+    assert all_done["status"] == "ready"
+
+
+def test_home_jobs_are_scheduled_and_listed_by_visit_time(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    later = home_job(client, services, visit_at="2026-10-14T10:00:00+08:00")
+    sooner = home_job(client, services, visit_at="2026-10-12T15:30:00+08:00")
+    unscheduled = home_job(client, services)
+    done = home_job(client, services, visit_at="2026-10-11T09:00:00+08:00")
+    move(client, done, 1, "ready")
+    two_carpets(client, services)  # no home job: not a visit
+    client.patch(f"/api/orders/{unscheduled['id']}", json={"notes": "call first"})
+
+    visits = client.get("/api/work/visits").json()
+    moved = client.patch(
+        f"/api/orders/{unscheduled['id']}", json={"visit_at": "2026-10-13T11:00:00+08:00"}
+    ).json()
+
+    assert [v["id"] for v in visits] == [sooner["id"], later["id"], unscheduled["id"]]
+    assert visits[0]["visit_at"] == "2026-10-12T07:30:00Z"
+    assert moved["visit_at"] == "2026-10-13T03:00:00Z"
+
+
+def test_the_day_s_record_lists_home_jobs_apart_from_the_forms(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)  # a carpet and a sofa
+    move(staff_client, order, 1, "washed")
+    move(staff_client, order, 2, "ready")
+
+    log = staff_client.get("/api/work/log").json()
+
+    assert [i["tag"] for i in log["washed"]] == ["1-1"]
+    assert log["packed"] == []
+    assert [(i["tag"], i["packed_by"]) for i in log["on_site"]] == [("1-2", "Worker")]
 
 
 # --- Finding orders and customers ------------------------------------------------------------
