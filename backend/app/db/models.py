@@ -453,10 +453,11 @@ class OrderItem(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="RESTRICT"))
-    # Carpets: measured length and width in feet; quantity is then the square feet.
+    # Carpets: measured length and width in feet; quantity is then the square feet. A carpet
+    # is often measured only when it is washed: until then all three are NULL.
     length_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     width_ft: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
-    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
     unit_price: Mapped[Decimal | None] = mapped_column(Money)
     notes: Mapped[str | None] = mapped_column(Text)

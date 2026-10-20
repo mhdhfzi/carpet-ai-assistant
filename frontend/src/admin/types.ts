@@ -121,7 +121,7 @@ export type OrderItem = {
   service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean }
   length_ft: string | null
   width_ft: string | null
-  quantity: string
+  quantity: string | null // null: a carpet not measured yet (measured when washed)
   unit_price: string | null
   line_total: string | null
   notes: string | null

@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
-import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, readyToPack, todayInMalaysia } from './format'
+import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, needsMeasuring, readyToPack, todayInMalaysia } from './format'
 import { AlertIcon, BoxIcon, CheckIcon, ClockIcon, DropIcon, PrintIcon, TagIcon } from './icons'
 import { notifyWorkChanged } from './summary'
 import type { ItemFold, ItemStatus, Order, UntaggedItem, WorkItem, WorkLog } from './types'
@@ -72,7 +72,11 @@ function useMove(onDone: () => void) {
   const [busy, setBusy] = useState<number | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
 
-  const move = async (item: WorkItem, status: ItemStatus, extra: { fold?: ItemFold; note?: string } = {}) => {
+  const move = async (
+    item: WorkItem,
+    status: ItemStatus,
+    extra: { fold?: ItemFold; note?: string; length_ft?: string; width_ft?: string } = {},
+  ) => {
     setBusy(item.id)
     setNotice(null)
     try {
@@ -108,6 +112,10 @@ export function WashPage() {
   const [version, setVersion] = useState(0)
   const { log } = useWorkLog(today, version)
   const [notes, setNotes] = useState<Record<number, string>>({})
+  // Carpets that came in without their size are measured now, before they're marked washed.
+  const [sizes, setSizes] = useState<Record<number, { length: string; width: string }>>({})
+  const sizeOf = (id: number) => sizes[id] ?? { length: '', width: '' }
+  const measured = (id: number) => Number(sizeOf(id).length) > 0 && Number(sizeOf(id).width) > 0
   const { move, busy, notice } = useMove(() => {
     work.reload()
     setVersion((v) => v + 1)
@@ -148,6 +156,30 @@ export function WashPage() {
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 p-4 hover:bg-slate-50">
                 <CarpetSummary item={item} />
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                  {needsMeasuring(item) && (
+                    <div className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+                      <span>Saiz:</span>
+                      {(['length', 'width'] as const).map((side, i) => (
+                        <span key={side} className="flex items-center gap-1.5">
+                          {i === 1 && <span aria-hidden="true">×</span>}
+                          <label>
+                            <span className="sr-only">{`${side === 'length' ? 'Panjang' : 'Lebar'} ${item.tag} (kaki)`}</span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="0.1"
+                              value={sizeOf(item.id)[side]}
+                              onChange={(e) => setSizes({ ...sizes, [item.id]: { ...sizeOf(item.id), [side]: e.target.value } })}
+                              placeholder={side === 'length' ? 'P' : 'L'}
+                              className="w-14 rounded-md border border-amber-300 bg-white px-1.5 py-1 text-center font-normal"
+                            />
+                          </label>
+                        </span>
+                      ))}
+                      <span>kaki</span>
+                    </div>
+                  )}
                   <label className="min-w-0 flex-1 sm:flex-none">
                     <span className="sr-only">Catatan cuci {item.tag}</span>
                     <input
@@ -161,8 +193,14 @@ export function WashPage() {
                   </label>
                   <button
                     type="button"
-                    disabled={busy !== null}
-                    onClick={() => move(item, 'washed', notes[item.id]?.trim() ? { note: notes[item.id].trim() } : {})}
+                    disabled={busy !== null || (needsMeasuring(item) && !measured(item.id))}
+                    title={needsMeasuring(item) && !measured(item.id) ? 'Isi saiz karpet dulu' : undefined}
+                    onClick={() =>
+                      move(item, 'washed', {
+                        ...(notes[item.id]?.trim() ? { note: notes[item.id].trim() } : {}),
+                        ...(needsMeasuring(item) ? { length_ft: sizeOf(item.id).length, width_ft: sizeOf(item.id).width } : {}),
+                      })
+                    }
                     className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-sky-700 disabled:opacity-50"
                   >
                     <CheckIcon className="size-3.5" /> Tandakan siap cuci
@@ -197,7 +235,11 @@ function CarpetSummary({ item }: { item: WorkItem }) {
       <p className="flex flex-wrap items-center gap-2">
         <span className="rounded bg-slate-900 px-2.5 py-0.5 text-sm font-extrabold text-white">#{item.tag}</span>
         <span className={`text-sm font-bold ${item.service.needs_fold ? 'text-purple-800' : 'text-slate-800'}`}>{item.service.name}</span>
-        <span className="rounded bg-slate-200 px-2 py-0.5 font-mono text-xs text-slate-800">Saiz: {formatSize(item)}</span>
+        <span
+          className={`rounded px-2 py-0.5 font-mono text-xs ${needsMeasuring(item) ? 'bg-amber-100 text-amber-900' : 'bg-slate-200 text-slate-800'}`}
+        >
+          Saiz: {formatSize(item)}
+        </span>
       </p>
       <p className="text-xs text-slate-500">
         Pelanggan:{' '}

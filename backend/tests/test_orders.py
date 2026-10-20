@@ -154,12 +154,12 @@ def test_car_seats_are_priced_per_car(client: TestClient, services: dict[str, in
 @pytest.mark.parametrize(
     ("item", "message"),
     [
-        ({"service": "Karpet Biasa"}, "enter the size"),
+        ({"service": "Karpet Biasa", "length_ft": "8"}, "both the length and the width"),
         ({"service": "Cucian Sofa", "quantity": 1.5}, "whole number"),
         ({"service": "Cucian Sofa"}, "enter how many"),
     ],
 )
-def test_items_need_a_size_or_a_whole_count(
+def test_items_need_a_whole_size_or_count(
     client: TestClient, services: dict[str, int], item: dict, message: str
 ) -> None:
     body_item = {"service_id": services[item.pop("service")], **item}
@@ -168,6 +168,65 @@ def test_items_need_a_size_or_a_whole_count(
 
     assert response.status_code == 422
     assert message in response.json()["detail"]
+
+
+def test_a_carpet_can_be_measured_later_when_it_is_washed(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = staff_client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [{"service_id": services["Karpet Biasa"]}]},
+    ).json()
+    item = order["items"][0]
+
+    washed = staff_client.patch(
+        f"/api/orders/{order['id']}/items/{item['id']}",
+        json={"status": "washed", "length_ft": "8", "width_ft": "10"},
+    ).json()
+
+    assert (item["length_ft"], item["quantity"], item["line_total"]) == (None, None, None)
+    assert order["price_pending"] is True  # the total isn't known yet
+    measured = washed["items"][0]
+    assert (measured["length_ft"], measured["width_ft"], measured["quantity"]) == (
+        "8.00",
+        "10.00",
+        "80.00",
+    )
+    assert measured["line_total"] == "144.00"  # 80 sq ft x RM1.80, from the price list
+    assert washed["price_pending"] is False
+    assert washed["total"] == "144.00"
+
+
+def test_an_unmeasured_carpet_cannot_be_washed_without_its_size(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [{"service_id": services["Karpet Biasa"]}]},
+    ).json()
+    item_id = order["items"][0]["id"]
+
+    one = client.patch(f"/api/orders/{order['id']}/items/{item_id}", json={"status": "washed"})
+    whole = client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
+
+    assert one.status_code == whole.status_code == 422
+    assert "measure the carpet" in one.json()["detail"]
+
+
+def test_a_size_needs_both_sides_and_only_fits_carpets(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services)  # a carpet and a sofa
+    carpet_id, sofa_id = (i["id"] for i in order["items"])
+    url = f"/api/orders/{order['id']}/items"
+
+    half = client.patch(f"{url}/{carpet_id}", json={"status": "washed", "length_ft": "8"})
+    sofa = client.patch(
+        f"{url}/{sofa_id}", json={"status": "washed", "length_ft": "8", "width_ft": "2"}
+    )
+
+    assert half.status_code == 422
+    assert sofa.status_code == 422
 
 
 def test_old_orders_keep_their_prices_when_the_price_list_changes(

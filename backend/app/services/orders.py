@@ -312,7 +312,8 @@ def totals(order: Order) -> Totals:
 
 
 def line_total(item: OrderItem) -> Decimal | None:
-    if item.unit_price is None:
+    """None while the price isn't known: no price set yet, or a carpet not measured yet."""
+    if item.unit_price is None or item.quantity is None:
         return None
     return (item.unit_price * item.quantity).quantize(CENT, ROUND_HALF_UP)
 
@@ -541,16 +542,24 @@ def update_item_status(
     note: str | None,
     actor: Owner,
     fold: ItemFold | None = None,
+    size: tuple[Decimal, Decimal] | None = None,
 ) -> Order:
     """Move one carpet along (e.g. "412-2 dicuci"). Staff go one step forward; going back is
-    a correction for the owner. Packing a velvet carpet needs `fold` (gulung or lipat). The
+    a correction for the owner. Packing a velvet carpet needs `fold` (gulung or lipat). A
+    carpet measured while it's washed gets its `size` (length, width in feet) here. The
     order then follows its slowest item."""
     if order.status in CLOSED:
         raise BusinessRuleError(f"This order is {order.status.value}")
     item = next((i for i in order.items if i.id == item_id), None)
     if item is None:
         raise NotFoundError(f"Item {item_id} not found on this order")
+    if size is not None:
+        if item.service.pricing_unit is not PricingUnit.PER_SQFT:
+            raise BusinessRuleError(f"{tag(order, item)} is not measured in feet")
+        item.length_ft, item.width_ft = size
+        item.quantity = _sqft(*size)
     if new is item.status:
+        db.commit()
         return get_order(db, order.id)
     step = ITEM_STEPS.index(item.status)
     if not is_owner(actor) and ITEM_STEPS.index(new) != step + 1:
@@ -609,6 +618,11 @@ def _move_item(
     """Set an item's step, recording the day each step was reached and who did it, as the
     washing and packing forms do. Going back clears the later steps."""
     reached = ITEM_STEPS.index(new)
+    if reached >= 1 and item.washed_on is None and item.quantity is None:
+        # Carpets are measured as they're washed: the size (and so the price) can't wait longer.
+        raise BusinessRuleError(
+            f"{_tag(item)}: measure the carpet (length x width) when marking it washed"
+        )
     packing = reached >= 2 and item.ready_on is None
     fold = fold if item.service.needs_fold else None
     if packing and item.service.needs_fold and fold is None:
@@ -708,17 +722,21 @@ def _build_items(
 
 def _quantity(
     service: Service, data: OrderItemIn
-) -> tuple[Decimal, Decimal | None, Decimal | None]:
-    """Square feet from length x width for carpets; a count for everything else."""
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """Square feet from length x width for carpets; a count for everything else. A carpet
+    may come in unmeasured (it's measured when washed): its size is then None."""
     if service.pricing_unit is PricingUnit.PER_SQFT:
+        if (data.length_ft is None) != (data.width_ft is None):
+            raise BusinessRuleError(f"{service.name}: enter both the length and the width")
         if data.length_ft is not None and data.width_ft is not None:
-            sqft = (data.length_ft * data.width_ft).quantize(CENT, ROUND_HALF_UP)
-            return sqft, data.length_ft, data.width_ft
-        if data.quantity is not None:
-            return data.quantity, None, None
-        raise BusinessRuleError(f"{service.name}: enter the size (length x width in feet)")
+            return _sqft(data.length_ft, data.width_ft), data.length_ft, data.width_ft
+        return data.quantity, None, None
     if data.quantity is None:
         raise BusinessRuleError(f"{service.name}: enter how many")
     if data.quantity != data.quantity.to_integral_value():
         raise BusinessRuleError(f"{service.name}: the quantity must be a whole number")
     return data.quantity, None, None
+
+
+def _sqft(length: Decimal, width: Decimal) -> Decimal:
+    return (length * width).quantize(CENT, ROUND_HALF_UP)

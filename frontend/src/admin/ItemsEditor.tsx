@@ -107,7 +107,9 @@ export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
                 {total === null
                   ? service.unit_price_max
                     ? 'Harga ditetapkan oleh pemilik selepas diperiksa'
-                    : 'Masukkan saiz / kuantiti'
+                    : isCarpet
+                      ? 'Saiz boleh diisi semasa cuci; harga dikira selepas itu'
+                      : 'Masukkan kuantiti'
                   : formatMoney(String(total))}
               </p>
             )}

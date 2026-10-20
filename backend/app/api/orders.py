@@ -35,7 +35,7 @@ from app.schemas.order import (
     WorkSummaryRead,
 )
 from app.services import orders
-from app.services.errors import NotFoundError
+from app.services.errors import BusinessRuleError, NotFoundError
 
 # The owner check runs first, so a visitor gets 401 whether or not the back office is on.
 router = APIRouter(
@@ -82,8 +82,13 @@ def update_item_status(
 ) -> OrderRead:
     """Move one carpet along (dicuci, siap). The order follows its slowest item."""
     order = orders.get_order(db, order_id)
+    if (data.length_ft is None) != (data.width_ft is None):
+        raise BusinessRuleError("Enter both the length and the width")
+    size = (data.length_ft, data.width_ft) if data.length_ft and data.width_ft else None
     return to_read(
-        orders.update_item_status(db, order, item_id, data.status, data.note, actor, data.fold)
+        orders.update_item_status(
+            db, order, item_id, data.status, data.note, actor, data.fold, size
+        )
     )
 
 

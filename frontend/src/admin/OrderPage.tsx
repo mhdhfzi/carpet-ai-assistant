@@ -16,6 +16,7 @@ import {
   formatDay,
   formatMoney,
   formatSize,
+  needsMeasuring,
   whatsAppUrl,
 } from './format'
 import { ItemsEditor, NumberField } from './ItemsEditor'
@@ -87,6 +88,8 @@ export function OrderPage({ id }: { id: number }) {
   const closed = order.status === 'completed' || order.status === 'cancelled'
   // Velvet is packed rolled or folded, so it can't be packed with the rest in one go.
   const velvetToPack = order.items.some((i) => i.status === 'washed' && i.service.needs_fold)
+  // Unmeasured carpets get their size on Borang Cuci, as they're washed.
+  const toMeasure = order.items.some((i) => i.status === 'received' && needsMeasuring(i))
 
   return (
     <article className="mx-auto max-w-xl space-y-5">
@@ -113,6 +116,14 @@ export function OrderPage({ id }: { id: number }) {
       {next === 'ready' && velvetToPack ? (
         <p className="rounded-2xl bg-white p-4 text-center text-sm ring-1 ring-line">
           Ada karpet velvet: pack setiap karpet di bawah dan pilih Gulung atau Lipat.
+        </p>
+      ) : next === 'washed' && toMeasure ? (
+        <p className="rounded-2xl bg-white p-4 text-center text-sm ring-1 ring-line">
+          Ada karpet belum diukur: isi saiz dan tandakan siap cuci di{' '}
+          <a href={href({ page: 'wash' })} className="font-semibold underline">
+            Borang Cuci
+          </a>
+          .
         </p>
       ) : next && (
         <button
@@ -179,11 +190,11 @@ export function OrderPage({ id }: { id: number }) {
                   </p>
                   <p className="text-sm text-ink-soft">
                     {formatSize(item)}
-                    {item.service.pricing_unit === 'per_sqft' && ` (${Number(item.quantity)} kaki persegi)`}
+                    {item.service.pricing_unit === 'per_sqft' && item.quantity !== null && ` (${Number(item.quantity)} kaki persegi)`}
                   </p>
                   {item.notes && <p className="text-sm">Catatan: {item.notes}</p>}
                 </div>
-                <p className="shrink-0 font-semibold">{item.line_total ? formatMoney(item.line_total) : 'Harga belum ditetapkan'}</p>
+                <p className="shrink-0 font-semibold">{item.line_total ? formatMoney(item.line_total) : needsMeasuring(item) ? 'Harga selepas diukur' : 'Harga belum ditetapkan'}</p>
                 </div>
                 <ItemProgress
                   item={item}
@@ -435,7 +446,15 @@ function ItemProgress({
         {ITEM_STATUS_LABEL[item.status]}
       </span>
       <span className="text-xs text-ink-soft">{stepHistory(item)}</span>
-      {open &&
+      {open && next === 'washed' && needsMeasuring(item) ? (
+        <a
+          href={href({ page: 'wash' })}
+          className="ml-auto rounded-full bg-brand px-3 py-1.5 text-xs font-semibold hover:bg-brand-hover"
+        >
+          Ukur & cuci
+        </a>
+      ) : (
+        open &&
         next &&
         choices.map((choice, index) => (
           <button
@@ -447,7 +466,8 @@ function ItemProgress({
           >
             {choice.label}
           </button>
-        ))}
+        ))
+      )}
       {open && isOwner && item.status !== 'received' && (
         <button
           type="button"
