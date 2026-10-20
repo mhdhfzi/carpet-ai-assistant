@@ -138,7 +138,7 @@ export function OrderPage({ id }: { id: number }) {
           className="w-full rounded-full bg-brand py-4 text-lg font-semibold hover:bg-brand-hover disabled:opacity-50"
         >
           {homeOnly && next === 'ready'
-            ? 'Tandakan siap (kerja di rumah selesai)'
+            ? 'Tandakan siap (kerja luar selesai)'
             : (order.items.length > 1 && ALL_ITEMS_ACTION_LABEL[next]) || ORDER_ACTION_LABEL[next]}
         </button>
       )}
@@ -419,11 +419,11 @@ function Payments({
   )
 }
 
-/** "Siap dipack" for a carpet, "Siap (di rumah)" for a job done at the customer's home. */
+/** "Siap dipack" for a carpet, "Siap (kerja luar)" for a job done at the customer's home. */
 function eventLabel(order: Order, event: Order['events'][number]): string {
   if (!event.item_tag) return ORDER_STATUS_LABEL[event.status]
   const item = order.items.find((i) => i.tag === event.item_tag)
-  if (item?.service.on_site) return event.status === 'ready' ? 'Siap (di rumah)' : 'Belum dibuat (di rumah)'
+  if (item?.service.on_site) return event.status === 'ready' ? 'Siap (kerja luar)' : 'Belum dibuat (kerja luar)'
   return ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status]
 }
 
@@ -488,7 +488,7 @@ function ItemProgress({
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${ITEM_STATUS_STYLE[item.status]}`}>
-        {home ? (item.status === 'ready' ? 'Siap (di rumah)' : 'Belum dibuat (di rumah)') : ITEM_STATUS_LABEL[item.status]}
+        {home ? (item.status === 'ready' ? 'Siap (kerja luar)' : 'Belum dibuat (kerja luar)') : ITEM_STATUS_LABEL[item.status]}
       </span>
       <span className="text-xs text-ink-soft">{stepHistory(item)}</span>
       {open && next === 'washed' && needsMeasuring(item) ? (

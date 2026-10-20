@@ -44,7 +44,7 @@ function navFor(business: Business | null | undefined, staff: boolean, summary: 
     { route: { page: 'orders' }, label: 'Buku Utama', icon: BookIcon },
     { route: { page: 'wash' }, label: 'Borang Cuci', icon: DropIcon, active: 'bg-sky-500 text-white', count: summary?.to_wash },
     { route: { page: 'pack' }, label: 'Borang Packing', icon: BoxIcon, count: summary?.to_pack },
-    { route: { page: 'visits' }, label: 'Kerja Rumah', icon: HomeIcon, active: 'bg-emerald-500 text-white', count: summary?.house_jobs },
+    { route: { page: 'visits' }, label: 'Kerja Luar', icon: HomeIcon, active: 'bg-emerald-500 text-white', count: summary?.house_jobs },
     { route: { page: 'receipts' }, label: 'Resit & WhatsApp', icon: ReceiptIcon, active: 'bg-emerald-500 text-white' },
     { route: { page: 'log' }, label: 'Rekod harian', icon: ClipboardIcon },
     { route: { page: 'customers' }, label: 'Pelanggan', icon: UsersIcon },

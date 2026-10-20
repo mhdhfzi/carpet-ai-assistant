@@ -7,8 +7,10 @@ import { notifyWorkChanged } from './summary'
 import type { Order } from './types'
 import { href } from './useHashRoute'
 import { VisitEditor } from './VisitEditor'
+import { SearchBox } from './SearchBox'
+import { orderMatches } from './search'
 
-// "Kerja Rumah": sofa, mattress and car seat jobs, done at the customer's home in one visit.
+// "Kerja Luar": sofa, mattress and car seat jobs, done at the customer's home in one visit.
 // They skip the washing and packing forms: the team goes, does the job, and marks it done.
 // Listed by visit time, so the day's route is in one place.
 
@@ -16,6 +18,7 @@ export function HouseJobsPage() {
   const { request } = useAuth()
   const today = todayInMalaysia()
   const [orders, setOrders] = useState<Order[] | null>(null)
+  const [query, setQuery] = useState('')
   const [error, setError] = useState(false)
   const [version, setVersion] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -60,7 +63,7 @@ export function HouseJobsPage() {
     { title: 'Akan datang', tone: 'text-slate-800', orders: [] },
     { title: 'Belum dijadualkan', tone: 'text-amber-800', orders: [] },
   ]
-  for (const order of orders ?? []) {
+  for (const order of (orders ?? []).filter((o) => orderMatches(o, query))) {
     const day = order.visit_at ? visitDay(order.visit_at) : null
     groups[day === null ? 3 : day < today ? 0 : day === today ? 1 : 2].orders.push(order)
   }
@@ -69,9 +72,9 @@ export function HouseJobsPage() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-emerald-900 p-5 text-white shadow">
         <div className="max-w-2xl">
-          <span className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-bold tracking-wider uppercase">Kerja rumah</span>
+          <span className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-bold tracking-wider uppercase">Kerja luar</span>
           <h1 className="mt-2 flex items-center gap-2 text-xl font-extrabold uppercase">
-            <HomeIcon className="size-5" /> Jadual cucian di rumah pelanggan
+            <HomeIcon className="size-5" /> Jadual kerja luar
           </h1>
           <p className="mt-0.5 text-xs text-white/80">
             Sofa, tilam dan seat kereta dibuat di rumah pelanggan dalam satu lawatan: tiada borang cuci atau packing.
@@ -90,11 +93,24 @@ export function HouseJobsPage() {
           {notice.ok ? <CheckIcon /> : <AlertIcon />} {notice.text}
         </p>
       )}
+      {(orders?.length ?? 0) > 0 && (
+        <SearchBox
+          value={query}
+          onChange={setQuery}
+          label="Cari kerja luar"
+          placeholder="Cari no. siri, nama, no. HP atau alamat"
+        />
+      )}
+      {query.trim() !== '' && (orders?.length ?? 0) > 0 && groups.every((g) => g.orders.length === 0) && (
+        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-ink-soft shadow-sm">
+          Tiada kerja luar sepadan dengan carian.
+        </p>
+      )}
       {error && <p role="alert" className="text-danger">Tak dapat muatkan jadual. Cuba lagi.</p>}
       {orders === null && !error && <p className="text-ink-soft">Memuatkan…</p>}
       {orders?.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-ink-soft shadow-sm">
-          Tiada kerja rumah yang belum siap.
+          Tiada kerja luar yang belum siap.
         </p>
       )}
 
@@ -138,7 +154,7 @@ function VisitCard({
   const address = [order.customer.address, order.customer.area].filter(Boolean).join(', ')
   return (
     <article
-      aria-label={`Kerja rumah ${order.number}, ${order.customer.name}`}
+      aria-label={`Kerja luar ${order.number}, ${order.customer.name}`}
       className="h-full space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <header className="flex flex-wrap items-start justify-between gap-2">

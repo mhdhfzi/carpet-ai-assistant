@@ -3,6 +3,8 @@ import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, needsMeasuring, readyToPack, todayInMalaysia } from './format'
 import { AlertIcon, BoxIcon, CheckIcon, ClockIcon, DropIcon, PrintIcon, TagIcon } from './icons'
+import { SearchBox } from './SearchBox'
+import { carpetMatches } from './search'
 import { notifyWorkChanged } from './summary'
 import type { ItemFold, ItemStatus, Order, UntaggedItem, WorkItem, WorkLog } from './types'
 import { href } from './useHashRoute'
@@ -120,7 +122,10 @@ export function WashPage() {
     work.reload()
     setVersion((v) => v + 1)
   })
-  const washedToday = log?.washed ?? []
+  const [query, setQuery] = useState('')
+  const toWash = (work.items ?? []).filter((item) => carpetMatches(item, query))
+  const washedToday = (log?.washed ?? []).filter((item) => carpetMatches(item, query))
+  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) > 0 && toWash.length === 0 && washedToday.length === 0
 
   return (
     <section className="space-y-6">
@@ -150,9 +155,18 @@ export function WashPage() {
               Staf aktif: <strong>{staff}</strong>
             </span>
           </div>
+          <div className="border-b border-slate-200 p-3">
+            <SearchBox
+              value={query}
+              onChange={setQuery}
+              label="Cari karpet untuk dicuci"
+              placeholder="Cari no. siri (12 / 12-2), nama atau jenis karpet"
+            />
+          </div>
           <Loading work={work} empty="Semua karpet sudah dicuci." />
+          {noMatch && <p className="p-6 text-center text-sm text-ink-soft">Tiada karpet sepadan dengan carian.</p>}
           <ul className="divide-y divide-slate-200">
-            {work.items?.map((item) => (
+            {toWash.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 p-4 hover:bg-slate-50">
                 <CarpetSummary item={item} />
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -409,6 +423,10 @@ export function PackPage() {
   }
 
   const due = (work.items ?? []).filter((i) => readyToPack(i, today)).length
+  const [query, setQuery] = useState('')
+  const toPack = (work.items ?? []).filter((item) => carpetMatches(item, query))
+  const packedToday = (log?.packed ?? []).filter((item) => carpetMatches(item, query))
+  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) + (log?.packed.length ?? 0) > 0 && toPack.length + packedToday.length === 0
 
   return (
     <section className="space-y-6">
@@ -436,8 +454,17 @@ export function PackPage() {
             Staf aktif: <strong>{staff}</strong>
           </span>
         </div>
+        <div className="border-b border-slate-200 p-3">
+          <SearchBox
+            value={query}
+            onChange={setQuery}
+            label="Cari karpet untuk dipack"
+            placeholder="Cari no. siri (12 / 12-2), nama atau jenis karpet"
+          />
+        </div>
         <Loading work={work} empty="Tiada karpet untuk dipack." />
-        {((work.items?.length ?? 0) > 0 || (log?.packed.length ?? 0) > 0) && (
+        {noMatch && <p className="p-6 text-center text-sm text-ink-soft">Tiada karpet sepadan dengan carian.</p>}
+        {(toPack.length > 0 || packedToday.length > 0) && (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm max-md:block">
               <thead className="max-md:hidden">
@@ -451,7 +478,7 @@ export function PackPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 max-md:block">
-                {work.items?.map((item) => {
+                {toPack.map((item) => {
                   const days = item.washed_on ? daysBetween(item.washed_on, today) : 0
                   const ready = readyToPack(item, today)
                   return (
@@ -499,7 +526,7 @@ export function PackPage() {
                     </PackRow>
                   )
                 })}
-                {log?.packed.map((item) => (
+                {packedToday.map((item) => (
                   <PackRow key={item.id} item={item} label={`Karpet ${item.tag}, sudah dipack`} className="bg-emerald-50/40">
                     <td className={packCell}>
                       <p className="text-xs font-semibold text-slate-700">Dicuci: {item.washed_on && formatShortDate(item.washed_on)}</p>
@@ -610,7 +637,7 @@ export function LogPage() {
             last={(i) => (i.fold ? FOLD_LABEL[i.fold] : '')}
           />
           <FormTable
-            title="Kerja di rumah pelanggan"
+            title="Kerja luar"
             day={log.day}
             items={log.on_site}
             staff={(i) => i.packed_by}
