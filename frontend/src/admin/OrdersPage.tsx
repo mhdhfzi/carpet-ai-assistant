@@ -26,7 +26,7 @@ const FILTERS: { key: string; label: string; statuses: OrderStatus[]; keep?: (o:
   { key: 'unwashed', label: 'Belum cuci', statuses: ['received'], keep: (o) => o.items.some((i) => !isHomeJob(i) && i.status === 'received') },
   { key: 'home', label: 'Kerja rumah', statuses: OPEN, keep: (o) => o.items.some((i) => isHomeJob(i) && i.status !== 'ready') },
   { key: 'to-pack', label: 'Kering 5–7 hari', statuses: ['received', 'washed'], keep: (o, today) => o.items.some((i) => readyToPack(i, today)) },
-  { key: 'ready', label: 'Siap pack', statuses: ['ready'] },
+  { key: 'ready', label: 'Siap', statuses: ['ready'] },
   { key: 'unpaid', label: 'Belum bayar', statuses: [...OPEN, 'completed'], keep: (o) => owes(o) },
   { key: 'history', label: 'Sejarah', statuses: ['completed', 'cancelled'] },
 ]
@@ -260,7 +260,7 @@ function BookRow({ order, today }: { order: Order; today: string }) {
               {order.status === 'completed'
                 ? `Selesai ${order.completed_on ? formatShortDate(order.completed_on) : ''}`
                 : packed === count
-                  ? 'Siap dipack'
+                  ? 'Siap'
                   : 'Belum selesai'}
             </span>
           </>
