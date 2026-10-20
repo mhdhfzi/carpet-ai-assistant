@@ -109,6 +109,7 @@ export type Service = {
   pricing_unit: PricingUnit
   unit_price: string
   unit_price_max: string | null
+  on_site: boolean // done at the customer's home: no washing or packing forms
   is_active: boolean
 }
 
@@ -118,7 +119,7 @@ export type OrderItem = {
   id: number
   position: number
   tag: string
-  service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean }
+  service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean; on_site: boolean }
   length_ft: string | null
   width_ft: string | null
   quantity: string | null // null: a carpet not measured yet (measured when washed)
@@ -145,14 +146,16 @@ export type WorkItem = OrderItem & {
 }
 
 /** One day's washing and packing forms. */
-export type WorkLog = { day: string; washed: WorkItem[]; packed: WorkItem[] }
+export type WorkLog = { day: string; washed: WorkItem[]; packed: WorkItem[]; on_site: WorkItem[] }
 
 export type Order = {
   id: number
   number: number
   customer: OrderCustomer
   received_on: string
+  visit_at: string | null // the house visit, for sofa / mattress / car jobs
   status: OrderStatus
+  next_status: OrderStatus | null // what the order's big button moves it to
   return_method: ReturnMethod | null
   discount: string
   notes: string | null
@@ -245,6 +248,7 @@ export type WorkSummary = {
   ready_orders: number
   unpaid: string
   unpaid_orders: number
+  house_jobs: number // sofa / mattress / car jobs not done yet
 }
 
 /** A carpet found without its tag ("XXX" on the washing form). */

@@ -167,3 +167,39 @@ export function formatShortDate(isoDate: string): string {
 export function readyToPack(item: { status: ItemStatus; ready_from: string | null }, today: string): boolean {
   return item.status === 'washed' && (!item.ready_from || item.ready_from <= today)
 }
+
+/** Done at the customer's home in one visit (sofa, mattress, car seats). */
+export function isHomeJob(item: { service: { on_site: boolean } }): boolean {
+  return item.service.on_site
+}
+
+const visitFormat = new Intl.DateTimeFormat('ms-MY', {
+  timeZone: TIME_ZONE,
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+/** "Sel, 21 Okt, 10:00 PG": a house visit, in Malaysia time. */
+export function formatVisit(iso: string): string {
+  return visitFormat.format(new Date(iso))
+}
+
+/** The Malaysia calendar day of a moment, "YYYY-MM-DD". */
+export function visitDay(iso: string): string {
+  return todayInMalaysia(new Date(iso))
+}
+
+/** A moment as a datetime-local input's value, in Malaysia time ("2026-10-21T10:00"). */
+export function toVisitInput(iso: string | null): string {
+  if (!iso) return ''
+  return new Date(new Date(iso).getTime() + 8 * 3_600_000).toISOString().slice(0, 16)
+}
+
+/** A datetime-local value (Malaysia time) as the API wants it, or null when cleared. */
+export function fromVisitInput(value: string): string | null {
+  return value ? `${value}:00+08:00` : null
+}
+

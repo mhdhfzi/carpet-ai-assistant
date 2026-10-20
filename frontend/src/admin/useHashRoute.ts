@@ -10,6 +10,7 @@ export type Route =
   | { page: 'customers' }
   | { page: 'wash' }
   | { page: 'pack' }
+  | { page: 'visits' }
   | { page: 'log' }
   | { page: 'new-order' }
   | { page: 'order'; id: number }
@@ -36,6 +37,8 @@ export function parseRoute(hash: string): Route | null {
       return { page: 'wash' }
     case 'packing':
       return { page: 'pack' }
+    case 'kerja-rumah':
+      return { page: 'visits' }
     case 'rekod':
       return { page: 'log' }
     case 'customers':
@@ -63,6 +66,8 @@ export function href(route: Route): string {
       return '#/cuci'
     case 'pack':
       return '#/packing'
+    case 'visits':
+      return '#/kerja-rumah'
     case 'log':
       return '#/rekod'
     default:

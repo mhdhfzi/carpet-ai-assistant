@@ -41,10 +41,18 @@ const REAL_BUSINESS = {
 const me = (role: 'owner' | 'staff') => () => ({ body: { id: 1, email: 'x@example.com', name: role === 'owner' ? 'Herman' : 'Pekerja', role } })
 
 const SERVICES: Service[] = [
-  { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', unit_price: '1.80', unit_price_max: null, is_active: true },
-  { id: 2, name: 'Karpet Handmade', pricing_unit: 'per_sqft', unit_price: '2.50', unit_price_max: '4.00', is_active: true },
-  { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', unit_price: '60.00', unit_price_max: null, is_active: true },
+  { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', unit_price: '1.80', unit_price_max: null, on_site: false, is_active: true },
+  { id: 2, name: 'Karpet Handmade', pricing_unit: 'per_sqft', unit_price: '2.50', unit_price_max: '4.00', on_site: false, is_active: true },
+  { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', unit_price: '60.00', unit_price_max: null, on_site: true, is_active: true },
 ]
+
+const NEXT: Record<Order['status'], Order['next_status']> = {
+  received: 'washed',
+  washed: 'ready',
+  ready: 'completed',
+  completed: null,
+  cancelled: null,
+}
 
 function order(overrides: Partial<Order> = {}): Order {
   return {
@@ -52,7 +60,9 @@ function order(overrides: Partial<Order> = {}): Order {
     number: 412,
     customer: { id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A' },
     received_on: '2026-10-10',
+    visit_at: null,
     status: 'received',
+    next_status: NEXT[overrides.status ?? 'received'],
     return_method: null,
     discount: '0.00',
     notes: null,
@@ -73,7 +83,7 @@ function order(overrides: Partial<Order> = {}): Order {
         id: 1,
         position: 1,
         tag: '412-1',
-        service: { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', needs_fold: false },
+        service: { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', needs_fold: false, on_site: false },
         length_ft: '8.00',
         width_ft: '10.00',
         quantity: '80.00',
@@ -149,11 +159,11 @@ describe('back office', () => {
     const row = await screen.findByRole('row', { name: /Pesanan 412, Ali/ })
     expect(row).toHaveTextContent('412-1: Karpet Biasa (8 x 10 kaki)RM144.00')
     expect(row).toHaveTextContent('Belum cuci')
-    expect(row).toHaveTextContent('Progress: 0 / 1 karpet')
+    expect(row).toHaveTextContent('Progress: 0 / 1 barang')
     expect(row).toHaveTextContent('Baki RM94.00')
     expect(screen.getByText('Dobi Karpet Xpress')).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Rumah', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
     expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received', 'washed', 'ready'])
   })
 
@@ -202,7 +212,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Rumah', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
@@ -433,7 +443,7 @@ describe('back office', () => {
       id: 2,
       position: 2,
       tag: '412-2',
-      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const, needs_fold: false },
+      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const, needs_fold: false, on_site: false },
     }
     const twoCarpets = order({ items: [order().items[0], second] })
     const firstWashed = order({
@@ -471,7 +481,7 @@ describe('back office', () => {
     renderSignedIn()
 
     const row = await screen.findByRole('row', { name: /Pesanan 412/ })
-    expect(row).toHaveTextContent('Progress: 1 / 3 karpet')
+    expect(row).toHaveTextContent('Progress: 1 / 3 barang')
     expect(row).toHaveTextContent('Belum selesai')
   })
 
@@ -544,7 +554,7 @@ describe('back office', () => {
   it('packs velvet rolled or folded and keeps drying carpets apart', async () => {
     const velvet = workItem({
       id: 1,
-      service: { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', needs_fold: true },
+      service: { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', needs_fold: true, on_site: false },
       status: 'washed',
       washed_on: '2020-01-01',
       ready_from: '2020-01-06',
@@ -584,6 +594,7 @@ describe('back office', () => {
           day: call.query.get('day'),
           washed: [workItem({ washed_by: 'Amir' }), workItem({ id: 2, tag: '412-2', washed_by: 'Ammar' })],
           packed: [workItem({ id: 3, tag: '410-1', packed_by: 'Razi', fold: 'folded' })],
+          on_site: [],
         },
       }),
     })
@@ -654,3 +665,89 @@ describe('measuring when washing', () => {
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed', length_ft: '8', width_ft: '10' })
   })
 })
+
+describe("jobs at the customer's home", () => {
+  const sofa = {
+    ...order().items[0],
+    id: 2,
+    position: 1,
+    tag: '412-1',
+    service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true },
+    length_ft: null,
+    width_ft: null,
+    quantity: '3',
+    unit_price: '60.00',
+    line_total: '180.00',
+    notes: null,
+  }
+
+  it('lists home jobs by visit and marks one done', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const visits = [
+      order({ id: 7, items: [sofa], visit_at: `${today}T02:00:00Z`, next_status: 'ready' }),
+      order({ id: 8, number: 413, items: [{ ...sofa, id: 3, tag: '413-1' }], visit_at: null, next_status: 'ready' }),
+    ]
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/visits': () => ({ body: visits }),
+      'PATCH /api/orders/7/items/2': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/kerja-rumah')
+
+    const todayGroup = await screen.findByRole('region', { name: 'Hari ini' })
+    const card = within(todayGroup).getByRole('article', { name: 'Kerja rumah 412, Ali' })
+    expect(card).toHaveTextContent('Cucian Sofa × 3')
+    expect(within(card).getByRole('link', { name: '5, Jalan A, Seremban 2' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('google.com/maps'),
+    )
+    expect(screen.getByRole('region', { name: 'Belum dijadualkan' })).toHaveTextContent('#413')
+
+    await user.click(within(card).getByRole('button', { name: 'Tandakan siap' }))
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready' })
+    expect(await screen.findByRole('status')).toHaveTextContent('412-1 siap.')
+  })
+
+  it('finishes a home-only order with one button and keeps the visit time', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({
+        body: { ...receipt(), order: order({ items: [sofa], next_status: 'ready', visit_at: '2026-10-21T02:00:00Z' }) },
+      }),
+      'PATCH /api/orders/7': () => ({ body: order({ items: [{ ...sofa, status: 'ready' }], status: 'ready' }) }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText('Belum dibuat (di rumah)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tarikh & masa lawatan')).toHaveValue('2026-10-21T10:00')
+    await user.click(screen.getByRole('button', { name: 'Tandakan siap (kerja di rumah selesai)' }))
+
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready' })
+  })
+
+  it('asks for the visit time when an order has a home job', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    expect(screen.queryByLabelText('Tarikh & masa lawatan (pilihan)')).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Cucian Sofa')
+    await user.type(screen.getByLabelText('Kuantiti'), '3')
+    await user.type(screen.getByLabelText('Tarikh & masa lawatan (pilihan)'), '2026-10-21T10:00')
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as Record<string, unknown>
+    expect(posted.visit_at).toBe('2026-10-21T10:00:00+08:00')
+  })
+})
+

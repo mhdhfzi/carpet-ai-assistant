@@ -8,6 +8,8 @@ import {
   formatMoney,
   formatShortDate,
   formatSize,
+  formatVisit,
+  isHomeJob,
   readyToPack,
   todayInMalaysia,
 } from './format'
@@ -21,9 +23,10 @@ import { href } from './useHashRoute'
 const OPEN: OrderStatus[] = ['received', 'washed', 'ready']
 const FILTERS: { key: string; label: string; statuses: OrderStatus[]; keep?: (o: Order, today: string) => boolean }[] = [
   { key: 'open', label: 'Semua', statuses: OPEN },
-  { key: 'unwashed', label: 'Belum cuci', statuses: ['received'] },
+  { key: 'unwashed', label: 'Belum cuci', statuses: ['received'], keep: (o) => o.items.some((i) => !isHomeJob(i) && i.status === 'received') },
+  { key: 'home', label: 'Kerja rumah', statuses: OPEN, keep: (o) => o.items.some((i) => isHomeJob(i) && i.status !== 'ready') },
   { key: 'to-pack', label: 'Kering 5–7 hari', statuses: ['received', 'washed'], keep: (o, today) => o.items.some((i) => readyToPack(i, today)) },
-  { key: 'ready', label: 'Siap pack', statuses: ['ready'] },
+  { key: 'ready', label: 'Siap', statuses: ['ready'] },
   { key: 'unpaid', label: 'Belum bayar', statuses: [...OPEN, 'completed'], keep: (o) => owes(o) },
   { key: 'history', label: 'Sejarah', statuses: ['completed', 'cancelled'] },
 ]
@@ -164,7 +167,9 @@ const cell = 'px-4 py-3.5 max-md:block max-md:px-0 max-md:py-1.5'
 function BookRow({ order, today }: { order: Order; today: string }) {
   const packed = order.items_ready
   const count = order.items.length
-  const unwashed = order.items.some((i) => i.status === 'received')
+  const unwashed = order.items.some((i) => !isHomeJob(i) && i.status === 'received')
+  const homePending = order.items.some((i) => isHomeJob(i) && i.status !== 'ready')
+  const carpetsLeft = order.items.some((i) => !isHomeJob(i) && i.status !== 'ready')
   const open = OPEN.includes(order.status)
   return (
     <tr aria-label={`Pesanan ${order.number}, ${order.customer.name}`} className="align-top hover:bg-slate-50/80 max-md:block max-md:px-4 max-md:py-3">
@@ -178,6 +183,9 @@ function BookRow({ order, today }: { order: Order; today: string }) {
         <p className="mt-1.5 text-xs text-slate-500">
           Masuk: <strong>{formatShortDate(order.received_on)}</strong>
         </p>
+        {order.visit_at && homePending && (
+          <p className="mt-1 text-xs font-semibold text-emerald-800">Lawatan: {formatVisit(order.visit_at)}</p>
+        )}
       </td>
 
       <td className={`${cell} max-w-xs`}>
@@ -232,7 +240,7 @@ function BookRow({ order, today }: { order: Order; today: string }) {
         ) : (
           <>
             <p className="mb-1 text-xs font-bold">
-              Progress: {packed} / {count} karpet
+              Progress: {packed} / {count} barang
             </p>
             <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
               <div
@@ -252,7 +260,7 @@ function BookRow({ order, today }: { order: Order; today: string }) {
               {order.status === 'completed'
                 ? `Selesai ${order.completed_on ? formatShortDate(order.completed_on) : ''}`
                 : packed === count
-                  ? 'Siap dipack'
+                  ? 'Siap'
                   : 'Belum selesai'}
             </span>
           </>
@@ -273,12 +281,20 @@ function BookRow({ order, today }: { order: Order; today: string }) {
         >
           <ReceiptIcon className="size-3.5" /> Resit & WA
         </a>
-        {open && packed < count && (
+        {open && carpetsLeft && (
           <a
             href={href({ page: unwashed ? 'wash' : 'pack' })}
             className="flex items-center justify-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-500/30"
           >
             {unwashed ? 'Ke Borang Cuci' : 'Ke Borang Packing'} <ArrowIcon className="size-3" />
+          </a>
+        )}
+        {open && homePending && (
+          <a
+            href={href({ page: 'visits' })}
+            className="flex items-center justify-center gap-1 rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-500/25"
+          >
+            Ke Kerja Rumah <ArrowIcon className="size-3" />
           </a>
         )}
         <a href={href({ page: 'order', id: order.id })} className="block text-center text-xs font-semibold text-slate-600 underline">
@@ -291,6 +307,15 @@ function BookRow({ order, today }: { order: Order; today: string }) {
 
 /** Where one carpet is: not washed, drying (day N), ready to pack, or packed. */
 function WashState({ item, today }: { item: OrderItem; today: string }) {
+  if (isHomeJob(item)) {
+    return item.ready_on ? (
+      <span className="font-semibold text-emerald-700">Di rumah: siap {formatShortDate(item.ready_on)}</span>
+    ) : (
+      <span className="inline-block rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-800">
+        Di rumah: belum
+      </span>
+    )
+  }
   if (!item.washed_on) {
     return <span className="inline-block rounded border border-sky-200 bg-sky-50 px-2 py-1 font-medium text-sky-800">Belum cuci</span>
   }

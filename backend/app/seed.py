@@ -52,6 +52,7 @@ def on_site(name: str, kind: str, per: str, price: str) -> dict:
         "pricing_unit": PricingUnit.PER_ITEM,
         "unit_price": D(price),
         "visit_minutes": 120,
+        "on_site": True,  # done at the customer's home in one visit
     }
 
 
@@ -65,6 +66,7 @@ def car_seats(size: str, price: str) -> dict:
         "pricing_unit": PricingUnit.PER_ITEM,
         "unit_price": D(price),
         "visit_minutes": 120,
+        "on_site": True,
     }
 
 
@@ -93,7 +95,13 @@ def seed_services(db: Session) -> tuple[int, int]:
     existing = {s.name: s for s in db.scalars(select(Service))}
     created = updated = 0
     for data in SERVICES:
-        values = {"unit_price_max": None, "minimum_charge": D("0"), "needs_fold": False, **data}
+        values = {
+            "unit_price_max": None,
+            "minimum_charge": D("0"),
+            "needs_fold": False,
+            "on_site": False,
+            **data,
+        }
         service = existing.get(data["name"])
         if service is None:
             db.add(Service(**values))

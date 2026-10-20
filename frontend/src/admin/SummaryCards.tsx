@@ -38,9 +38,9 @@ export function SummaryCards({ summary }: { summary: WorkSummary }) {
         href={href({ page: 'orders', filter: 'ready' })}
         className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-400"
       >
-        <p className="text-xs font-semibold text-slate-500 uppercase">Siap pack (tunggu ambil)</p>
+        <p className="text-xs font-semibold text-slate-500 uppercase">Siap (tunggu ambil / bayar)</p>
         <p className="mt-1 text-xl font-extrabold sm:text-2xl text-emerald-700">{summary.ready_orders} tempahan</p>
-        <p className="mt-1 text-xs text-slate-500">Semua karpet dalam tempahan sudah dipack</p>
+        <p className="mt-1 text-xs text-slate-500">Karpet sudah dipack, kerja rumah sudah selesai</p>
       </a>
 
       <a

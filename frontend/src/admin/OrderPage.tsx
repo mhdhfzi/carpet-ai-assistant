@@ -16,6 +16,8 @@ import {
   formatDay,
   formatMoney,
   formatSize,
+  formatVisit,
+  isHomeJob,
   needsMeasuring,
   whatsAppUrl,
 } from './format'
@@ -25,7 +27,6 @@ import {
   type ItemFold,
   type ItemStatus,
   NEXT_ITEM_STATUS,
-  NEXT_ORDER_STATUS,
   type Order,
   type OrderStatus,
   type PaymentMethod,
@@ -33,6 +34,7 @@ import {
   type ReturnMethod,
 } from './types'
 import { notifyWorkChanged } from './summary'
+import { VisitEditor } from './VisitEditor'
 import { readyMessage, receiptMessage } from './whatsappMessages'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
@@ -84,7 +86,9 @@ export function OrderPage({ id }: { id: number }) {
   if (loadError) return <p role="alert" className="text-danger">Pesanan tak dijumpai.</p>
   if (!order) return <p className="text-ink-soft">Memuatkan…</p>
 
-  const next = NEXT_ORDER_STATUS[order.status]
+  const next = order.next_status ?? undefined
+  const homeJobs = order.items.some(isHomeJob)
+  const homeOnly = order.items.every(isHomeJob)
   const closed = order.status === 'completed' || order.status === 'cancelled'
   // Velvet is packed rolled or folded, so it can't be packed with the rest in one go.
   const velvetToPack = order.items.some((i) => i.status === 'washed' && i.service.needs_fold)
@@ -132,7 +136,9 @@ export function OrderPage({ id }: { id: number }) {
           onClick={() => save({ status: next })}
           className="w-full rounded-full bg-brand py-4 text-lg font-semibold hover:bg-brand-hover disabled:opacity-50"
         >
-          {(order.items.length > 1 && ALL_ITEMS_ACTION_LABEL[next]) || ORDER_ACTION_LABEL[next]}
+          {homeOnly && next === 'ready'
+            ? 'Tandakan siap (kerja di rumah selesai)'
+            : (order.items.length > 1 && ALL_ITEMS_ACTION_LABEL[next]) || ORDER_ACTION_LABEL[next]}
         </button>
       )}
       {next === 'completed' && Number(order.balance) > 0 && (
@@ -209,6 +215,16 @@ export function OrderPage({ id }: { id: number }) {
         </section>
       )}
 
+      {homeJobs && order.status !== 'cancelled' && (
+        <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
+          <h2 className="font-semibold">Lawatan ke rumah pelanggan</h2>
+          <p className="text-sm text-ink-soft">
+            {order.visit_at ? formatVisit(order.visit_at) : 'Masa lawatan belum ditetapkan.'}
+          </p>
+          {!closed && <VisitEditor key={order.visit_at ?? ''} order={order} busy={busy} onSave={(visitAt) => save({ visit_at: visitAt })} />}
+        </section>
+      )}
+
       <Payments
         order={order}
         isOwner={isOwner}
@@ -219,24 +235,27 @@ export function OrderPage({ id }: { id: number }) {
 
       {business && <SendToCustomer order={order} business={business} />}
 
-      <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
-        <h2 className="font-semibold">Cara pulang</h2>
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
-            <button
-              key={method}
-              type="button"
-              disabled={busy || order.status === 'cancelled'}
-              aria-pressed={order.return_method === method}
-              onClick={() => save({ return_method: method })}
-              className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
-            >
-              {RETURN_LABEL[method]}
-            </button>
-          ))}
-        </div>
-        <Notes order={order} busy={busy} onSave={save} />
-      </section>
+      {/* Only carpets go back to the customer; a home job is finished at their house. */}
+      {order.items.some((i) => !i.service.on_site) && (
+        <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
+          <h2 className="font-semibold">Cara pulang</h2>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
+              <button
+                key={method}
+                type="button"
+                disabled={busy || order.status === 'cancelled'}
+                aria-pressed={order.return_method === method}
+                onClick={() => save({ return_method: method })}
+                className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-line aria-pressed:bg-ink aria-pressed:text-white"
+              >
+                {RETURN_LABEL[method]}
+              </button>
+            ))}
+          </div>
+          <Notes order={order} busy={busy} onSave={save} />
+        </section>
+      )}
 
       {isOwner && (
         <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
@@ -269,7 +288,7 @@ export function OrderPage({ id }: { id: number }) {
             <li key={i}>
               {event.item_tag && <span className="mr-1 rounded bg-ink px-1 font-mono text-xs text-white">{event.item_tag}</span>}
               <span className="font-semibold">
-                {event.item_tag ? ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status] : ORDER_STATUS_LABEL[event.status]}
+                {eventLabel(order, event)}
               </span>{' '}
               · {formatDateTime(event.at)}
               {event.by && ` · ${event.by}`}
@@ -385,8 +404,17 @@ function Payments({
   )
 }
 
+/** "Siap dipack" for a carpet, "Siap (di rumah)" for a job done at the customer's home. */
+function eventLabel(order: Order, event: Order['events'][number]): string {
+  if (!event.item_tag) return ORDER_STATUS_LABEL[event.status]
+  const item = order.items.find((i) => i.tag === event.item_tag)
+  if (item?.service.on_site) return event.status === 'ready' ? 'Siap (di rumah)' : 'Belum dibuat (di rumah)'
+  return ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status]
+}
+
 function SendToCustomer({ order, business }: { order: Order; business: Receipt['business'] }) {
-  const ready = order.status === 'ready' || order.status === 'completed'
+  // "Your carpets are ready to collect" is about carpets; a home job is done in front of them.
+  const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
   return (
     <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
       <h2 className="font-semibold">Hantar kepada pelanggan</h2>
@@ -432,18 +460,20 @@ function ItemProgress({
   busy: boolean
   onMove: (status: ItemStatus, fold?: ItemFold) => Promise<void>
 }) {
-  const next = NEXT_ITEM_STATUS[item.status]
+  const home = isHomeJob(item)
+  // A home job is done in one visit: not done yet, then done.
+  const next = home ? (item.status === 'ready' ? undefined : 'ready') : NEXT_ITEM_STATUS[item.status]
   // Packing velvet: one button per way of packing it.
   const choices: { label: string; fold?: ItemFold }[] =
     next === 'ready' && item.service.needs_fold
       ? (['rolled', 'folded'] as const).map((fold) => ({ label: `Pack: ${FOLD_LABEL[fold]}`, fold }))
       : next
-        ? [{ label: ITEM_ACTION_LABEL[next] }]
+        ? [{ label: home ? 'Tandakan siap' : ITEM_ACTION_LABEL[next] }]
         : []
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${ITEM_STATUS_STYLE[item.status]}`}>
-        {ITEM_STATUS_LABEL[item.status]}
+        {home ? (item.status === 'ready' ? 'Siap (di rumah)' : 'Belum dibuat (di rumah)') : ITEM_STATUS_LABEL[item.status]}
       </span>
       <span className="text-xs text-ink-soft">{stepHistory(item)}</span>
       {open && next === 'washed' && needsMeasuring(item) ? (
@@ -472,7 +502,7 @@ function ItemProgress({
         <button
           type="button"
           disabled={busy}
-          onClick={() => onMove(item.status === 'ready' ? 'washed' : 'received')}
+          onClick={() => onMove(item.status === 'ready' && !home ? 'washed' : 'received')}
           className={`${next ? '' : 'ml-auto '}text-xs text-ink-soft underline`}
         >
           Undur
@@ -488,7 +518,9 @@ function stepHistory(item: Order['items'][number]): string {
   const parts: string[] = []
   if (item.washed_on) parts.push(`dicuci ${formatDay(item.washed_on)}${by(item.washed_by)}`)
   if (item.ready_from && item.ready_by) parts.push(`kering ${formatDay(item.ready_from)}–${formatDay(item.ready_by)}`)
-  if (item.ready_on) {
+  if (item.ready_on && isHomeJob(item)) {
+    parts.push(`siap ${formatDay(item.ready_on)}${by(item.packed_by)}`)
+  } else if (item.ready_on) {
     parts.push(`dipack ${formatDay(item.ready_on)}${by(item.packed_by)}${item.fold ? `, ${FOLD_LABEL[item.fold]}` : ''}`)
   }
   return parts.join(' · ')

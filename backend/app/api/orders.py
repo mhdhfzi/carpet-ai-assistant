@@ -80,7 +80,7 @@ def update_order(order_id: int, data: OrderUpdate, db: DbSession, actor: Current
 def update_item_status(
     order_id: int, item_id: int, data: ItemStatusUpdate, db: DbSession, actor: CurrentOwner
 ) -> OrderRead:
-    """Move one carpet along (dicuci, siap). The order follows its slowest item."""
+    """Move one item along (dicuci, siap; a home job: siap). The order follows its items."""
     order = orders.get_order(db, order_id)
     if (data.length_ft is None) != (data.width_ft is None):
         raise BusinessRuleError("Enter both the length and the width")
@@ -134,7 +134,8 @@ def receipt(order_id: int, db: DbSession) -> ReceiptRead:
 def work_items(
     db: DbSession, status: Annotated[ItemStatus, Query()] = ItemStatus.RECEIVED
 ) -> list[WorkItemRead]:
-    """The washing list (?status=received) or the packing list (?status=washed)."""
+    """The washing list (?status=received) or the packing list (?status=washed): carpets
+    only; jobs at the customer's home are on /visits."""
     return [_work_item(item) for item in orders.work_items(db, status)]
 
 
@@ -178,10 +179,19 @@ def _untagged(item: UntaggedItem) -> UntaggedRead:
 def work_log(db: DbSession, day: Annotated[date | None, Query()] = None) -> WorkLogRead:
     """What was washed and packed on a day (default today), and by whom: the paper forms."""
     day = day or orders.today()
-    washed, packed = orders.work_log(db, day)
+    washed, packed, on_site = orders.work_log(db, day)
     return WorkLogRead(
-        day=day, washed=[_work_item(i) for i in washed], packed=[_work_item(i) for i in packed]
+        day=day,
+        washed=[_work_item(i) for i in washed],
+        packed=[_work_item(i) for i in packed],
+        on_site=[_work_item(i) for i in on_site],
     )
+
+
+@work_router.get("/visits", response_model=list[OrderRead])
+def house_visits(db: DbSession) -> list[OrderRead]:
+    """Orders with jobs at the customer's home still to do, by visit time."""
+    return [to_read(order) for order in orders.house_visits(db)]
 
 
 def _work_item(item: OrderItem) -> WorkItemRead:
@@ -249,7 +259,9 @@ def to_read(order: Order) -> OrderRead:
         number=order.number,
         customer=OrderCustomerRead.model_validate(order.customer),
         received_on=order.received_on,
+        visit_at=order.visit_at,
         status=order.status,
+        next_status=orders.next_status(order),
         return_method=order.return_method,
         discount=order.discount,
         notes=order.notes,

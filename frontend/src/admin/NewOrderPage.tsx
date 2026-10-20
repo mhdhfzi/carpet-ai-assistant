@@ -3,7 +3,7 @@ import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, emptyRow, rowPrice, rowsToInput } from './itemRows'
-import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, todayInMalaysia } from './format'
+import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia } from './format'
 import type { CustomerSummary, Order, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
@@ -19,6 +19,7 @@ export function NewOrderPage() {
   const [address, setAddress] = useState('')
   const [known, setKnown] = useState<CustomerSummary | null>(null)
   const [receivedOn, setReceivedOn] = useState(todayInMalaysia())
+  const [visitAt, setVisitAt] = useState('')
   const [rows, setRows] = useState<ItemRow[]>(() => [emptyRow()])
   const [deposit, setDeposit] = useState('')
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
@@ -58,6 +59,8 @@ export function NewOrderPage() {
   const byId = new Map((services ?? []).map((s) => [s.id, s]))
   const lines = rows.map((row) => rowPrice(row, row.serviceId === null ? undefined : byId.get(row.serviceId)))
   const pending = lines.some((l) => l.total === null)
+  // Sofa, mattress and car seat jobs are done at the customer's home: when is the visit?
+  const homeJobs = rows.some((row) => row.serviceId !== null && byId.get(row.serviceId)?.on_site)
   const subtotal = lines.reduce((sum, l) => sum + (l.total ?? 0), 0)
   const total = Math.max(subtotal - Number(discount || 0), 0)
 
@@ -71,6 +74,7 @@ export function NewOrderPage() {
         body: {
           customer: { name: name.trim(), phone, area: area.trim() || null, address: address.trim() || null },
           received_on: receivedOn,
+          ...(homeJobs && visitAt ? { visit_at: fromVisitInput(visitAt) } : {}),
           items: rowsToInput(rows),
           deposit: deposit || '0',
           deposit_method: depositMethod,
@@ -115,6 +119,14 @@ export function NewOrderPage() {
         <h2 className="font-semibold">Barang</h2>
         <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} />
       </section>
+
+      {homeJobs && (
+        <section className="space-y-2 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+          <h2 className="font-semibold">Lawatan ke rumah pelanggan</h2>
+          <TextField label="Tarikh & masa lawatan (pilihan)" value={visitAt} onChange={setVisitAt} type="datetime-local" />
+          <p className="text-xs text-ink-soft">Boleh diisi atau ditukar kemudian. Kerja ini akan muncul di Kerja Rumah.</p>
+        </section>
+      )}
 
       <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
         <h2 className="font-semibold">Bayaran & lain-lain</h2>

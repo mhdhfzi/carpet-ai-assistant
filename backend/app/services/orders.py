@@ -9,7 +9,10 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
 - each item (each tagged carpet) is washed, dries and is packed on its own, recording who
   did each step (the washing and packing forms); velvet is packed rolled or folded, and
   staff must say which
+- jobs done at the customer's home (sofa, mattress, car seats) skip the forms: they are
+  just marked done, on the day of the visit
 - the order follows its slowest item, and is handed back only when every item is packed
+  and every home job done
 """
 
 from collections.abc import Collection
@@ -53,6 +56,8 @@ NEXT_STATUS = {
 }
 CLOSED = {OrderStatus.COMPLETED, OrderStatus.CANCELLED}
 ITEM_STEPS = [ItemStatus.RECEIVED, ItemStatus.WASHED, ItemStatus.READY]
+# A job at the customer's home is done in one visit: not done yet, then done.
+HOME_STEPS = [ItemStatus.RECEIVED, ItemStatus.READY]
 # An open order's status is its slowest item's step.
 ORDER_STEP = {
     ItemStatus.RECEIVED: OrderStatus.RECEIVED,
@@ -159,7 +164,12 @@ def work_items(db: Session, status: ItemStatus, *, limit: int = 300) -> list[Ord
     query = (
         select(OrderItem)
         .join(OrderItem.order)
-        .where(OrderItem.status == status, Order.status.not_in(CLOSED))
+        .join(OrderItem.service)
+        .where(
+            OrderItem.status == status,
+            Order.status.not_in(CLOSED),
+            Service.on_site.is_(False),
+        )
         .options(*_item_details())
         .order_by(OrderItem.washed_on.asc().nulls_first(), Order.number, OrderItem.position)
         .limit(limit)
@@ -167,20 +177,43 @@ def work_items(db: Session, status: ItemStatus, *, limit: int = 300) -> list[Ord
     return list(db.scalars(query))
 
 
-def work_log(db: Session, day: date) -> tuple[list[OrderItem], list[OrderItem]]:
-    """(items washed that day, items packed that day): the day's washing and packing forms."""
+def work_log(db: Session, day: date) -> tuple[list[OrderItem], list[OrderItem], list[OrderItem]]:
+    """(washed, packed, done at customers' homes) that day: the day's forms."""
 
-    def on(column) -> list[OrderItem]:
+    def on(column, home: bool) -> list[OrderItem]:
         query = (
             select(OrderItem)
             .join(OrderItem.order)
-            .where(column == day)
+            .join(OrderItem.service)
+            .where(column == day, Service.on_site.is_(home))
             .options(*_item_details())
             .order_by(Order.number, OrderItem.position)
         )
         return list(db.scalars(query))
 
-    return on(OrderItem.washed_on), on(OrderItem.ready_on)
+    return (
+        on(OrderItem.washed_on, False),
+        on(OrderItem.ready_on, False),
+        on(OrderItem.ready_on, True),
+    )
+
+
+def house_visits(db: Session) -> list[Order]:
+    """Open orders with a job at the customer's home not done yet: the visit schedule,
+    soonest first (visits without a time yet last)."""
+    pending = (
+        select(OrderItem.order_id)
+        .join(OrderItem.service)
+        .where(Service.on_site.is_(True), OrderItem.status != ItemStatus.READY)
+    )
+    query = (
+        select(Order)
+        .join(Order.customer)
+        .where(Order.id.in_(pending), Order.status.not_in(CLOSED))
+        .options(*_with_details())
+        .order_by(Order.visit_at.asc().nulls_last(), Order.number)
+    )
+    return list(db.scalars(query))
 
 
 @dataclass(frozen=True)
@@ -193,15 +226,20 @@ class WorkSummary:
     ready_orders: int  # every item packed: waiting to be picked up or delivered
     unpaid: Decimal  # still owed, across all orders except cancelled ones
     unpaid_orders: int
+    house_jobs: int  # jobs at customers' homes not done yet
 
 
 def work_summary(db: Session) -> WorkSummary:
-    rows = db.execute(
-        select(OrderItem.status, OrderItem.washed_on, Service.pricing_unit)
+    open_items = (
+        select(OrderItem.status, OrderItem.washed_on, Service.pricing_unit, Service.on_site)
         .join(OrderItem.order)
         .join(OrderItem.service)
         .where(Order.status.not_in(CLOSED), OrderItem.status != ItemStatus.READY)
-    ).all()
+    )
+    everything = db.execute(open_items).all()
+    house_jobs = sum(1 for *_, home in everything if home)
+    # The forms' numbers are about the shop's work: carpets.
+    rows = [(status, washed_on, unit) for status, washed_on, unit, home in everything if not home]
     to_wash = sum(1 for status, _, _ in rows if status is ItemStatus.RECEIVED)
     due = today() - timedelta(days=DRYING_DAYS[0])
     to_pack = sum(
@@ -228,6 +266,7 @@ def work_summary(db: Session) -> WorkSummary:
         ready_orders=ready,
         unpaid=Decimal(unpaid),
         unpaid_orders=unpaid_orders,
+        house_jobs=house_jobs,
     )
 
 
@@ -454,6 +493,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         number=number,
         customer=customer,
         received_on=data.received_on or today(),
+        visit_at=data.visit_at,
         return_method=data.return_method,
         discount=data.discount,
         notes=data.notes,
@@ -488,6 +528,8 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
             raise ForbiddenError("Only the owner can change a finished order")
         _replace_items(db, order, data.items, actor)
         _follow_items(order)
+    if "visit_at" in sent:
+        order.visit_at = data.visit_at
     if "return_method" in sent:
         order.return_method = data.return_method
     if "notes" in sent:
@@ -561,11 +603,17 @@ def update_item_status(
     if new is item.status:
         db.commit()
         return get_order(db, order.id)
-    step = ITEM_STEPS.index(item.status)
-    if not is_owner(actor) and ITEM_STEPS.index(new) != step + 1:
+    steps = _steps(item)
+    if new not in steps:
+        raise BusinessRuleError(
+            f"{tag(order, item)}: {item.service.name} is done at the customer's home; "
+            "mark it done, it isn't washed or packed"
+        )
+    step = steps.index(item.status)
+    if not is_owner(actor) and steps.index(new) != step + 1:
         raise InvalidStatusTransitionError(
-            f"{tag(order, item)}: the next step is {ITEM_STEPS[step + 1].value}"
-            if step + 1 < len(ITEM_STEPS)
+            f"{tag(order, item)}: the next step is {steps[step + 1].value}"
+            if step + 1 < len(steps)
             else f"{tag(order, item)} is already {item.status.value}"
         )
     _move_item(item, new, actor, fold)
@@ -581,29 +629,47 @@ def update_item_status(
 
 def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owner) -> None:
     """Move the whole order: every item comes along (e.g. all carpets washed the same day)."""
+    following = next_status(order)
     if new is OrderStatus.CANCELLED:
         _owner_only(actor, "cancel an order")
-    elif NEXT_STATUS.get(order.status) is not new and not is_owner(actor):
+    elif following is not new and not is_owner(actor):
         # Skipping a step or going back is a correction: the owner's call.
         raise InvalidStatusTransitionError(
-            f"Can't go from {order.status.value} to {new.value}; the next step is "
-            f"{NEXT_STATUS[order.status].value}"
-            if order.status in NEXT_STATUS
+            f"Can't go from {order.status.value} to {new.value}; the next step is {following.value}"
+            if following is not None
             else f"This order is {order.status.value}"
         )
     if new is not OrderStatus.CANCELLED:
-        target = ITEM_STEPS.index(ITEM_STEP[new])
         backward = _rank(new) < _rank(order.status)
         for item in order.items:
-            here = ITEM_STEPS.index(item.status)
+            steps = _steps(item)
+            goal = ITEM_STEP[new]
+            if goal not in steps:
+                continue  # "washed" means the carpets; a home job is done or not
+            here, target = steps.index(item.status), steps.index(goal)
             # Forward: items behind catch up (items ahead stay ahead). Back, an owner's
             # correction: items ahead return to that step.
             if here < target or (backward and here > target):
-                _move_item(item, ITEM_STEPS[target], actor)
+                _move_item(item, goal, actor)
     order.status = new
     _set_step_dates(order, new)
     order.events.append(OrderEvent(status=new, note=note, by_id=actor.id))
     _follow_items(order)
+
+
+def next_status(order: Order) -> OrderStatus | None:
+    """The order's next step. An order of home jobs only has no washing step."""
+    if order.status is OrderStatus.RECEIVED and not _shop_items(order):
+        return OrderStatus.READY
+    return NEXT_STATUS.get(order.status)
+
+
+def _steps(item: OrderItem) -> list[ItemStatus]:
+    return HOME_STEPS if item.service.on_site else ITEM_STEPS
+
+
+def _shop_items(order: Order) -> list[OrderItem]:
+    return [i for i in order.items if not i.service.on_site]
 
 
 def _rank(status: OrderStatus) -> int:
@@ -617,6 +683,14 @@ def _move_item(
 ) -> None:
     """Set an item's step, recording the day each step was reached and who did it, as the
     washing and packing forms do. Going back clears the later steps."""
+    if item.service.on_site:
+        # Done in one visit: no washing, drying or packing.
+        item.status = new
+        if new is ItemStatus.READY and item.ready_on is None:
+            item.ready_on, item.packed_by_id = today(), actor.id
+        elif new is not ItemStatus.READY:
+            item.ready_on = item.packed_by_id = None
+        return
     reached = ITEM_STEPS.index(new)
     if reached >= 1 and item.washed_on is None and item.quantity is None:
         # Carpets are measured as they're washed: the size (and so the price) can't wait longer.
@@ -642,12 +716,20 @@ def _move_item(
 
 
 def _follow_items(order: Order) -> None:
-    """An open order sits at its slowest item's step, so nothing is forgotten."""
+    """An open order sits at its slowest carpet's step, so nothing is forgotten. It is ready
+    only once every home job is done too; an order of home jobs only is ready when they are."""
     if order.status in CLOSED or not order.items:
         return
-    slowest = min(order.items, key=lambda i: ITEM_STEPS.index(i.status)).status
-    if ORDER_STEP[slowest] is not order.status:
-        order.status = ORDER_STEP[slowest]
+    shop = _shop_items(order)
+    homes_done = all(i.status is ItemStatus.READY for i in order.items if i.service.on_site)
+    if shop:
+        step = ORDER_STEP[min(shop, key=lambda i: ITEM_STEPS.index(i.status)).status]
+        if step is OrderStatus.READY and not homes_done:
+            step = OrderStatus.WASHED
+    else:
+        step = OrderStatus.READY if homes_done else OrderStatus.RECEIVED
+    if step is not order.status:
+        order.status = step
         _set_step_dates(order, order.status)
 
 
