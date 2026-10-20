@@ -139,7 +139,7 @@ def _services(orders: list[Order]) -> list[ServiceStat]:
         for item in order.items:
             # A sofa line of 3 seats counts as 3; a carpet counts as 1 whatever its size.
             many = item.service.pricing_unit is not PricingUnit.PER_SQFT
-            counts[item.service.name] += int(item.quantity) if many else 1
+            counts[item.service.name] += int(item.quantity or 0) if many else 1
             values[item.service.name] += order_service.line_total(item) or Decimal("0")
     return [ServiceStat(name, n, values[name]) for name, n in counts.most_common()]
 

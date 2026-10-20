@@ -135,10 +135,15 @@ export function formatDay(isoDate: string): string {
   return dateFormat.format(new Date(`${isoDate}T12:00:00+08:00`))
 }
 
-/** "8 x 10 ft" for a measured carpet, "3" for counted items. */
-export function formatSize(item: { length_ft: string | null; width_ft: string | null; quantity: string }): string {
+/** "8 x 10 kaki" for a measured carpet, "3" for counted items, "Belum diukur" until measured. */
+export function formatSize(item: { length_ft: string | null; width_ft: string | null; quantity: string | null }): string {
   if (item.length_ft && item.width_ft) return `${Number(item.length_ft)} x ${Number(item.width_ft)} kaki`
-  return String(Number(item.quantity))
+  return item.quantity === null ? 'Belum diukur' : String(Number(item.quantity))
+}
+
+/** A carpet that came in without its size: it's measured when it's washed. */
+export function needsMeasuring(item: { service: { pricing_unit: string }; quantity: string | null }): boolean {
+  return item.service.pricing_unit === 'per_sqft' && item.quantity === null
 }
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {

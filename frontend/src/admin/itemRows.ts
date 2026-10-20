@@ -25,7 +25,7 @@ export function rowsFromItems(items: OrderItem[]): ItemRow[] {
     serviceId: item.service.id,
     length: item.length_ft ? String(Number(item.length_ft)) : '',
     width: item.width_ft ? String(Number(item.width_ft)) : '',
-    quantity: item.length_ft ? '' : String(Number(item.quantity)),
+    quantity: item.length_ft || item.quantity === null ? '' : String(Number(item.quantity)),
     unitPrice: '',
     notes: item.notes ?? '',
   }))

@@ -629,3 +629,28 @@ describe('untagged carpets', () => {
   })
 })
 
+
+describe('measuring when washing', () => {
+  it('asks for the size of an unmeasured carpet before it is marked washed', async () => {
+    const unmeasured = workItem({ length_ft: null, width_ft: null, quantity: null, line_total: null })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: [unmeasured] }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+      'PATCH /api/orders/7/items/1': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/cuci')
+
+    expect(await screen.findByText('Saiz: Belum diukur')).toBeInTheDocument()
+    const wash = screen.getByRole('button', { name: 'Tandakan siap cuci' })
+    expect(wash).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Panjang 412-1 (kaki)'), '8')
+    await user.type(screen.getByLabelText('Lebar 412-1 (kaki)'), '10')
+    await user.click(wash)
+
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed', length_ft: '8', width_ft: '10' })
+  })
+})

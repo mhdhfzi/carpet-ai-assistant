@@ -55,6 +55,9 @@ class ItemStatusUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=300)
     # Packing a velvet carpet: rolled (gulung) or folded (lipat). Ignored for other items.
     fold: ItemFold | None = None
+    # A carpet measured while it's washed: both, in feet.
+    length_ft: Feet | None = None
+    width_ft: Feet | None = None
 
 
 class PaymentVoid(BaseModel):
@@ -109,7 +112,7 @@ class OrderItemRead(BaseModel):
     service: OrderServiceRead
     length_ft: Decimal | None
     width_ft: Decimal | None
-    quantity: Decimal
+    quantity: Decimal | None  # None: a carpet not measured yet
     unit_price: Decimal | None  # None: the owner hasn't set it yet
     line_total: Decimal | None
     notes: str | None
