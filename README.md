@@ -245,6 +245,7 @@ docker compose --profile app up --build                          # http://localh
 | Secrets | Secret Manager: `database-url`, `jwt-secret`, `voyage-api-key`, `anthropic-api-key` |
 | Migrations / one-off commands | Cloud Run jobs `migrate` (`alembic upgrade head`) and `manage` (`python -m ...`) |
 | Nightly demo reset | Cloud Scheduler `demo-reset-nightly` (03:00 MYT) runs the `demo-reset` job: `python -m app.seed_demo --reset` |
+| Nightly backup (real business) | Cloud Scheduler `cc-backup-nightly` (03:30 MYT) runs the `cc-backup` job: `pg_dump` to a private bucket kept 30 days, by an account that can add backups but never delete them. See [docs/backups.md](docs/backups.md). |
 | Real business | Cloud Run service `cuci-cuci` with jobs `cc-migrate` / `cc-manage`: its own Neon database, secrets (`cc-*`) and runtime account `cuci-run`. No reset job. Back office on (`ORDERS_ENABLED=true`), with the receipt's details as settings (`RECEIPT_NAME`, `BUSINESS_ADDRESS`, `BUSINESS_PHONES`, `PAYMENT_DETAILS`, `RECEIPT_TERMS`, …). |
 
 **Continuous deployment.** On every push to `main`, CI runs the tests, then builds the image, pushes it, runs the `migrate` job and rolls Cloud Run onto the new image. Migrations run before the new code goes live, so they must stay compatible with the code still serving (add first, remove in a later release). GitHub authenticates through Workload Identity Federation (no stored key; only this repository is trusted) as `github-deployer`, which can push images and deploy but not read secrets. The app runs as `kilau-run`, which can only read its secrets.
@@ -282,7 +283,7 @@ The same image runs twice, and configuration decides the business and what the a
 The difference in what the assistant may do is enforced in code, not only in the prompt: in answers-only mode the booking tools are never offered to the model, and the server refuses them even if the model names one. The two deployments share nothing but the code and the AI keys: separate databases, secrets and runtime service accounts, so the public demo can't read the real business's data. `seed_demo` refuses to run when `DEMO_BUSINESS=false`, and a test checks the two knowledge bases never mention each other.
 ## What I'd improve next
 
-- **Nightly database backups** for the real business (a dump to Cloud Storage, kept 30 days), and a monthly spreadsheet export the owner keeps himself.
+- **A monthly spreadsheet export** of orders and payments that the owner keeps himself, and an alert if a nightly backup fails.
 - **Live updates in the back office**, so a page refreshes when another worker changes something, and password resets from the dashboard instead of the command line.
 - **Linking the two halves:** a customer could ask the assistant on WhatsApp whether their carpets are ready, answered from the order's real status.
 - **An evaluation set for the assistant.** The agent is tested with a scripted fake model, which proves the plumbing but not the answers. Next: a fixed set of real-style questions in BM, EN and a mix of both, with expected facts, tool calls and hand-offs, scored automatically on every prompt or model change.
