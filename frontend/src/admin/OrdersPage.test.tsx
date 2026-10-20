@@ -164,7 +164,7 @@ describe('back office', () => {
     expect(row).toHaveTextContent('Baki RM94.00')
     expect(screen.getByText('Dobi Karpet Xpress')).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Rumah', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
     expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received', 'washed', 'ready'])
   })
 
@@ -213,7 +213,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Rumah', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
@@ -694,10 +694,10 @@ describe("jobs at the customer's home", () => {
       'GET /api/work/visits': () => ({ body: visits }),
       'PATCH /api/orders/7/items/2': () => ({ body: order() }),
     })
-    const user = renderSignedIn('#/kerja-rumah')
+    const user = renderSignedIn('#/kerja-luar')
 
     const todayGroup = await screen.findByRole('region', { name: 'Hari ini' })
-    const card = within(todayGroup).getByRole('article', { name: 'Kerja rumah 412, Ali' })
+    const card = within(todayGroup).getByRole('article', { name: 'Kerja luar 412, Ali' })
     expect(card).toHaveTextContent('Cucian Sofa × 3')
     expect(within(card).getByRole('link', { name: '5, Jalan A, Seremban 2' })).toHaveAttribute(
       'href',
@@ -721,9 +721,9 @@ describe("jobs at the customer's home", () => {
     })
     const user = renderSignedIn('#/orders/7')
 
-    expect(await screen.findByText('Belum dibuat (di rumah)')).toBeInTheDocument()
+    expect(await screen.findByText('Belum dibuat (kerja luar)')).toBeInTheDocument()
     expect(screen.getByLabelText('Tarikh & masa lawatan')).toHaveValue('2026-10-21T10:00')
-    await user.click(screen.getByRole('button', { name: 'Tandakan siap (kerja di rumah selesai)' }))
+    await user.click(screen.getByRole('button', { name: 'Tandakan siap (kerja luar selesai)' }))
 
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready' })
   })
@@ -784,6 +784,80 @@ describe('paying by DuitNow QR', () => {
 
     expect(await screen.findByText('Rekod bayaran')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bayar dengan DuitNow QR' })).toBeNull()
+  })
+})
+
+describe('searching the washing list', () => {
+  it('narrows the list to the matching carpets', async () => {
+    const items = [
+      workItem({ id: 1, tag: '412-1', customer_name: 'Ali' }),
+      workItem({ id: 2, tag: '413-1', order_id: 8, order_number: 413, customer_name: 'Puan Aisyah' }),
+    ]
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: items }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+    })
+    const user = renderSignedIn('#/cuci')
+
+    expect(await screen.findByText('#413-1')).toBeInTheDocument()
+    const search = screen.getByLabelText('Cari karpet untuk dicuci')
+    await user.type(search, 'aisyah')
+    expect(screen.queryByText('#412-1')).toBeNull()
+    expect(screen.getByText('#413-1')).toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, '412')
+    expect(screen.getByText('#412-1')).toBeInTheDocument()
+    expect(screen.queryByText('#413-1')).toBeNull()
+
+    await user.type(search, '9')
+    expect(screen.getByText('Tiada karpet sepadan dengan carian.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Kosongkan carian' }))
+    expect(screen.getByText('#412-1')).toBeInTheDocument()
+  })
+})
+
+describe('closing a ready order', () => {
+  const ready = () => order({ status: 'ready', items: [{ ...order().items[0], status: 'ready' }], items_ready: 1, items_washed: 1 })
+
+  it('asks first when money is still owed, then moves the order out of Siap', async () => {
+    let closed = false
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: closed ? [] : [ready()] }),
+      'PATCH /api/orders/7': () => {
+        closed = true
+        return { body: order({ status: 'completed' }) }
+      },
+    })
+    const user = renderSignedIn('#/orders?tapis=ready')
+
+    await user.click(await screen.findByRole('button', { name: 'Sudah diambil / dihantar' }))
+
+    expect(confirm).toHaveBeenCalledWith('Baki RM94.00 belum dibayar. Teruskan?')
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'completed' })
+    expect(await screen.findByRole('status')).toHaveTextContent('#412 Ali: selesai, baki RM94.00 masih di Belum bayar.')
+    expect(await screen.findByText('Tiada pesanan di sini.')).toBeInTheDocument()
+  })
+
+  it('does nothing if the worker says no', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false))
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [ready()] }),
+    })
+    const user = renderSignedIn('#/orders?tapis=ready')
+
+    await user.click(await screen.findByRole('button', { name: 'Sudah diambil / dihantar' }))
+
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
 })
 

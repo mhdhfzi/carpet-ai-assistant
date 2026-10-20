@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorMessage } from './api'
 import { useAuth } from './auth'
 import {
   ORDER_STATUS_LABEL,
@@ -13,7 +14,8 @@ import {
   readyToPack,
   todayInMalaysia,
 } from './format'
-import { ArrowIcon, BellIcon, PhoneIcon, PlusIcon, ReceiptIcon, SearchIcon } from './icons'
+import { ArrowIcon, BellIcon, CheckIcon, PhoneIcon, PlusIcon, ReceiptIcon, SearchIcon } from './icons'
+import { notifyWorkChanged } from './summary'
 import type { Order, OrderItem, OrderStatus } from './types'
 import { href } from './useHashRoute'
 
@@ -24,7 +26,7 @@ const OPEN: OrderStatus[] = ['received', 'washed', 'ready']
 const FILTERS: { key: string; label: string; statuses: OrderStatus[]; keep?: (o: Order, today: string) => boolean }[] = [
   { key: 'open', label: 'Semua', statuses: OPEN },
   { key: 'unwashed', label: 'Belum cuci', statuses: ['received'], keep: (o) => o.items.some((i) => !isHomeJob(i) && i.status === 'received') },
-  { key: 'home', label: 'Kerja rumah', statuses: OPEN, keep: (o) => o.items.some((i) => isHomeJob(i) && i.status !== 'ready') },
+  { key: 'home', label: 'Kerja luar', statuses: OPEN, keep: (o) => o.items.some((i) => isHomeJob(i) && i.status !== 'ready') },
   { key: 'to-pack', label: 'Kering 5–7 hari', statuses: ['received', 'washed'], keep: (o, today) => o.items.some((i) => readyToPack(i, today)) },
   { key: 'ready', label: 'Siap', statuses: ['ready'] },
   { key: 'unpaid', label: 'Belum bayar', statuses: [...OPEN, 'completed'], keep: (o) => owes(o) },
@@ -38,6 +40,29 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
   const [query, setQuery] = useState('')
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [error, setError] = useState(false)
+  const [version, setVersion] = useState(0)
+  const [closing, setClosing] = useState<number | null>(null)
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+
+  /** Picked up or delivered (or a house job finished): the order leaves Siap for Sejarah. */
+  const close = async (order: Order) => {
+    if (owes(order) && !window.confirm(`Baki ${formatMoney(order.balance)} belum dibayar. Teruskan?`)) return
+    setClosing(order.id)
+    setNotice(null)
+    try {
+      await request<Order>(`/api/orders/${order.id}`, { method: 'PATCH', body: { status: 'completed' } })
+      setNotice({
+        ok: true,
+        text: `#${order.number} ${order.customer.name}: selesai${owes(order) ? `, baki ${formatMoney(order.balance)} masih di Belum bayar` : ''}.`,
+      })
+      setVersion((v) => v + 1)
+      notifyWorkChanged()
+    } catch (err) {
+      setNotice({ ok: false, text: errorMessage(err, `Tak dapat tandakan #${order.number} selesai. Cuba lagi.`) })
+    } finally {
+      setClosing(null)
+    }
+  }
 
   useEffect(() => {
     let current = true
@@ -61,7 +86,7 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
       current = false
       clearTimeout(timer)
     }
-  }, [request, filter, query])
+  }, [request, filter, query, version])
 
   const shown = orders && !query.trim() && filter.keep ? orders.filter((o) => filter.keep?.(o, today)) : orders
   const toPack = (orders ?? []).flatMap((o) => o.items).filter((i) => readyToPack(i, today)).length
@@ -128,6 +153,14 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
         </a>
       </div>
 
+      {notice && (
+        <p
+          role={notice.ok ? 'status' : 'alert'}
+          className={`rounded-lg border px-3 py-2 text-sm ${notice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-800'}`}
+        >
+          {notice.text}
+        </p>
+      )}
       {error && <p role="alert" className="text-danger">Tak dapat muatkan pesanan. Cuba lagi.</p>}
       {shown === null && !error && <p className="text-ink-soft">Memuatkan…</p>}
       {shown?.length === 0 && (
@@ -151,7 +184,7 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
               </thead>
               <tbody className="divide-y divide-slate-200 max-md:block">
                 {shown.map((order) => (
-                  <BookRow key={order.id} order={order} today={today} />
+                  <BookRow key={order.id} order={order} today={today} closing={closing} onClose={close} />
                 ))}
               </tbody>
             </table>
@@ -164,7 +197,17 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
 
 const cell = 'px-4 py-3.5 max-md:block max-md:px-0 max-md:py-1.5'
 
-function BookRow({ order, today }: { order: Order; today: string }) {
+function BookRow({
+  order,
+  today,
+  closing,
+  onClose,
+}: {
+  order: Order
+  today: string
+  closing: number | null
+  onClose: (order: Order) => void
+}) {
   const packed = order.items_ready
   const count = order.items.length
   const unwashed = order.items.some((i) => !isHomeJob(i) && i.status === 'received')
@@ -281,6 +324,17 @@ function BookRow({ order, today }: { order: Order; today: string }) {
         >
           <ReceiptIcon className="size-3.5" /> Resit & WA
         </a>
+        {order.status === 'ready' && (
+          <button
+            type="button"
+            disabled={closing !== null}
+            onClick={() => onClose(order)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <CheckIcon className="size-3.5" />
+            {order.items.some((i) => !isHomeJob(i)) ? 'Sudah diambil / dihantar' : 'Selesai'}
+          </button>
+        )}
         {open && carpetsLeft && (
           <a
             href={href({ page: unwashed ? 'wash' : 'pack' })}
@@ -294,7 +348,7 @@ function BookRow({ order, today }: { order: Order; today: string }) {
             href={href({ page: 'visits' })}
             className="flex items-center justify-center gap-1 rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-500/25"
           >
-            Ke Kerja Rumah <ArrowIcon className="size-3" />
+            Ke Kerja Luar <ArrowIcon className="size-3" />
           </a>
         )}
         <a href={href({ page: 'order', id: order.id })} className="block text-center text-xs font-semibold text-slate-600 underline">
@@ -309,10 +363,10 @@ function BookRow({ order, today }: { order: Order; today: string }) {
 function WashState({ item, today }: { item: OrderItem; today: string }) {
   if (isHomeJob(item)) {
     return item.ready_on ? (
-      <span className="font-semibold text-emerald-700">Di rumah: siap {formatShortDate(item.ready_on)}</span>
+      <span className="font-semibold text-emerald-700">Kerja luar: siap {formatShortDate(item.ready_on)}</span>
     ) : (
       <span className="inline-block rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-800">
-        Di rumah: belum
+        Kerja luar: belum
       </span>
     )
   }

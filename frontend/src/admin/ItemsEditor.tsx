@@ -53,7 +53,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label="Cucian di rumah pelanggan">
+                <optgroup label="Kerja luar (di rumah pelanggan)">
                   {others.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}

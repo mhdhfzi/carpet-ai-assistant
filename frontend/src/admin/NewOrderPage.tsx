@@ -124,7 +124,7 @@ export function NewOrderPage() {
         <section className="space-y-2 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
           <h2 className="font-semibold">Lawatan ke rumah pelanggan</h2>
           <TextField label="Tarikh & masa lawatan (pilihan)" value={visitAt} onChange={setVisitAt} type="datetime-local" />
-          <p className="text-xs text-ink-soft">Boleh diisi atau ditukar kemudian. Kerja ini akan muncul di Kerja Rumah.</p>
+          <p className="text-xs text-ink-soft">Boleh diisi atau ditukar kemudian. Kerja ini akan muncul di Kerja Luar.</p>
         </section>
       )}
 

@@ -37,7 +37,8 @@ export function parseRoute(hash: string): Route | null {
       return { page: 'wash' }
     case 'packing':
       return { page: 'pack' }
-    case 'kerja-rumah':
+    case 'kerja-luar':
+    case 'kerja-rumah': // the page's old address, kept for bookmarks
       return { page: 'visits' }
     case 'rekod':
       return { page: 'log' }
@@ -67,7 +68,7 @@ export function href(route: Route): string {
     case 'pack':
       return '#/packing'
     case 'visits':
-      return '#/kerja-rumah'
+      return '#/kerja-luar'
     case 'log':
       return '#/rekod'
     default:
