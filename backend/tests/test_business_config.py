@@ -18,6 +18,7 @@ from app.ai.llm import ChatTurn, ModelTurn
 from app.ai.prompts import HANDOFF_MESSAGE, system_prompt
 from app.ai.tools import ANSWER_TOOLS, ToolContext, run_tool
 from app.core.config import Settings, get_settings
+from app.core.duitnow import crc16
 from app.db.models import Booking, Channel, Conversation, Message, MessageRole
 from app.main import create_app
 from app.seed import seed_services
@@ -187,3 +188,31 @@ def test_demo_seed_refuses_to_run_for_a_real_business(
 
     with pytest.raises(SystemExit, match="DEMO_BUSINESS is false"):
         seed_demo.main()
+
+
+# A static DuitNow QR in the real format, for a fictional merchant (without its checksum).
+SAMPLE_QR = (
+    "000201010211"
+    "26330014A0000006150001010600000102111234567890"
+    "52040000530345858"
+    "02MY5913KEDAI CONTOH6005NILAI6304"
+)
+
+
+def _with_crc(body: str) -> str:
+    return body + crc16(body)
+
+
+def test_a_duitnow_qr_is_checked_when_the_app_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    good = _with_crc(SAMPLE_QR)
+    damaged = good[:40] + ("1" if good[40] != "1" else "2") + good[41:]
+
+    monkeypatch.setenv("DUITNOW_QR", f"  {good} ")
+    get_settings.cache_clear()
+    assert get_settings().duitnow_qr == good  # kept, trimmed
+
+    monkeypatch.setenv("DUITNOW_QR", damaged)
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError, match="DUITNOW_QR"):
+        get_settings()
+    get_settings.cache_clear()

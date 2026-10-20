@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from './auth'
 import { formatMoney, formatShortDate, formatSize, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, PrintIcon } from './icons'
+import { QrPayButton } from './QrPay'
+import { notifyWorkChanged } from './summary'
 import type { Order, Receipt } from './types'
 import { href } from './useHashRoute'
 import { paymentLines, readyMessage, receiptMessage } from './whatsappMessages'
@@ -17,6 +19,7 @@ export function ReceiptPage({ id }: { id?: number }) {
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [error, setError] = useState(false)
+  const [paying, setPaying] = useState(false)
   const selected = id ?? orders?.[0]?.id
 
   useEffect(() => {
@@ -103,6 +106,29 @@ export function ReceiptPage({ id }: { id?: number }) {
             </span>
           )}
         </div>
+
+        {business.duitnow_qr && !paid && !order.price_pending && Number(order.balance) > 0 && (
+          <QrPayButton
+            qr={business.duitnow_qr}
+            amount={order.balance}
+            reference={order.number}
+            payee={business.name}
+            busy={paying}
+            onReceived={async () => {
+              setPaying(true)
+              try {
+                await request(`/api/orders/${order.id}/payments`, {
+                  method: 'POST',
+                  body: { amount: Number(order.balance).toFixed(2), method: 'duitnow', note: 'DuitNow QR' },
+                })
+                setReceipt(await request<Receipt>(`/api/orders/${order.id}/receipt`))
+                notifyWorkChanged()
+              } finally {
+                setPaying(false)
+              }
+            }}
+          />
+        )}
 
         <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <p className="flex items-center justify-between gap-2">

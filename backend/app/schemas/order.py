@@ -240,6 +240,7 @@ class ReceiptBusiness(BaseModel):
     facebook: str
     payment_details: str  # one item per line
     terms: str
+    duitnow_qr: str  # the shop's DuitNow QR (its text); "" = none
 
 
 class ReceiptRead(BaseModel):

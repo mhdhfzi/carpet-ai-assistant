@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.duitnow import is_valid_qr
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -51,6 +53,9 @@ class Settings(BaseSettings):
     # How to pay, one item per line (new lines or "|"), e.g. "Name|Bank Islam|0506...".
     payment_details: str = ""
     receipt_terms: str = ""  # small print, e.g. how long unclaimed items are kept
+    # The shop's DuitNow QR (the text inside it, read from the bank's QR): the dashboard draws
+    # it so a customer can scan and pay. Blank = no QR button.
+    duitnow_qr: str = ""
 
     # The business this deployment serves. The defaults are the public portfolio demo; a
     # deployment for a real business overrides them (one codebase, several deployments).
@@ -100,6 +105,15 @@ class Settings(BaseSettings):
         # .env.example ships `KEY=` lines; an empty value must count as missing,
         # not as a key made of an empty string.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("duitnow_qr")
+    @classmethod
+    def _qr_must_be_whole(cls, value: str) -> str:
+        # Fail at startup rather than show customers a QR their bank app rejects.
+        value = value.strip()
+        if value and not is_valid_qr(value):
+            raise ValueError("DUITNOW_QR is not a complete DuitNow QR code (checksum mismatch)")
+        return value
 
     @model_validator(mode="after")
     def _answers_only_needs_a_contact(self) -> "Settings":
