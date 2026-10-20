@@ -122,6 +122,7 @@ function receipt(overrides: Partial<Order> = {}): Receipt {
       facebook: 'Cuci Cuci Senawang',
       payment_details: 'Maybank 1234|Rizqiman Gemilang Legacy',
       terms: 'Barang yang tidak dituntut dalam 3 bulan akan dilupuskan.',
+      duitnow_qr: '',
     },
     order: order(overrides),
     issued_on: '2026-10-17',
@@ -748,6 +749,41 @@ describe("jobs at the customer's home", () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
     const posted = calls.find((c) => c.method === 'POST')?.body as Record<string, unknown>
     expect(posted.visit_at).toBe('2026-10-21T10:00:00+08:00')
+  })
+})
+
+describe('paying by DuitNow QR', () => {
+  it('shows the shop QR with the amount and records the payment once received', async () => {
+    const withQr = receipt()
+    withQr.business.duitnow_qr = '00020101021126330014A0000006150001010600000102111234567890520400005303458580'
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: withQr }),
+      'POST /api/orders/7/payments': () => ({ status: 201, body: order({ paid: '144.00', balance: '0.00' }) }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    await user.click(await screen.findByRole('button', { name: 'Bayar dengan DuitNow QR' }))
+    const dialog = screen.getByRole('dialog', { name: 'Bayar dengan DuitNow QR' })
+    expect(dialog).toHaveTextContent('RM94.00')
+    expect(dialog).toHaveTextContent('Rujukan: 412')
+    await user.click(within(dialog).getByRole('button', { name: 'Sudah terima RM94.00' }))
+
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ amount: '94.00', method: 'duitnow', note: 'DuitNow QR' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('has no QR button when the shop has no QR set', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+    renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText('Rekod bayaran')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bayar dengan DuitNow QR' })).toBeNull()
   })
 })
 

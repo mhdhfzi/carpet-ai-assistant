@@ -861,6 +861,7 @@ def test_a_receipt_has_the_business_details_and_the_order(
     assert (business["name"], business["logo"]) == ("Dobi Karpet Xpress", "RGL")
     assert business["reg_no"] == "201903262495 (NS0229212-P)"
     assert business["payment_details"] == "Maybank 1234"
+    assert business["duitnow_qr"] == ""  # no QR set: the dashboard shows no QR button
     assert business["phone"] == "019-111 1111 / 013-222 2222"
     assert business["terms"].startswith("Barang tidak dituntut")
     assert receipt["order"]["number"] == order["number"]

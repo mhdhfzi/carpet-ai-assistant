@@ -33,6 +33,7 @@ import {
   type Receipt,
   type ReturnMethod,
 } from './types'
+import { QrPayButton } from './QrPay'
 import { notifyWorkChanged } from './summary'
 import { VisitEditor } from './VisitEditor'
 import { readyMessage, receiptMessage } from './whatsappMessages'
@@ -229,6 +230,7 @@ export function OrderPage({ id }: { id: number }) {
         order={order}
         isOwner={isOwner}
         busy={busy}
+        business={business}
         onPay={(payment) => send('/payments', 'POST', payment)}
         onVoid={(paymentId, reason) => send(`/payments/${paymentId}/void`, 'POST', { reason })}
       />
@@ -307,10 +309,12 @@ function Payments({
   busy,
   onPay,
   onVoid,
+  business,
 }: {
   order: Order
   isOwner: boolean
   busy: boolean
+  business: Receipt['business'] | null
   onPay: (payment: Record<string, unknown>) => Promise<void>
   onVoid: (paymentId: number, reason: string) => Promise<void>
 }) {
@@ -363,6 +367,17 @@ function Payments({
             </li>
           ))}
         </ul>
+      )}
+
+      {canPay && business?.duitnow_qr && owed > 0 && !order.price_pending && (
+        <QrPayButton
+          qr={business.duitnow_qr}
+          amount={order.balance}
+          reference={order.number}
+          payee={business.name}
+          busy={busy}
+          onReceived={() => onPay({ amount: owed.toFixed(2), method: 'duitnow', note: 'DuitNow QR' })}
+        />
       )}
 
       {canPay && (

@@ -195,6 +195,7 @@ export type Receipt = {
     facebook: string
     payment_details: string // one item per line
     terms: string
+    duitnow_qr: string // the shop's DuitNow QR (its text); '' = none
   }
   order: Order
   issued_on: string

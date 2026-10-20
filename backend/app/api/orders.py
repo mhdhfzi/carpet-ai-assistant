@@ -124,6 +124,7 @@ def receipt(order_id: int, db: DbSession) -> ReceiptRead:
             facebook=settings.business_facebook,
             payment_details=settings.payment_details,
             terms=settings.receipt_terms,
+            duitnow_qr=settings.duitnow_qr,
         ),
         order=to_read(orders.get_order(db, order_id)),
         issued_on=orders.today(),
