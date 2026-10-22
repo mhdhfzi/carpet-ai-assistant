@@ -926,3 +926,23 @@ describe('two books', () => {
   })
 })
 
+
+describe('summary cards', () => {
+  it('show on Buku Utama only; the work pages keep their counts on the menu', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/summary': () => ({
+        body: { to_wash: 4, to_pack: 2, drying: 3, ready_orders: 1, unpaid: '350.00', unpaid_orders: 2, house_jobs: 1 },
+      }),
+      'GET /api/work/items': () => ({ body: [] }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+    })
+    renderSignedIn('#/cuci')
+
+    expect(await screen.findByRole('link', { name: /Borang Cuci/ })).toHaveTextContent('Borang Cuci4')
+    expect(screen.queryByRole('link', { name: /Baki belum bayar/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Menunggu cuci/ })).toBeNull()
+  })
+})

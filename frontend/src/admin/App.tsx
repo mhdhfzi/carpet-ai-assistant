@@ -109,8 +109,9 @@ function SignedIn({
   )
 }
 
-/** The pages that open with today's numbers, as in the reference design. */
-const WORK_PAGES = new Set<Route['page']>(['orders', 'wash', 'pack', 'visits', 'receipts', 'receipt'])
+/** Today's numbers open Buku Utama, the overview. The work pages go straight to their lists
+ * (their counts stay on the menu tabs). */
+const WORK_PAGES = new Set<Route['page']>(['orders'])
 
 function Page({ route }: { route: Route }) {
   switch (route.page) {
