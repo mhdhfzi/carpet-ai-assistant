@@ -166,7 +166,7 @@ describe('back office', () => {
     expect(row).toHaveTextContent('Baki RM94.00')
     expect(screen.getByText('Dobi Karpet Xpress')).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Buku Kerja Luar', 'Borang Cuci', 'Borang Packing', 'Rekod harian', 'Resit & WhatsApp', 'Pelanggan'])
     expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received', 'washed', 'ready'])
   })
 
@@ -215,7 +215,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Buku Kerja Luar', 'Borang Cuci', 'Borang Packing', 'Rekod harian', 'Resit & WhatsApp', 'Pelanggan'], 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
