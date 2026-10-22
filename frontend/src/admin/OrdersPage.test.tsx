@@ -166,7 +166,7 @@ describe('back office', () => {
     expect(row).toHaveTextContent('Baki RM94.00')
     expect(screen.getByText('Dobi Karpet Xpress')).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Buku Utama', 'Buku Kerja Luar', 'Borang Cuci', 'Borang Packing', 'Rekod harian', 'Resit & WhatsApp', 'Pelanggan'])
     expect(calls.find((c) => c.path === '/api/orders')?.query.getAll('status')).toEqual(['received', 'washed', 'ready'])
   })
 
@@ -215,7 +215,7 @@ describe('back office', () => {
 
     await screen.findByText('Tiada pesanan di sini.')
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Borang Cuci', 'Borang Packing', 'Kerja Luar', 'Resit & WhatsApp', 'Rekod harian', 'Pelanggan'], 'Analytics'])
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual([...['Buku Utama', 'Buku Kerja Luar', 'Borang Cuci', 'Borang Packing', 'Rekod harian', 'Resit & WhatsApp', 'Pelanggan'], 'Analytics'])
   })
 
   it('records a new order with a live price and opens it', async () => {
@@ -488,7 +488,7 @@ describe('back office', () => {
     expect(row).toHaveTextContent('Belum selesai')
   })
 
-  it('shows the business numbers and hides AI booking sections for an answers-only business', async () => {
+  it('shows the business month by month and hides AI booking sections for an answers-only business', async () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -500,29 +500,46 @@ describe('back office', () => {
         },
       }),
       'GET /api/unanswered-questions': () => ({ body: [] }),
-      'GET /api/analytics/business': () => ({
-        body: {
-          days: 30, start: '2026-09-13', end: '2026-10-12',
-          revenue: '1244.00', revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
-          revenue_over_time: [{ label: '5 Oct', start: '2026-10-05', amount: '1244.00' }],
-          orders: 9, order_value: '1500.00', cancelled: 1, unpaid: '256.00', unpaid_orders: 2,
-          in_progress: { received: 3, washed: 4, ready: 1 },
-          services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
-          busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
-        },
-      }),
+      'GET /api/analytics/business': (call) => {
+        const month = call.query.get('month') ?? '2026-10'
+        const october = month === '2026-10'
+        return {
+          body: {
+            month, start: `${month}-01`, end: `${month}-30`,
+            revenue_total: '5200.00', unpaid: '256.00', unpaid_orders: 2,
+            months: [
+              { month: '2026-09', revenue: '3956.00', orders: 30, top_service: 'Cucian Sofa' },
+              { month: '2026-10', revenue: '1244.00', orders: 9, top_service: 'Karpet Biasa' },
+            ],
+            revenue: october ? '1244.00' : '3956.00',
+            revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
+            orders: october ? 9 : 30, order_value: '1500.00', cancelled: 1,
+            services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
+            busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
+          },
+        }
+      },
     })
-    renderSignedIn('#/analytics')
+    const user = renderSignedIn('#/analytics')
 
     const business = await screen.findByRole('region', { name: 'Perniagaan' })
-    expect(business).toHaveTextContent('Hasil diterimaRM1244.00')
+    expect(business).toHaveTextContent('Jumlah hasil keseluruhanRM5456.00') // 5200 received + 256 owed
+    expect(business).toHaveTextContent('Jumlah hasil diterimaRM5200.00')
     expect(business).toHaveTextContent('Baki belum dibayarRM256.002 pesanan')
+    const monthly = within(business).getByRole('region', { name: 'Setiap bulan' })
+    const rows = within(monthly).getAllByRole('row').map((r) => r.textContent)
+    expect(rows[1]).toBe('Oktober 2026RM1244.009Karpet Biasa') // newest first
+    expect(rows[2]).toBe('September 2026RM3956.0030Cucian Sofa')
     expect(business).toHaveTextContent('Purata masa siap6.4 hari')
-    expect(business).toHaveTextContent('Sedang kering4')
+    expect(business).not.toHaveTextContent('Sedang kering')
+    expect(business).not.toHaveTextContent('Belum dicuci')
+
+    await user.selectOptions(within(business).getByLabelText('Lihat bulan'), '2026-09')
+    expect(await within(business).findByRole('heading', { name: 'September 2026' })).toBeInTheDocument()
+    expect(calls.findLast((c) => c.path === '/api/analytics/business')?.query.get('month')).toBe('2026-09')
     expect(await screen.findByText('Chats')).toBeInTheDocument()
     expect(screen.queryByText('Bookings made')).toBeNull()
     expect(screen.queryByText('Chat to booking, by channel')).toBeNull()
-    expect(calls.find((c) => c.path === '/api/analytics/business')?.query.get('days')).toBe('30')
   })
 
   it('lists carpets to wash by order and records one as washed', async () => {
@@ -909,3 +926,23 @@ describe('two books', () => {
   })
 })
 
+
+describe('summary cards', () => {
+  it('show on Buku Utama only; the work pages keep their counts on the menu', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/summary': () => ({
+        body: { to_wash: 4, to_pack: 2, drying: 3, ready_orders: 1, unpaid: '350.00', unpaid_orders: 2, house_jobs: 1 },
+      }),
+      'GET /api/work/items': () => ({ body: [] }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+    })
+    renderSignedIn('#/cuci')
+
+    expect(await screen.findByRole('link', { name: /Borang Cuci/ })).toHaveTextContent('Borang Cuci4')
+    expect(screen.queryByRole('link', { name: /Baki belum bayar/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Menunggu cuci/ })).toBeNull()
+  })
+})

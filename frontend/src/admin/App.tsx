@@ -39,14 +39,14 @@ type NavItem = {
 /** The menu depends on the business (does it use orders? bookings?) and on the role:
  * staff only work with orders; the server refuses them everything else anyway. */
 function navFor(business: Business | null | undefined, staff: boolean, summary: WorkSummary | null): NavItem[] {
-  // In the order the work happens, like the paper: the book, washing, packing, the receipt.
+  // The two books first, then the forms, the day's record, receipts and customers.
   const backOffice: NavItem[] = [
     { route: { page: 'orders' }, label: 'Buku Utama', icon: BookIcon },
+    { route: { page: 'visits', book: true }, label: 'Buku Kerja Luar', icon: HomeIcon, active: 'bg-emerald-500 text-white', count: summary?.house_jobs },
     { route: { page: 'wash' }, label: 'Borang Cuci', icon: DropIcon, active: 'bg-sky-500 text-white', count: summary?.to_wash },
     { route: { page: 'pack' }, label: 'Borang Packing', icon: BoxIcon, count: summary?.to_pack },
-    { route: { page: 'visits' }, label: 'Kerja Luar', icon: HomeIcon, active: 'bg-emerald-500 text-white', count: summary?.house_jobs },
-    { route: { page: 'receipts' }, label: 'Resit & WhatsApp', icon: ReceiptIcon, active: 'bg-emerald-500 text-white' },
     { route: { page: 'log' }, label: 'Rekod harian', icon: ClipboardIcon },
+    { route: { page: 'receipts' }, label: 'Resit & WhatsApp', icon: ReceiptIcon, active: 'bg-emerald-500 text-white' },
     { route: { page: 'customers' }, label: 'Pelanggan', icon: UsersIcon },
   ]
   if (staff) return backOffice
@@ -109,8 +109,9 @@ function SignedIn({
   )
 }
 
-/** The pages that open with today's numbers, as in the reference design. */
-const WORK_PAGES = new Set<Route['page']>(['orders', 'wash', 'pack', 'visits', 'receipts', 'receipt'])
+/** Today's numbers open Buku Utama, the overview. The work pages go straight to their lists
+ * (their counts stay on the menu tabs). */
+const WORK_PAGES = new Set<Route['page']>(['orders'])
 
 function Page({ route }: { route: Route }) {
   switch (route.page) {

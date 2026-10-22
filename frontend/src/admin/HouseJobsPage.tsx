@@ -17,8 +17,8 @@ import { orderMatches } from './search'
 /** Kerja Luar: the visit schedule, or the kerja luar book (its own orders and numbers). */
 export function HouseJobsPage({ view, children }: { view: 'schedule' | 'book'; children?: ReactNode }) {
   const tabs = [
-    { key: 'schedule', label: 'Jadual lawatan', route: href({ page: 'visits' }) },
     { key: 'book', label: 'Buku kerja luar', route: href({ page: 'visits', book: true }) },
+    { key: 'schedule', label: 'Jadual lawatan', route: href({ page: 'visits' }) },
   ] as const
   return (
     <section className="space-y-6">
