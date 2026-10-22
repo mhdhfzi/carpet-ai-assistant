@@ -98,13 +98,19 @@ export function OrderPage({ id }: { id: number }) {
 
   return (
     <article className="mx-auto max-w-xl space-y-5">
-      <a href={href({ page: 'orders' })} className="text-sm underline">
-        ← Semua pesanan
-      </a>
+      {order.kind === 'on_site' ? (
+        <a href={href({ page: 'visits', book: true })} className="text-sm underline">
+          ← Buku kerja luar
+        </a>
+      ) : (
+        <a href={href({ page: 'orders' })} className="text-sm underline">
+          ← Semua pesanan
+        </a>
+      )}
 
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold">Pesanan #{order.number}</h1>
+          <h1 className="font-display text-2xl font-bold">{order.kind === 'on_site' ? 'Kerja luar' : 'Pesanan'} {order.code}</h1>
           <p className="text-sm text-ink-soft">Diterima {formatDay(order.received_on)}</p>
         </div>
         <span className={`rounded-full px-3 py-1 text-sm font-bold ${ORDER_STATUS_STYLE[order.status]}`}>
@@ -373,7 +379,7 @@ function Payments({
         <QrPayButton
           qr={business.duitnow_qr}
           amount={order.balance}
-          reference={order.number}
+          reference={order.code}
           payee={business.name}
           busy={busy}
           onReceived={() => onPay({ amount: owed.toFixed(2), method: 'duitnow', note: 'DuitNow QR' })}

@@ -32,14 +32,19 @@ describe('finding a carpet on the work lists', () => {
 
 describe('finding a house job', () => {
   const order = {
+    kind: 'on_site',
     number: 18,
+    code: 'L18',
     customer: { name: 'Encik Lim', phone: '+60123456789', address: '11, Jalan BBN', area: 'Nilai' },
-    items: [{ tag: '18-1', service: { name: 'Cucian Sofa' } }],
+    items: [{ tag: 'L18-1', service: { name: 'Cucian Sofa' } }],
   } as unknown as Order
 
   it.each([
     ['18', true],
+    ['L18', true],
+    ['l18-1', true],
     ['18-1', true],
+    ['L19', false],
     ['012-345 6789', true],
     ['3456789', true],
     ['lim', true],

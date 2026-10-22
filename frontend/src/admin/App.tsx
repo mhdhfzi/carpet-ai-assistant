@@ -117,7 +117,7 @@ function Page({ route }: { route: Route }) {
     case 'analytics':
       return <AnalyticsPage />
     case 'orders':
-      return <OrdersPage key={route.filter ?? ''} filter={route.filter} />
+      return <OrdersPage key={route.filter ?? ''} kind="shop" filter={route.filter} />
     case 'customers':
       return <CustomersPage />
     case 'wash':
@@ -125,7 +125,13 @@ function Page({ route }: { route: Route }) {
     case 'pack':
       return <PackPage />
     case 'visits':
-      return <HouseJobsPage />
+      return route.book ? (
+        <HouseJobsPage view="book">
+          <OrdersPage key={`luar-${route.filter ?? ''}`} kind="on_site" filter={route.filter} />
+        </HouseJobsPage>
+      ) : (
+        <HouseJobsPage view="schedule" />
+      )
     case 'log':
       return <LogPage />
     case 'receipt':
@@ -133,7 +139,7 @@ function Page({ route }: { route: Route }) {
     case 'receipts':
       return <ReceiptPage />
     case 'new-order':
-      return <NewOrderPage />
+      return <NewOrderPage key={route.kind ?? 'shop'} kind={route.kind ?? 'shop'} />
     case 'order':
       return <OrderPage key={route.id} id={route.id} />
     case 'customer':
@@ -145,7 +151,8 @@ function Page({ route }: { route: Route }) {
 
 /** Which menu item a page belongs to: a single order under Pesanan, a customer under Pelanggan. */
 function section(route: Route): Route['page'] {
-  if (route.page === 'order' || route.page === 'new-order') return 'orders'
+  if (route.page === 'new-order') return route.kind === 'on_site' ? 'visits' : 'orders'
+  if (route.page === 'order') return 'orders'
   if (route.page === 'receipt') return 'receipts'
   if (route.page === 'customer') return 'customers'
   return route.page

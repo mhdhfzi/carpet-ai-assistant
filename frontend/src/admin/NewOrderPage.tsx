@@ -4,11 +4,14 @@ import { useAuth } from './auth'
 import { ItemsEditor, NumberField } from './ItemsEditor'
 import { type ItemRow, emptyRow, rowPrice, rowsToInput } from './itemRows'
 import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia } from './format'
-import type { CustomerSummary, Order, PaymentMethod, ReturnMethod } from './types'
+import type { CustomerSummary, Order, OrderKind, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
 
-export function NewOrderPage() {
+/** A new order in one book: carpets (Buku Utama) or kerja luar. Each offers only its own
+ * services, so the two are never mixed in one order (the server refuses that too). */
+export function NewOrderPage({ kind }: { kind: OrderKind }) {
+  const luar = kind === 'on_site'
   const { request, state } = useAuth()
   const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const services = useServices()
@@ -60,7 +63,7 @@ export function NewOrderPage() {
   const lines = rows.map((row) => rowPrice(row, row.serviceId === null ? undefined : byId.get(row.serviceId)))
   const pending = lines.some((l) => l.total === null)
   // Sofa, mattress and car seat jobs are done at the customer's home: when is the visit?
-  const homeJobs = rows.some((row) => row.serviceId !== null && byId.get(row.serviceId)?.on_site)
+  const offered = (services ?? []).filter((s) => s.on_site === luar)
   const subtotal = lines.reduce((sum, l) => sum + (l.total ?? 0), 0)
   const total = Math.max(subtotal - Number(discount || 0), 0)
 
@@ -74,7 +77,7 @@ export function NewOrderPage() {
         body: {
           customer: { name: name.trim(), phone, area: area.trim() || null, address: address.trim() || null },
           received_on: receivedOn,
-          ...(homeJobs && visitAt ? { visit_at: fromVisitInput(visitAt) } : {}),
+          ...(luar && visitAt ? { visit_at: fromVisitInput(visitAt) } : {}),
           items: rowsToInput(rows),
           deposit: deposit || '0',
           deposit_method: depositMethod,
@@ -95,8 +98,8 @@ export function NewOrderPage() {
   return (
     <form onSubmit={submit} className="mx-auto max-w-xl space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold">Pesanan baru</h1>
-        <a href={href({ page: 'orders' })} className="text-sm underline">
+        <h1 className="font-display text-2xl font-bold">{luar ? 'Kerja luar baru' : 'Pesanan karpet baru'}</h1>
+        <a href={luar ? href({ page: 'visits', book: true }) : href({ page: 'orders' })} className="text-sm underline">
           Batal
         </a>
       </div>
@@ -117,14 +120,14 @@ export function NewOrderPage() {
 
       <section className="space-y-3">
         <h2 className="font-semibold">Barang</h2>
-        <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} />
+        <ItemsEditor services={offered} rows={rows} onChange={setRows} isOwner={isOwner} />
       </section>
 
-      {homeJobs && (
+      {luar && (
         <section className="space-y-2 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
           <h2 className="font-semibold">Lawatan ke rumah pelanggan</h2>
           <TextField label="Tarikh & masa lawatan (pilihan)" value={visitAt} onChange={setVisitAt} type="datetime-local" />
-          <p className="text-xs text-ink-soft">Boleh diisi atau ditukar kemudian. Kerja ini akan muncul di Kerja Luar.</p>
+          <p className="text-xs text-ink-soft">Boleh diisi atau ditukar kemudian. Kerja ini akan muncul di Jadual Kerja Luar.</p>
         </section>
       )}
 
@@ -147,21 +150,23 @@ export function NewOrderPage() {
           </div>
         )}
         {isOwner && <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />}
-        <fieldset className="space-y-1">
-          <legend className="text-sm font-semibold">Cara pulang</legend>
-          {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
-            <label key={method} className="flex items-center gap-2 py-1">
-              <input
-                type="radio"
-                name="return"
-                checked={returnMethod === method}
-                onChange={() => setReturnMethod(method)}
-                className="size-5"
-              />
-              {RETURN_LABEL[method]}
-            </label>
-          ))}
-        </fieldset>
+        {!luar && (
+          <fieldset className="space-y-1">
+            <legend className="text-sm font-semibold">Cara pulang</legend>
+            {(Object.keys(RETURN_LABEL) as ReturnMethod[]).map((method) => (
+              <label key={method} className="flex items-center gap-2 py-1">
+                <input
+                  type="radio"
+                  name="return"
+                  checked={returnMethod === method}
+                  onChange={() => setReturnMethod(method)}
+                  className="size-5"
+                />
+                {RETURN_LABEL[method]}
+              </label>
+            ))}
+          </fieldset>
+        )}
         <label className="block space-y-1">
           <span className="text-sm font-semibold">Catatan</span>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-xl bg-foam px-3 py-3" />

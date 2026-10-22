@@ -39,7 +39,8 @@ def test_business_numbers_from_orders_and_payments(
 ) -> None:
     carpet = {"service_id": services["Karpet Biasa"], "length_ft": "8", "width_ft": "10"}
     sofa = {"service_id": services["Cucian Sofa"], "quantity": "3"}
-    first = place(client, [carpet, sofa], deposit="100.00", deposit_method="transfer")  # 324
+    first = place(client, [carpet], deposit="100.00", deposit_method="transfer")  # 144
+    place(client, [sofa])  # 180, a kerja luar order of its own, not done yet
     second = place(client, [carpet])  # 144
     cancelled = place(client, [carpet])
     client.patch(f"/api/orders/{cancelled['id']}", json={"status": "cancelled"})
@@ -49,14 +50,14 @@ def test_business_numbers_from_orders_and_payments(
 
     body = client.get("/api/analytics/business", params={"days": 7}).json()
 
-    assert (body["revenue"], body["orders"], body["order_value"]) == ("244.00", 2, "468.00")
+    assert (body["revenue"], body["orders"], body["order_value"]) == ("244.00", 3, "468.00")
     assert body["revenue_by_method"] == {"cash": "144.00", "transfer": "100.00", "duitnow": "0"}
     assert body["cancelled"] == 1
-    assert (body["unpaid"], body["unpaid_orders"]) == ("224.00", 1)  # 324 - 100
-    assert body["in_progress"] == {"received": 1, "washed": 0, "ready": 1}
+    assert (body["unpaid"], body["unpaid_orders"]) == ("224.00", 2)  # 144 - 100, and 180
+    assert body["in_progress"] == {"received": 2, "washed": 0, "ready": 1}
     assert body["services"][0] == {"name": "Cucian Sofa", "items": 3, "value": "180.00"}
     assert body["services"][1] == {"name": "Karpet Biasa", "items": 2, "value": "288.00"}
-    assert {d["weekday"]: d["orders"] for d in body["busy_days"]}["Sat"] == 2
+    assert {d["weekday"]: d["orders"] for d in body["busy_days"]}["Sat"] == 3
     assert body["average_days_to_ready"] == 0.0  # washed and dried the same (frozen) day
 
 

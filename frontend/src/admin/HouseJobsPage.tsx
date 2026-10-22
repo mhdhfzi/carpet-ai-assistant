@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { formatSize, formatVisit, isHomeJob, todayInMalaysia, visitDay, whatsAppUrl } from './format'
-import { AlertIcon, CheckIcon, HomeIcon, PhoneIcon } from './icons'
+import { AlertIcon, CheckIcon, HomeIcon, PhoneIcon, PlusIcon } from './icons'
 import { notifyWorkChanged } from './summary'
 import type { Order } from './types'
 import { href } from './useHashRoute'
@@ -14,7 +14,53 @@ import { orderMatches } from './search'
 // They skip the washing and packing forms: the team goes, does the job, and marks it done.
 // Listed by visit time, so the day's route is in one place.
 
-export function HouseJobsPage() {
+/** Kerja Luar: the visit schedule, or the kerja luar book (its own orders and numbers). */
+export function HouseJobsPage({ view, children }: { view: 'schedule' | 'book'; children?: ReactNode }) {
+  const tabs = [
+    { key: 'schedule', label: 'Jadual lawatan', route: href({ page: 'visits' }) },
+    { key: 'book', label: 'Buku kerja luar', route: href({ page: 'visits', book: true }) },
+  ] as const
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-emerald-900 p-5 text-white shadow">
+        <div className="max-w-2xl">
+          <span className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-bold tracking-wider uppercase">Kerja luar</span>
+          <h1 className="mt-2 flex items-center gap-2 text-xl font-extrabold uppercase">
+            <HomeIcon className="size-5" /> {view === 'book' ? 'Buku kerja luar' : 'Jadual kerja luar'}
+          </h1>
+          <p className="mt-0.5 text-xs text-white/80">
+            Sofa, tilam dan seat kereta dibuat di rumah pelanggan dalam satu lawatan: tiada borang cuci atau packing.
+            Pesanan kerja luar ada buku dan nombor sendiri (L1, L2…).
+          </p>
+        </div>
+        {view === 'schedule' && (
+          // The book has the same button in its search bar.
+          <a
+            href={href({ page: 'new-order', kind: 'on_site' })}
+            className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-xs font-bold text-emerald-900 shadow hover:bg-emerald-50"
+          >
+            <PlusIcon /> Daftar kerja luar baru
+          </a>
+        )}
+      </div>
+      <nav aria-label="Kerja luar" className="flex gap-1.5">
+        {tabs.map((tab) => (
+          <a
+            key={tab.key}
+            href={tab.route}
+            aria-current={view === tab.key ? 'page' : undefined}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 aria-[current=page]:bg-emerald-700 aria-[current=page]:text-white aria-[current=page]:ring-emerald-700"
+          >
+            {tab.label}
+          </a>
+        ))}
+      </nav>
+      {view === 'book' ? children : <VisitSchedule />}
+    </section>
+  )
+}
+
+function VisitSchedule() {
   const { request } = useAuth()
   const today = todayInMalaysia()
   const [orders, setOrders] = useState<Order[] | null>(null)
@@ -70,19 +116,6 @@ export function HouseJobsPage() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-emerald-900 p-5 text-white shadow">
-        <div className="max-w-2xl">
-          <span className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-bold tracking-wider uppercase">Kerja luar</span>
-          <h1 className="mt-2 flex items-center gap-2 text-xl font-extrabold uppercase">
-            <HomeIcon className="size-5" /> Jadual kerja luar
-          </h1>
-          <p className="mt-0.5 text-xs text-white/80">
-            Sofa, tilam dan seat kereta dibuat di rumah pelanggan dalam satu lawatan: tiada borang cuci atau packing.
-            Bila kerja selesai, tekan <strong>Tandakan siap</strong>.
-          </p>
-        </div>
-      </div>
-
       {notice && (
         <p
           role={notice.ok ? 'status' : 'alert'}
@@ -128,7 +161,7 @@ export function HouseJobsPage() {
                     order={order}
                     busy={busy}
                     onDone={(itemId, tag) => save(order, `/items/${itemId}`, { status: 'ready' }, `${tag} siap.`)}
-                    onReschedule={(visitAt) => save(order, '', { visit_at: visitAt }, `Masa lawatan #${order.number} disimpan.`)}
+                    onReschedule={(visitAt) => save(order, '', { visit_at: visitAt }, `Masa lawatan ${order.code} disimpan.`)}
                   />
                 </li>
               ))}
@@ -154,7 +187,7 @@ function VisitCard({
   const address = [order.customer.address, order.customer.area].filter(Boolean).join(', ')
   return (
     <article
-      aria-label={`Kerja luar ${order.number}, ${order.customer.name}`}
+      aria-label={`Kerja luar ${order.code}, ${order.customer.name}`}
       className="h-full space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <header className="flex flex-wrap items-start justify-between gap-2">
@@ -163,7 +196,7 @@ function VisitCard({
             {order.visit_at ? formatVisit(order.visit_at) : 'Masa belum ditetapkan'}
           </p>
           <a href={href({ page: 'order', id: order.id })} className="text-sm font-semibold text-slate-700 hover:underline">
-            #{order.number} · {order.customer.name}
+            {order.code} · {order.customer.name}
           </a>
         </div>
         <div className="flex gap-2 text-xs font-semibold">

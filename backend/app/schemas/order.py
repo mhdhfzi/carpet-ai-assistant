@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.db.models import (
     ItemFold,
     ItemStatus,
+    OrderKind,
     OrderStatus,
     PaymentMethod,
     PricingUnit,
@@ -160,7 +161,9 @@ class OrderEventRead(BaseModel):
 
 class OrderRead(BaseModel):
     id: int
+    kind: OrderKind  # the carpet book or the kerja luar book
     number: int
+    code: str  # the number as written and printed: "412", or "L12" for kerja luar
     customer: OrderCustomerRead
     received_on: date
     visit_at: datetime | None

@@ -11,7 +11,7 @@ import { CheckIcon } from './icons'
 type Props = {
   qr: string // the text inside the shop's DuitNow QR
   amount: string // what's owed
-  reference: number // the order number, for matching in the bank app
+  reference: string // the order's number as written, e.g. 412 or L12, for matching in the bank app
   payee: string // shown under the QR
   busy: boolean
   onReceived: () => Promise<void>

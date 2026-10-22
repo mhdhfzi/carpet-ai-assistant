@@ -40,7 +40,7 @@ export function SummaryCards({ summary }: { summary: WorkSummary }) {
       >
         <p className="text-xs font-semibold text-slate-500 uppercase">Siap (tunggu ambil / bayar)</p>
         <p className="mt-1 text-xl font-extrabold sm:text-2xl text-emerald-700">{summary.ready_orders} tempahan</p>
-        <p className="mt-1 text-xs text-slate-500">Karpet sudah dipack, kerja luar sudah selesai</p>
+        <p className="mt-1 text-xs text-slate-500">Karpet sudah dipack, tunggu diambil atau dihantar</p>
       </a>
 
       <a

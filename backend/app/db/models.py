@@ -61,6 +61,13 @@ class OwnerRole(StrEnum):
     STAFF = "staff"  # a worker: records orders, can't change prices or see the business side
 
 
+class OrderKind(StrEnum):
+    """Which book an order is in. Each book numbers its orders on its own."""
+
+    SHOP = "shop"  # carpets, cleaned at the shop: 12, 12-1
+    ON_SITE = "on_site"  # kerja luar (sofa, mattress, car seats), done at home: L12, L12-1
+
+
 class OrderStatus(StrEnum):
     RECEIVED = "received"  # Diterima: recorded in the system and tagged
     WASHED = "washed"  # Dicuci: washed, now drying (5-7 days for carpets)
@@ -394,11 +401,18 @@ class Order(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("number > 0", name="number_positive"),
         CheckConstraint("discount >= 0", name="discount_non_negative"),
+        UniqueConstraint("kind", "number", name="uq_orders_kind_number"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Carpets or kerja luar: never both in one order, and each book has its own numbers.
+    kind: Mapped[OrderKind] = mapped_column(
+        str_enum(OrderKind, "order_kind"),
+        default=OrderKind.SHOP,
+        server_default=OrderKind.SHOP.value,
+    )
     # The book's "Bilangan": a running number staff write on the carpet tags.
-    number: Mapped[int] = mapped_column(Integer, unique=True)
+    number: Mapped[int] = mapped_column(Integer)
     customer_id: Mapped[int] = mapped_column(
         ForeignKey("customers.id", ondelete="RESTRICT"), index=True
     )

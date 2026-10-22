@@ -47,7 +47,7 @@ export function readyMessage(order: Order, business: string, paymentDetails = ''
   return [
     `Assalamualaikum ${order.customer.name},`,
     '',
-    `Barang anda (no. siri *${order.number}*) sudah siap dicuci dan dibungkus.`,
+    `Barang anda (no. siri *${order.code}*) sudah siap dicuci dan dibungkus.`,
     '',
     ...itemLines(order),
     '',
@@ -66,7 +66,7 @@ export function receiptMessage(order: Order, business: Receipt['business']): str
     `Assalamualaikum / Salam sejahtera ${order.customer.name},`,
     `Berikut adalah resit daripada *${business.name}*:`,
     '',
-    `*No. siri resit:* ${order.number}`,
+    `*No. siri resit:* ${order.code}`,
     `*Tarikh masuk:* ${formatShortDate(order.received_on)}`,
     '*Senarai barang:*',
     ...itemLines(order),
