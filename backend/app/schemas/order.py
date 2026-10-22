@@ -236,6 +236,7 @@ class UntaggedRead(BaseModel):
 class ReceiptBusiness(BaseModel):
     name: str  # as printed on the receipt
     logo: str  # the short mark in the round badge
+    logo_image: str  # a picture for the badge instead; "" = the letters
     reg_no: str
     address: str
     phone: str

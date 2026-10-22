@@ -128,6 +128,7 @@ def receipt(order_id: int, db: DbSession) -> ReceiptRead:
         business=ReceiptBusiness(
             name=name,
             logo=settings.receipt_logo or initials(name),
+            logo_image=settings.receipt_logo_image,
             reg_no=settings.business_reg_no,
             address=settings.business_address,
             phone=settings.business_phones or settings.contact_whatsapp or "",

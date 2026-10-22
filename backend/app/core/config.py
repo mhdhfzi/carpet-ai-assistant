@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Printed on receipts. All optional; blank lines are left out.
     receipt_name: str = ""  # the name on the receipt, if not the business name
     receipt_logo: str = ""  # the short mark in the round badge, e.g. "RGL"; blank = initials
+    # A logo picture for the badge instead of letters, e.g. "/brand/rgl-mark.png" (a file the
+    # dashboard serves). Blank = the letters above.
+    receipt_logo_image: str = ""
     business_reg_no: str = ""  # e.g. the SSM registration number
     business_address: str = ""
     business_email: str = ""

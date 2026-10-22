@@ -871,6 +871,7 @@ def test_a_receipt_has_the_business_details_and_the_order(
     monkeypatch.setenv("PAYMENT_DETAILS", "Maybank 1234")
     monkeypatch.setenv("RECEIPT_NAME", "Dobi Karpet Xpress")
     monkeypatch.setenv("RECEIPT_LOGO", "RGL")
+    monkeypatch.setenv("RECEIPT_LOGO_IMAGE", "/brand/rgl-mark.png")
     monkeypatch.setenv("CONTACT_WHATSAPP", "019-111 1111")
     monkeypatch.setenv("BUSINESS_PHONES", "019-111 1111 / 013-222 2222")
     monkeypatch.setenv("RECEIPT_TERMS", "Barang tidak dituntut dalam 3 bulan akan dilupuskan.")
@@ -881,6 +882,7 @@ def test_a_receipt_has_the_business_details_and_the_order(
 
     business = receipt["business"]
     assert (business["name"], business["logo"]) == ("Dobi Karpet Xpress", "RGL")
+    assert business["logo_image"] == "/brand/rgl-mark.png"
     assert business["reg_no"] == "201903262495 (NS0229212-P)"
     assert business["payment_details"] == "Maybank 1234"
     assert business["duitnow_qr"] == ""  # no QR set: the dashboard shows no QR button

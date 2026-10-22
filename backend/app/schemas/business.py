@@ -8,4 +8,5 @@ class BusinessInfo(BaseModel):
     orders: bool  # whether the dashboard has the back office (orders, customers)
     brand: str  # the name on receipts and the dashboard header (e.g. a trading name)
     logo: str  # the short mark in the round badge, e.g. "RGL"
+    logo_image: str  # the badge's picture, e.g. "/brand/rgl-mark.png"; "" = use the letters
     address: str  # public: printed on receipts and the website

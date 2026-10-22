@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { toJpeg } from 'html-to-image'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from './auth'
+import { useBusiness } from './business'
 import { formatMoney, formatShortDate, formatSize, whatsAppUrl } from './format'
-import { ChatIcon, CheckIcon, PrintIcon } from './icons'
+import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
 import { QrPayButton } from './QrPay'
 import { notifyWorkChanged } from './summary'
 import type { Order, Receipt } from './types'
@@ -20,6 +22,43 @@ export function ReceiptPage({ id }: { id?: number }) {
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [error, setError] = useState(false)
   const [paying, setPaying] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [imageError, setImageError] = useState(false)
+  const sheet = useRef<HTMLDivElement>(null)
+  const shop = useBusiness()
+  // The file a saved receipt gets: "RESIT CUCI CUCI SENAWANG".
+  const fileName = `RESIT ${(shop?.name ?? 'Kedai').replace(/-/g, ' ').toUpperCase()}`
+
+  /** Print or save as PDF: the browser names the PDF after the page title, so set it. */
+  const printReceipt = () => {
+    const title = document.title
+    document.title = fileName
+    window.addEventListener('afterprint', () => (document.title = title), { once: true })
+    window.print()
+  }
+
+  /** The receipt as a JPEG picture: shared (e.g. to WhatsApp) on a phone, downloaded otherwise. */
+  const saveImage = async () => {
+    if (!sheet.current) return
+    setSaving(true)
+    setImageError(false)
+    try {
+      const dataUrl = await toJpeg(sheet.current, { quality: 0.95, pixelRatio: 2, backgroundColor: '#ffffff' })
+      const file = new File([await (await fetch(dataUrl)).blob()], `${fileName}.jpg`, { type: 'image/jpeg' })
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: fileName }).catch(() => {}) // closing the share menu is fine
+      } else {
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = `${fileName}.jpg`
+        link.click()
+      }
+    } catch {
+      setImageError(true)
+    } finally {
+      setSaving(false)
+    }
+  }
   const selected = id ?? orders?.[0]?.id
 
   useEffect(() => {
@@ -162,14 +201,27 @@ export function ReceiptPage({ id }: { id?: number }) {
 
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={printReceipt}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-bold text-white hover:bg-slate-800"
         >
           <PrintIcon /> Cetak / simpan PDF
         </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={saveImage}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-bold text-slate-900 ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <ImageIcon /> {saving ? 'Menyediakan gambar…' : 'Simpan / kongsi gambar (JPEG)'}
+        </button>
+        {imageError && (
+          <p role="alert" className="text-center text-xs text-danger">
+            Tak dapat buat gambar resit. Cuba lagi, atau guna Cetak / simpan PDF.
+          </p>
+        )}
       </div>
 
-      <div className="lg:col-span-7">
+      <div className="lg:col-span-7" ref={sheet}>
         <ReceiptSheet receipt={receipt} />
       </div>
     </div>
@@ -195,9 +247,13 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-slate-800 pb-4 sm:flex-nowrap">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="grid size-16 shrink-0 place-items-center rounded-full border-4 border-amber-500 bg-slate-900 text-lg font-black text-amber-400">
-            {business.logo}
-          </span>
+          {business.logo_image ? (
+            <img src={business.logo_image} alt="" className="size-16 shrink-0 object-contain" />
+          ) : (
+            <span className="grid size-16 shrink-0 place-items-center rounded-full border-4 border-amber-500 bg-slate-900 text-lg font-black text-amber-400">
+              {business.logo}
+            </span>
+          )}
           <div className="min-w-0 text-xs text-slate-700">
             <h2 className="text-xl font-black tracking-tight text-slate-900 uppercase">{business.name}</h2>
             {business.reg_no && <p>No. SSM: {business.reg_no}</p>}

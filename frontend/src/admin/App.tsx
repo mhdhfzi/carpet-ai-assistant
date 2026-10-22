@@ -179,11 +179,16 @@ function Layout({
       <header className="z-30 bg-slate-900 md:sticky md:top-0 text-white shadow-lg print:hidden">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pt-3 pb-2">
           <div className="flex min-w-0 items-center gap-3">
-            {business && (
-              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-amber-500 text-sm font-extrabold text-slate-900 shadow">
-                {business.logo}
-              </span>
-            )}
+            {business &&
+              (business.logo_image ? (
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white p-1.5 shadow">
+                  <img src={business.logo_image} alt="" className="size-full object-contain" />
+                </span>
+              ) : (
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-amber-500 text-sm font-extrabold text-slate-900 shadow">
+                  {business.logo}
+                </span>
+              ))}
             <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base leading-tight font-bold uppercase sm:text-lg">
                 {brand ?? 'Dashboard'}
