@@ -66,6 +66,9 @@ export function BusinessSection() {
   const revenue = Number(data.revenue)
   const methods = Object.keys(PAYMENT_LABEL) as PaymentMethod[]
   const newestFirst = [...data.months].reverse()
+  // What the shop should collect in all: received so far plus what's still owed (in sen, so
+  // the sum has no rounding error).
+  const expected = ((Math.round(Number(data.revenue_total) * 100) + Math.round(Number(data.unpaid) * 100)) / 100).toFixed(2)
 
   return (
     <section aria-labelledby="business-heading" className="space-y-4">
@@ -73,7 +76,8 @@ export function BusinessSection() {
         Perniagaan
       </h2>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile label="Jumlah hasil keseluruhan" value={formatMoney(expected)} hint="Diterima + baki belum dibayar" />
         <StatTile label="Jumlah hasil diterima" value={formatMoney(data.revenue_total)} hint="Semua bayaran setakat ini" />
         <StatTile
           label="Baki belum dibayar"

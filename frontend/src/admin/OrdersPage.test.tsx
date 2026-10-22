@@ -523,6 +523,7 @@ describe('back office', () => {
     const user = renderSignedIn('#/analytics')
 
     const business = await screen.findByRole('region', { name: 'Perniagaan' })
+    expect(business).toHaveTextContent('Jumlah hasil keseluruhanRM5456.00') // 5200 received + 256 owed
     expect(business).toHaveTextContent('Jumlah hasil diterimaRM5200.00')
     expect(business).toHaveTextContent('Baki belum dibayarRM256.002 pesanan')
     const monthly = within(business).getByRole('region', { name: 'Setiap bulan' })
