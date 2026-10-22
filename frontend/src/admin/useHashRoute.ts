@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { OrderKind } from './types'
 
 // A handful of pages doesn't justify a router library: the page lives in the URL hash
 // (#/orders/12), so links, the back button and reloads all work.
@@ -10,9 +11,9 @@ export type Route =
   | { page: 'customers' }
   | { page: 'wash' }
   | { page: 'pack' }
-  | { page: 'visits' }
+  | { page: 'visits'; book?: boolean; filter?: string } // Kerja Luar: the visit schedule, or its book
   | { page: 'log' }
-  | { page: 'new-order' }
+  | { page: 'new-order'; kind?: OrderKind }
   | { page: 'order'; id: number }
   | { page: 'receipt'; id: number }
   | { page: 'customer'; id: number }
@@ -27,7 +28,7 @@ export function parseRoute(hash: string): Route | null {
     case 'analytics':
       return { page: name }
     case 'orders':
-      if (id === 'new') return { page: 'new-order' }
+      if (id === 'new') return { page: 'new-order', kind: new URLSearchParams(query).get('jenis') === 'luar' ? 'on_site' : 'shop' }
       if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
       if (id && Number.isInteger(number) && number > 0) return { page: 'order', id: number }
       return { page: 'orders', filter: new URLSearchParams(query).get('tapis') ?? undefined }
@@ -39,7 +40,9 @@ export function parseRoute(hash: string): Route | null {
       return { page: 'pack' }
     case 'kerja-luar':
     case 'kerja-rumah': // the page's old address, kept for bookmarks
-      return { page: 'visits' }
+      return id === 'buku'
+        ? { page: 'visits', book: true, filter: new URLSearchParams(query).get('tapis') ?? undefined }
+        : { page: 'visits' }
     case 'rekod':
       return { page: 'log' }
     case 'customers':
@@ -56,7 +59,7 @@ export function href(route: Route): string {
     case 'receipts':
       return '#/resit'
     case 'new-order':
-      return '#/orders/new'
+      return route.kind === 'on_site' ? '#/orders/new?jenis=luar' : '#/orders/new'
     case 'order':
       return `#/orders/${route.id}`
     case 'receipt':
@@ -68,7 +71,8 @@ export function href(route: Route): string {
     case 'pack':
       return '#/packing'
     case 'visits':
-      return '#/kerja-luar'
+      if (!route.book) return '#/kerja-luar'
+      return route.filter ? `#/kerja-luar/buku?tapis=${route.filter}` : '#/kerja-luar/buku'
     case 'log':
       return '#/rekod'
     default:

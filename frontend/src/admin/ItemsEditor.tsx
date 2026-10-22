@@ -46,20 +46,24 @@ export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
                 className="w-full rounded-xl bg-foam px-3 py-3"
               >
                 <option value="">Pilih jenis…</option>
-                <optgroup label="Karpet (ikut kaki persegi)">
-                  {carpets.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Kerja luar (di rumah pelanggan)">
-                  {others.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
+                {carpets.length > 0 && (
+                  <optgroup label="Karpet (ikut kaki persegi)">
+                    {carpets.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {others.length > 0 && (
+                  <optgroup label="Kerja luar (di rumah pelanggan)">
+                    {others.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
 

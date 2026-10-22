@@ -16,27 +16,40 @@ import {
 } from './format'
 import { ArrowIcon, BellIcon, CheckIcon, PhoneIcon, PlusIcon, ReceiptIcon, SearchIcon } from './icons'
 import { notifyWorkChanged } from './summary'
-import type { Order, OrderItem, OrderStatus } from './types'
+import type { Order, OrderItem, OrderKind, OrderStatus } from './types'
 import { href } from './useHashRoute'
 
-// The book ("Buku Utama"): every job with its carpets, where each one is, and what's owed.
+// The books: Buku Utama for carpets, and the Kerja Luar book for sofa, mattress and car seat
+// jobs done at customers' homes. Each lists its orders, where each item is, and what's owed.
 // The filters match the questions asked of the book: what's not washed, what can be packed,
 // what's ready to go back, who hasn't paid. Finished jobs move to the history.
 const OPEN: OrderStatus[] = ['received', 'washed', 'ready']
-const FILTERS: { key: string; label: string; statuses: OrderStatus[]; keep?: (o: Order, today: string) => boolean }[] = [
-  { key: 'open', label: 'Semua', statuses: OPEN },
-  { key: 'unwashed', label: 'Belum cuci', statuses: ['received'], keep: (o) => o.items.some((i) => !isHomeJob(i) && i.status === 'received') },
-  { key: 'home', label: 'Kerja luar', statuses: OPEN, keep: (o) => o.items.some((i) => isHomeJob(i) && i.status !== 'ready') },
-  { key: 'to-pack', label: 'Kering 5–7 hari', statuses: ['received', 'washed'], keep: (o, today) => o.items.some((i) => readyToPack(i, today)) },
+type Filter = { key: string; label: string; statuses: OrderStatus[]; keep?: (o: Order, today: string) => boolean }
+const COMMON: Filter[] = [
   { key: 'ready', label: 'Siap', statuses: ['ready'] },
   { key: 'unpaid', label: 'Belum bayar', statuses: [...OPEN, 'completed'], keep: (o) => owes(o) },
   { key: 'history', label: 'Sejarah', statuses: ['completed', 'cancelled'] },
 ]
+const FILTERS: Record<OrderKind, Filter[]> = {
+  shop: [
+    { key: 'open', label: 'Semua', statuses: OPEN },
+    { key: 'unwashed', label: 'Belum cuci', statuses: ['received'] },
+    { key: 'to-pack', label: 'Kering 5–7 hari', statuses: ['received', 'washed'], keep: (o, today) => o.items.some((i) => readyToPack(i, today)) },
+    ...COMMON,
+  ],
+  on_site: [
+    { key: 'open', label: 'Semua', statuses: OPEN },
+    { key: 'pending', label: 'Belum siap', statuses: ['received'] },
+    ...COMMON,
+  ],
+}
 
-export function OrdersPage({ filter: initial }: { filter?: string }) {
+export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?: string }) {
   const { request } = useAuth()
   const today = todayInMalaysia()
-  const [filter, setFilter] = useState(FILTERS.find((f) => f.key === initial) ?? FILTERS[0])
+  const filters = FILTERS[kind]
+  const luar = kind === 'on_site'
+  const [filter, setFilter] = useState(filters.find((f) => f.key === initial) ?? filters[0])
   const [query, setQuery] = useState('')
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [error, setError] = useState(false)
@@ -53,12 +66,12 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
       await request<Order>(`/api/orders/${order.id}`, { method: 'PATCH', body: { status: 'completed' } })
       setNotice({
         ok: true,
-        text: `#${order.number} ${order.customer.name}: selesai${owes(order) ? `, baki ${formatMoney(order.balance)} masih di Belum bayar` : ''}.`,
+        text: `${order.code} ${order.customer.name}: selesai${owes(order) ? `, baki ${formatMoney(order.balance)} masih di Belum bayar` : ''}.`,
       })
       setVersion((v) => v + 1)
       notifyWorkChanged()
     } catch (err) {
-      setNotice({ ok: false, text: errorMessage(err, `Tak dapat tandakan #${order.number} selesai. Cuba lagi.`) })
+      setNotice({ ok: false, text: errorMessage(err, `Tak dapat tandakan ${order.code} selesai. Cuba lagi.`) })
     } finally {
       setClosing(null)
     }
@@ -66,7 +79,7 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
 
   useEffect(() => {
     let current = true
-    const params = new URLSearchParams()
+    const params = new URLSearchParams({ kind })
     // A search looks through every status: a customer asking about a tag may be anywhere.
     if (query.trim()) params.set('q', query.trim())
     else for (const s of filter.statuses) params.append('status', s)
@@ -86,14 +99,14 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
       current = false
       clearTimeout(timer)
     }
-  }, [request, filter, query, version])
+  }, [request, kind, filter, query, version])
 
   const shown = orders && !query.trim() && filter.keep ? orders.filter((o) => filter.keep?.(o, today)) : orders
   const toPack = (orders ?? []).flatMap((o) => o.items).filter((i) => readyToPack(i, today)).length
 
   return (
     <section className="space-y-5">
-      {filter.key === 'open' && !query.trim() && toPack > 0 && (
+      {!luar && filter.key === 'open' && !query.trim() && toPack > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-r-xl border-l-4 border-amber-500 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent p-4">
           <div>
             <h2 className="flex items-center gap-2 text-sm font-bold text-amber-900">
@@ -128,7 +141,7 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
           </label>
           {!query.trim() && (
             <div className="flex flex-wrap gap-1" role="group" aria-label="Tapis status">
-              {FILTERS.map((f) => (
+              {filters.map((f) => (
                 <button
                   key={f.key}
                   type="button"
@@ -146,10 +159,10 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
           )}
         </div>
         <a
-          href={href({ page: 'new-order' })}
+          href={href({ page: 'new-order', kind })}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-emerald-700 md:w-auto"
         >
-          <PlusIcon /> Daftar pesanan baru
+          <PlusIcon /> {luar ? 'Daftar kerja luar baru' : 'Daftar pesanan baru'}
         </a>
       </div>
 
@@ -175,9 +188,9 @@ export function OrdersPage({ filter: initial }: { filter?: string }) {
                 <tr className="bg-slate-800 text-xs text-slate-200 uppercase">
                   <th scope="col" className="px-4 py-3">No. siri / tarikh</th>
                   <th scope="col" className="px-4 py-3">Pelanggan & alamat</th>
-                  <th scope="col" className="px-4 py-3">Senarai karpet (jenis & saiz)</th>
-                  <th scope="col" className="px-4 py-3">Tarikh cuci & tempoh kering</th>
-                  <th scope="col" className="px-4 py-3">Status packing</th>
+                  <th scope="col" className="px-4 py-3">{luar ? 'Senarai kerja' : 'Senarai karpet (jenis & saiz)'}</th>
+                  <th scope="col" className="px-4 py-3">{luar ? 'Status kerja' : 'Tarikh cuci & tempoh kering'}</th>
+                  <th scope="col" className="px-4 py-3">{luar ? 'Progress' : 'Status packing'}</th>
                   <th scope="col" className="px-4 py-3">Jumlah & bayaran</th>
                   <th scope="col" className="px-4 py-3 text-right">Tindakan</th>
                 </tr>
@@ -215,13 +228,13 @@ function BookRow({
   const carpetsLeft = order.items.some((i) => !isHomeJob(i) && i.status !== 'ready')
   const open = OPEN.includes(order.status)
   return (
-    <tr aria-label={`Pesanan ${order.number}, ${order.customer.name}`} className="align-top hover:bg-slate-50/80 max-md:block max-md:px-4 max-md:py-3">
+    <tr aria-label={`Pesanan ${order.code}, ${order.customer.name}`} className="align-top hover:bg-slate-50/80 max-md:block max-md:px-4 max-md:py-3">
       <td className={cell}>
         <a
           href={href({ page: 'order', id: order.id })}
           className="rounded border border-slate-300 bg-slate-100 px-2.5 py-1 text-base font-extrabold text-slate-900 hover:border-slate-500"
         >
-          #{order.number}
+          {order.kind === 'on_site' ? order.code : `#${order.code}`}
         </a>
         <p className="mt-1.5 text-xs text-slate-500">
           Masuk: <strong>{formatShortDate(order.received_on)}</strong>
@@ -417,13 +430,13 @@ export function OrderCard({ order }: { order: Order }) {
   return (
     <a
       href={href({ page: 'order', id: order.id })}
-      aria-label={`Pesanan ${order.number}, ${order.customer.name}`}
+      aria-label={`Pesanan ${order.code}, ${order.customer.name}`}
       className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold">
-            #{order.number} · {order.customer.name}
+            {order.kind === 'on_site' ? order.code : `#${order.code}`} · {order.customer.name}
           </p>
           <p className="text-sm text-ink-soft">
             diterima {formatDay(order.received_on)}

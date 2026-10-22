@@ -32,6 +32,7 @@ from app.db.models import (
     Order,
     OrderEvent,
     OrderItem,
+    OrderKind,
     OrderStatus,
     Owner,
     OwnerRole,
@@ -134,24 +135,31 @@ def list_orders(
     statuses: Collection[OrderStatus] = (),
     q: str | None = None,
     customer_id: int | None = None,
+    kind: OrderKind | None = None,
     limit: int = 100,
 ) -> list[Order]:
-    """Newest first. `q` finds an order by number, tag ("412-2"), phone or name."""
+    """Newest first. `q` finds an order by number ("412", "L12"), tag ("412-2"), phone or
+    name. `kind` picks one book: carpets or kerja luar."""
     query = select(Order).join(Order.customer).options(*_with_details())
+    if kind is not None:
+        query = query.where(Order.kind == kind)
     if customer_id is not None:
         query = query.where(Order.customer_id == customer_id)
     if statuses:
         query = query.where(Order.status.in_(statuses))
     if q and q.strip():
         query = query.where(_search(q.strip()))
-    return list(db.scalars(query.order_by(Order.number.desc()).limit(limit)))
+    # By when they were recorded: the two books' numbers don't compare.
+    return list(db.scalars(query.order_by(Order.id.desc()).limit(limit)))
 
 
 def _search(q: str):
     conditions = [Customer.name.ilike(f"%{q}%")]
-    number = q.split("-")[0]  # a tag "412-2" belongs to order 412
+    number = q.lstrip("#").split("-")[0]  # a tag "412-2" belongs to order 412
     if number.isdigit():
         conditions.append(Order.number == int(number))
+    elif number[:1] in "lL" and number[1:].isdigit():  # "L12": a kerja luar order
+        conditions.append((Order.kind == OrderKind.ON_SITE) & (Order.number == int(number[1:])))
     digits = "".join(ch for ch in q if ch.isdigit())
     if len(digits) >= 4:  # part of a phone number, written any way
         conditions.append(Customer.phone.like(f"%{digits.lstrip('0')}%"))
@@ -248,7 +256,15 @@ def work_summary(db: Session) -> WorkSummary:
         if status is ItemStatus.WASHED
         and (unit is not PricingUnit.PER_SQFT or washed_on is None or washed_on <= due)
     )
-    ready = db.scalar(select(func.count()).where(Order.status == OrderStatus.READY)) or 0
+    # Carpet orders packed and waiting: the kerja luar book keeps its own.
+    ready = (
+        db.scalar(
+            select(func.count()).where(
+                Order.status == OrderStatus.READY, Order.kind == OrderKind.SHOP
+            )
+        )
+        or 0
+    )
     _, owed = _order_value_and_owed()
     owing = (
         select(owed.label("owed"))
@@ -321,7 +337,11 @@ def match_untagged(db: Session, untagged_id: int, tag_text: str, actor: Owner) -
     exists = db.scalar(
         select(OrderItem.id)
         .join(OrderItem.order)
-        .where(Order.number == int(number), OrderItem.position == int(position))
+        .where(
+            Order.kind == OrderKind.SHOP,
+            Order.number == int(number),
+            OrderItem.position == int(position),
+        )
     )
     if exists is None:
         raise NotFoundError(f"There is no carpet {number}-{position}")
@@ -385,8 +405,13 @@ def progress(order: Order) -> tuple[int, int]:
     return washed, ready
 
 
+def code(order: Order) -> str:
+    """The order's number as written: "412" in the carpet book, "L12" in the kerja luar one."""
+    return f"L{order.number}" if order.kind is OrderKind.ON_SITE else str(order.number)
+
+
 def tag(order: Order, item: OrderItem) -> str:
-    return f"{order.number}-{item.position}"
+    return f"{code(order)}-{item.position}"
 
 
 def _tag(item: OrderItem) -> str:
@@ -486,10 +511,13 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
     if data.discount > 0:
         _owner_only(actor, "give a discount")
     customer = _save_customer(db, data.customer)
+    items = _build_items(db, data.items, actor)
+    kind = _kind_of(items)
     # One order number at a time: concurrent saves wait here for a few milliseconds.
     db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _NUMBER_LOCK})
-    number = (db.scalar(select(func.max(Order.number))) or 0) + 1
+    number = (db.scalar(select(func.max(Order.number)).where(Order.kind == kind)) or 0) + 1
     order = Order(
+        kind=kind,
         number=number,
         customer=customer,
         received_on=data.received_on or today(),
@@ -498,7 +526,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         discount=data.discount,
         notes=data.notes,
         created_by_id=actor.id,
-        items=_build_items(db, data.items, actor),
+        items=items,
     )
     order.events.append(OrderEvent(status=OrderStatus.RECEIVED, by_id=actor.id))
     if data.deposit > 0:
@@ -756,9 +784,25 @@ def _replace_items(db: Session, order: Order, items: list[OrderItemIn], actor: O
     # An item that stays (same service, same place) keeps its price (not today's price
     # list, unless the owner sends a new one) and its progress.
     kept = {(i.service_id, i.position): i for i in order.items}
+    built = _build_items(db, items, actor, keep=kept)
+    if _kind_of(built) is not order.kind:
+        raise BusinessRuleError(
+            "A carpet order can't take house jobs, nor a kerja luar order carpets: "
+            "make a separate order"
+        )
     order.items.clear()
     db.flush()
-    order.items.extend(_build_items(db, items, actor, keep=kept))
+    order.items.extend(built)
+
+
+def _kind_of(items: list[OrderItem]) -> OrderKind:
+    """Carpets (shop) or house jobs (kerja luar): one order is one or the other."""
+    kinds = {OrderKind.ON_SITE if i.service.on_site else OrderKind.SHOP for i in items}
+    if len(kinds) > 1:
+        raise BusinessRuleError(
+            "Carpets and house jobs (sofa, mattress, car seats) go in separate orders"
+        )
+    return kinds.pop()
 
 
 def _build_items(

@@ -57,7 +57,9 @@ const NEXT: Record<Order['status'], Order['next_status']> = {
 function order(overrides: Partial<Order> = {}): Order {
   return {
     id: 7,
+    kind: 'shop',
     number: 412,
+    code: '412',
     customer: { id: 3, name: 'Ali', phone: '+60123456789', area: 'Seremban 2', address: '5, Jalan A' },
     received_on: '2026-10-10',
     visit_at: null,
@@ -188,8 +190,8 @@ describe('back office', () => {
   })
 
   it('filters the book to customers who still owe money', async () => {
-    const owing = order({ id: 8, number: 413, balance: '94.00' })
-    const paid = order({ id: 9, number: 414, balance: '0.00', paid: '144.00', status: 'completed' })
+    const owing = order({ id: 8, number: 413, code: '413', balance: '94.00' })
+    const paid = order({ id: 9, number: 414, code: '414', balance: '0.00', paid: '144.00', status: 'completed' })
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -685,8 +687,8 @@ describe("jobs at the customer's home", () => {
   it('lists home jobs by visit and marks one done', async () => {
     const today = new Date().toISOString().slice(0, 10)
     const visits = [
-      order({ id: 7, items: [sofa], visit_at: `${today}T02:00:00Z`, next_status: 'ready' }),
-      order({ id: 8, number: 413, items: [{ ...sofa, id: 3, tag: '413-1' }], visit_at: null, next_status: 'ready' }),
+      order({ id: 7, kind: 'on_site', code: 'L412', items: [sofa], visit_at: `${today}T02:00:00Z`, next_status: 'ready' }),
+      order({ id: 8, kind: 'on_site', number: 413, code: 'L413', items: [{ ...sofa, id: 3, tag: 'L413-1' }], visit_at: null, next_status: 'ready' }),
     ]
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
@@ -697,13 +699,13 @@ describe("jobs at the customer's home", () => {
     const user = renderSignedIn('#/kerja-luar')
 
     const todayGroup = await screen.findByRole('region', { name: 'Hari ini' })
-    const card = within(todayGroup).getByRole('article', { name: 'Kerja luar 412, Ali' })
+    const card = within(todayGroup).getByRole('article', { name: 'Kerja luar L412, Ali' })
     expect(card).toHaveTextContent('Cucian Sofa × 3')
     expect(within(card).getByRole('link', { name: '5, Jalan A, Seremban 2' })).toHaveAttribute(
       'href',
       expect.stringContaining('google.com/maps'),
     )
-    expect(screen.getByRole('region', { name: 'Belum dijadualkan' })).toHaveTextContent('#413')
+    expect(screen.getByRole('region', { name: 'Belum dijadualkan' })).toHaveTextContent('L413')
 
     await user.click(within(card).getByRole('button', { name: 'Tandakan siap' }))
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready' })
@@ -728,7 +730,7 @@ describe("jobs at the customer's home", () => {
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'ready' })
   })
 
-  it('asks for the visit time when an order has a home job', async () => {
+  it('records kerja luar in its own book, with the visit time', async () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -736,11 +738,14 @@ describe("jobs at the customer's home", () => {
       'GET /api/customers': () => ({ body: [] }),
       'POST /api/orders': () => ({ status: 201, body: order() }),
     })
-    const user = renderSignedIn('#/orders/new')
+    const user = renderSignedIn('#/orders/new?jenis=luar')
 
+    expect(await screen.findByRole('heading', { name: 'Kerja luar baru' })).toBeInTheDocument()
     await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
     await user.type(screen.getByLabelText('Nama'), 'Ali')
-    expect(screen.queryByLabelText('Tarikh & masa lawatan (pilihan)')).toBeNull()
+    // Only house jobs are offered here; carpets go in Buku Utama.
+    expect(within(screen.getByLabelText('Jenis')).queryByRole('option', { name: 'Karpet Biasa' })).toBeNull()
+    expect(screen.queryByText('Cara pulang')).toBeNull()
     await user.selectOptions(screen.getByLabelText('Jenis'), 'Cucian Sofa')
     await user.type(screen.getByLabelText('Kuantiti'), '3')
     await user.type(screen.getByLabelText('Tarikh & masa lawatan (pilihan)'), '2026-10-21T10:00')
@@ -842,7 +847,7 @@ describe('closing a ready order', () => {
 
     expect(confirm).toHaveBeenCalledWith('Baki RM94.00 belum dibayar. Teruskan?')
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'completed' })
-    expect(await screen.findByRole('status')).toHaveTextContent('#412 Ali: selesai, baki RM94.00 masih di Belum bayar.')
+    expect(await screen.findByRole('status')).toHaveTextContent('412 Ali: selesai, baki RM94.00 masih di Belum bayar.')
     expect(await screen.findByText('Tiada pesanan di sini.')).toBeInTheDocument()
   })
 
@@ -858,6 +863,49 @@ describe('closing a ready order', () => {
     await user.click(await screen.findByRole('button', { name: 'Sudah diambil / dihantar' }))
 
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+})
+
+describe('two books', () => {
+  it('keeps Buku Utama to carpets and offers only carpets for a new order there', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [] }),
+      'GET /api/services': () => ({ body: SERVICES }),
+    })
+    const user = renderSignedIn()
+
+    await screen.findByText('Tiada pesanan di sini.')
+    expect(calls.find((c) => c.path === '/api/orders')?.query.get('kind')).toBe('shop')
+    expect(screen.queryByRole('button', { name: 'Kerja luar' })).toBeNull() // no longer a Buku Utama filter
+
+    await user.click(screen.getByRole('link', { name: /Daftar pesanan baru/ }))
+    expect(await screen.findByRole('heading', { name: 'Pesanan karpet baru' })).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Jenis')).queryByRole('option', { name: 'Cucian Sofa' })).toBeNull()
+  })
+
+  it('shows the kerja luar book with its own orders and numbers', async () => {
+    const sofaJob = order({
+      kind: 'on_site',
+      code: 'L3',
+      number: 3,
+      status: 'ready',
+      items: [{ ...order().items[0], tag: 'L3-1', service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3', status: 'ready' }],
+    })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [sofaJob] }),
+    })
+    renderSignedIn('#/kerja-luar/buku')
+
+    const row = await screen.findByRole('row', { name: /Pesanan L3, Ali/ })
+    expect(row).toHaveTextContent('L3-1: Cucian Sofa')
+    expect(calls.find((c) => c.path === '/api/orders')?.query.get('kind')).toBe('on_site')
+    expect(screen.getByRole('link', { name: 'Buku kerja luar' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Selesai' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: /Daftar kerja luar baru/ })[0]).toHaveAttribute('href', '#/orders/new?jenis=luar')
   })
 })
 

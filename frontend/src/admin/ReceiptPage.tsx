@@ -85,7 +85,7 @@ export function ReceiptPage({ id }: { id?: number }) {
           >
             {choices.map((o) => (
               <option key={o.id} value={o.id}>
-                #{o.number} — {o.customer.name} ({o.items.length} barang)
+                {o.kind === 'on_site' ? o.code : `#${o.code}`} — {o.customer.name} ({o.items.length} barang)
               </option>
             ))}
           </select>
@@ -111,7 +111,7 @@ export function ReceiptPage({ id }: { id?: number }) {
           <QrPayButton
             qr={business.duitnow_qr}
             amount={order.balance}
-            reference={order.number}
+            reference={order.code}
             payee={business.name}
             busy={paying}
             onReceived={async () => {
@@ -190,7 +190,7 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
 
   return (
     <article
-      aria-label={`Resit ${order.number}`}
+      aria-label={`Resit ${order.code}`}
       className="relative overflow-hidden rounded-xl border-2 border-slate-800 bg-white p-4 shadow-xl sm:p-6 print:rounded-none print:shadow-none"
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-slate-800 pb-4 sm:flex-nowrap">
@@ -213,7 +213,7 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
           </div>
         </div>
         <div className="shrink-0 border-2 border-slate-900 bg-slate-50 px-4 py-1.5 font-mono text-2xl font-black tracking-widest text-slate-900">
-          {order.number}
+          {order.code}
         </div>
       </header>
 

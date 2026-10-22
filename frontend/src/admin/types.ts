@@ -148,9 +148,14 @@ export type WorkItem = OrderItem & {
 /** One day's washing and packing forms. */
 export type WorkLog = { day: string; washed: WorkItem[]; packed: WorkItem[]; on_site: WorkItem[] }
 
+/** Which book an order is in: carpets (shop) or kerja luar (on_site), each numbered on its own. */
+export type OrderKind = 'shop' | 'on_site'
+
 export type Order = {
   id: number
+  kind: OrderKind
   number: number
+  code: string // the number as written: '412', or 'L12' in the kerja luar book
   customer: OrderCustomer
   received_on: string
   visit_at: string | null // the house visit, for sofa / mattress / car jobs

@@ -10,7 +10,15 @@ from fastapi import APIRouter, Query, status
 from app.api.business import initials
 from app.api.deps import CurrentOwner, DbSession, RequireOrdersEnabled, RequireOwner
 from app.core.config import get_settings
-from app.db.models import Customer, ItemStatus, Order, OrderItem, OrderStatus, UntaggedItem
+from app.db.models import (
+    Customer,
+    ItemStatus,
+    Order,
+    OrderItem,
+    OrderKind,
+    OrderStatus,
+    UntaggedItem,
+)
 from app.schemas.order import (
     CustomerDetail,
     CustomerSummary,
@@ -54,10 +62,13 @@ def list_orders(
     db: DbSession,
     status: Annotated[list[OrderStatus] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    kind: Annotated[OrderKind | None, Query()] = None,
 ) -> list[OrderRead]:
     """Newest first; filter by one or more statuses (?status=completed&status=cancelled for
-    the history), or find by order number, tag, phone or name."""
-    return [to_read(order) for order in orders.list_orders(db, statuses=status or (), q=q)]
+    the history) and by book (?kind=shop for carpets, ?kind=on_site for kerja luar), or find
+    by order number, tag, phone or name."""
+    found = orders.list_orders(db, statuses=status or (), q=q, kind=kind)
+    return [to_read(order) for order in found]
 
 
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -257,7 +268,9 @@ def to_read(order: Order) -> OrderRead:
     washed, ready = orders.progress(order)
     return OrderRead(
         id=order.id,
+        kind=order.kind,
         number=order.number,
+        code=orders.code(order),
         customer=OrderCustomerRead.model_validate(order.customer),
         received_on=order.received_on,
         visit_at=order.visit_at,
