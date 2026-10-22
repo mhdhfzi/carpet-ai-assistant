@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -8,7 +9,7 @@ from app.schemas.analytics import (
     BusinessAnalytics,
     BusinessDayCount,
     ChannelConversionRead,
-    RevenueBucketRead,
+    MonthStatRead,
     ServiceStatRead,
     TopicRead,
     WeekdayCount,
@@ -54,27 +55,35 @@ def get_summary(db: DbSession, days: Annotated[int, Query(ge=1, le=365)] = 30) -
 
 @router.get("/business", response_model=BusinessAnalytics, dependencies=[RequireOrdersEnabled])
 def get_business(
-    db: DbSession, days: Annotated[int, Query(ge=1, le=365)] = 30
+    db: DbSession,
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
 ) -> BusinessAnalytics:
-    """Money received, orders, unpaid balances, work in progress, popular services, busy
-    days and how long carpets take (owner only; where the back office is switched on)."""
-    s = business_analytics.summary(db, days)
+    """Everything received to date and what's owed now, the last 12 months side by side
+    (money, orders, most popular service), and one month in detail (?month=2026-10, default
+    this month). Owner only; where the back office is switched on."""
+    chosen = date.fromisoformat(f"{month}-01") if month else business_analytics.today()
+    s = business_analytics.summary(db, chosen)
     return BusinessAnalytics(
-        days=days,
+        month=f"{s.month:%Y-%m}",
         start=s.start,
         end=s.end,
+        revenue_total=s.revenue_total,
+        unpaid=s.unpaid,
+        unpaid_orders=s.unpaid_orders,
+        months=[
+            MonthStatRead(
+                month=f"{m.month:%Y-%m}",
+                revenue=m.revenue,
+                orders=m.orders,
+                top_service=m.top_service,
+            )
+            for m in s.months
+        ],
         revenue=s.revenue,
         revenue_by_method=s.revenue_by_method,
-        revenue_over_time=[
-            RevenueBucketRead(label=b.label, start=b.start, amount=b.amount)
-            for b in s.revenue_over_time
-        ],
         orders=s.orders,
         order_value=s.order_value,
         cancelled=s.cancelled,
-        unpaid=s.unpaid,
-        unpaid_orders=s.unpaid_orders,
-        in_progress=s.in_progress,
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
         busy_days=[BusinessDayCount(weekday=d, orders=n) for d, n in s.busy_days],
         average_days_to_ready=s.average_days_to_ready,

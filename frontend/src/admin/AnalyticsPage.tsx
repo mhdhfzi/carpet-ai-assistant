@@ -63,23 +63,28 @@ export function AnalyticsPage() {
 
   const openUnanswered = summary ? Object.values(summary.open_unanswered).reduce((a, b) => a + b, 0) : 0
 
+  // The AI chat's period. The business numbers have their own month picker.
+  const periodPicker = (
+    <div role="group" aria-label="Period" className="flex rounded-full bg-white p-1 ring-1 ring-line">
+      {PERIODS.map((value) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={days === value}
+          onClick={() => choosePeriod(value)}
+          className="rounded-full px-3 py-1.5 text-sm font-semibold text-ink-soft aria-pressed:bg-ink aria-pressed:text-white"
+        >
+          Last {value} days
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="font-display text-2xl font-bold">Analytics</h1>
-        <div role="group" aria-label="Period" className="flex rounded-full bg-white p-1 ring-1 ring-line">
-          {PERIODS.map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={days === value}
-              onClick={() => choosePeriod(value)}
-              className="rounded-full px-3 py-1.5 text-sm font-semibold text-ink-soft aria-pressed:bg-ink aria-pressed:text-white"
-            >
-              Last {value} days
-            </button>
-          ))}
-        </div>
+        {!business?.orders && periodPicker}
       </div>
 
       {error && (
@@ -89,11 +94,16 @@ export function AnalyticsPage() {
       )}
       {!summary && !error && <p className="text-ink-soft">Loading analytics…</p>}
 
-      {business?.orders && <BusinessSection days={days} />}
+      {business?.orders && <BusinessSection />}
 
       {summary && (
         <div className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
-          {business?.orders && <h2 className="pt-4 font-display text-xl font-bold">Pembantu AI (chat)</h2>}
+          {business?.orders && (
+            <div className="flex flex-wrap items-end justify-between gap-3 pt-4">
+              <h2 className="font-display text-xl font-bold">Pembantu AI (chat)</h2>
+              {periodPicker}
+            </div>
+          )}
           <div className={`grid grid-cols-2 gap-3 ${bookings ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}>
             <StatTile label="Chats" value={String(summary.conversations)} />
             {bookings && <StatTile label="Bookings made" value={String(summary.bookings)} />}

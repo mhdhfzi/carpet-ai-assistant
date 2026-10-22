@@ -23,20 +23,30 @@ const WEEKDAY_SHORT: Record<string, string> = {
   Sun: 'Aha',
 }
 
+const monthLong = new Intl.DateTimeFormat('ms-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
+const monthShort = new Intl.DateTimeFormat('ms-MY', { month: 'short', timeZone: 'Asia/Kuala_Lumpur' })
+const asDate = (month: string) => new Date(`${month}-15T12:00:00+08:00`)
+
+/** "Oktober 2026" from "2026-10". */
+function monthName(month: string): string {
+  return monthLong.format(asDate(month))
+}
+
 /** "RM150", "RM1.2k": short enough to sit on top of a column. */
 function shortMoney(value: number): string {
   return value >= 1000 ? `RM${(value / 1000).toFixed(1)}k` : `RM${Math.round(value)}`
 }
 
-/** Money, orders and work in progress from the back office. */
-export function BusinessSection({ days }: { days: number }) {
+/** The business side: totals to date, the last 12 months side by side, and one month in detail. */
+export function BusinessSection() {
   const { request } = useAuth()
+  const [month, setMonth] = useState<string | null>(null) // null: this month (the server decides)
   const [data, setData] = useState<BusinessAnalytics | null>(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     let current = true
-    request<BusinessAnalytics>(`/api/analytics/business?days=${days}`)
+    request<BusinessAnalytics>(`/api/analytics/business${month ? `?month=${month}` : ''}`)
       .then((body) => {
         if (!current) return
         setData(body)
@@ -48,14 +58,14 @@ export function BusinessSection({ days }: { days: number }) {
     return () => {
       current = false
     }
-  }, [days, request])
+  }, [month, request])
 
   if (error) return <p role="alert" className="text-danger">Tak dapat muatkan data perniagaan.</p>
   if (!data) return <p className="text-ink-soft">Memuatkan data perniagaan…</p>
 
   const revenue = Number(data.revenue)
   const methods = Object.keys(PAYMENT_LABEL) as PaymentMethod[]
-  const weekly = data.revenue_over_time.length > 7 || data.days > 7
+  const newestFirst = [...data.months].reverse()
 
   return (
     <section aria-labelledby="business-heading" className="space-y-4">
@@ -63,60 +73,101 @@ export function BusinessSection({ days }: { days: number }) {
         Perniagaan
       </h2>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Hasil diterima" value={formatMoney(data.revenue)} hint="Bayaran dalam tempoh ini" />
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile label="Jumlah hasil diterima" value={formatMoney(data.revenue_total)} hint="Semua bayaran setakat ini" />
+        <StatTile
+          label="Baki belum dibayar"
+          value={formatMoney(data.unpaid)}
+          hint={data.unpaid_orders ? `${data.unpaid_orders} pesanan (semua masa)` : 'Semua sudah dibayar'}
+        />
+      </div>
+
+      <section aria-labelledby="monthly-heading" className="space-y-4 rounded-2xl bg-white p-4 ring-1 ring-line">
+        <div>
+          <h3 id="monthly-heading" className="font-semibold">
+            Setiap bulan
+          </h3>
+          <p className="text-xs text-ink-soft">Hasil diterima, pesanan dan servis paling popular, 12 bulan terakhir</p>
+        </div>
+        <div>
+          <ColumnChart
+            valueLabel="Hasil diterima setiap bulan"
+            formatValue={shortMoney}
+            data={data.months.map((m) => ({
+              label: m.month,
+              value: Number(m.revenue),
+              description: `${monthName(m.month)}: ${formatMoney(m.revenue)}, ${m.orders} pesanan`,
+            }))}
+          />
+          <ColumnLabels labels={data.months.map((m) => monthShort.format(asDate(m.month)))} />
+        </div>
+        <DataTable
+          columns={['Bulan', 'Hasil diterima', 'Pesanan', 'Servis paling popular']}
+          rows={newestFirst.map((m) => [monthName(m.month), formatMoney(m.revenue), m.orders, m.top_service ?? '–'])}
+        />
+      </section>
+
+      <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
+        <h3 className="text-lg font-bold">{monthName(data.month)}</h3>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs font-bold text-slate-600">Lihat bulan</span>
+          <select
+            value={data.month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold"
+          >
+            {newestFirst.map((m) => (
+              <option key={m.month} value={m.month}>
+                {monthName(m.month)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <StatTile label="Hasil diterima" value={formatMoney(data.revenue)} hint="Bayaran bulan ini" />
         <StatTile
           label="Pesanan"
           value={String(data.orders)}
           hint={`Nilai ${formatMoney(data.order_value)}${data.cancelled ? ` · ${data.cancelled} dibatalkan` : ''}`}
         />
         <StatTile
-          label="Baki belum dibayar"
-          value={formatMoney(data.unpaid)}
-          hint={data.unpaid_orders ? `${data.unpaid_orders} pesanan (semua masa)` : 'Semua sudah dibayar'}
-        />
-        <StatTile
           label="Purata masa siap"
           value={data.average_days_to_ready === null ? '–' : `${data.average_days_to_ready} hari`}
-          hint="Karpet: diterima hingga kering"
+          hint="Karpet: diterima hingga dipack"
         />
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <StatTile label="Belum dicuci" value={String(data.in_progress.received)} hint="Sekarang" />
-        <StatTile label="Sedang kering" value={String(data.in_progress.washed)} hint="Sekarang" />
-        <StatTile label="Siap, tunggu diambil" value={String(data.in_progress.ready)} hint="Sekarang" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
-          title="Hasil diterima"
-          subtitle={weekly ? 'Bayaran diterima setiap minggu (bermula Isnin)' : 'Bayaran diterima setiap hari'}
+          title="Servis paling popular"
+          subtitle="Barang dalam pesanan bulan ini (sofa dikira ikut tempat duduk)"
           chart={
-            <>
-              <ColumnChart
-                valueLabel="Hasil diterima"
-                formatValue={shortMoney}
-                data={data.revenue_over_time.map((b) => ({
-                  label: b.start,
-                  value: Number(b.amount),
-                  description: `${weekly ? 'Minggu ' : ''}${b.label}: ${formatMoney(b.amount)}`,
+            data.services.length ? (
+              <BarList
+                data={data.services.map((s) => ({
+                  label: s.name,
+                  sublabel: formatMoney(s.value),
+                  value: s.items,
+                  description: `${s.name}: ${s.items} barang, ${formatMoney(s.value)}`,
                 }))}
               />
-              <ColumnLabels labels={data.revenue_over_time.map((b) => b.label)} />
-            </>
+            ) : (
+              <p className="text-sm text-ink-soft">Tiada pesanan bulan ini.</p>
+            )
           }
           table={
             <DataTable
-              columns={[weekly ? 'Minggu bermula' : 'Hari', 'Jumlah']}
-              rows={data.revenue_over_time.map((b) => [b.label, formatMoney(b.amount)])}
+              columns={['Servis', 'Barang', 'Nilai']}
+              rows={data.services.map((s) => [s.name, s.items, formatMoney(s.value)])}
             />
           }
         />
 
         <ChartCard
           title="Cara bayaran"
-          subtitle="Bahagian hasil dalam tempoh ini"
+          subtitle="Bahagian hasil bulan ini"
           chart={
             <div className="space-y-4">
               {methods.map((m) => (
@@ -139,33 +190,8 @@ export function BusinessSection({ days }: { days: number }) {
         />
 
         <ChartCard
-          title="Servis paling popular"
-          subtitle="Barang dalam pesanan tempoh ini (sofa dikira ikut tempat duduk)"
-          chart={
-            data.services.length ? (
-              <BarList
-                data={data.services.map((s) => ({
-                  label: s.name,
-                  sublabel: formatMoney(s.value),
-                  value: s.items,
-                  description: `${s.name}: ${s.items} barang, ${formatMoney(s.value)}`,
-                }))}
-              />
-            ) : (
-              <p className="text-sm text-ink-soft">Tiada pesanan dalam tempoh ini.</p>
-            )
-          }
-          table={
-            <DataTable
-              columns={['Servis', 'Barang', 'Nilai']}
-              rows={data.services.map((s) => [s.name, s.items, formatMoney(s.value)])}
-            />
-          }
-        />
-
-        <ChartCard
           title="Hari sibuk"
-          subtitle="Pesanan diterima mengikut hari"
+          subtitle="Pesanan diterima mengikut hari, bulan ini"
           chart={
             <>
               <ColumnChart
