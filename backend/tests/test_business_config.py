@@ -159,6 +159,7 @@ def test_business_endpoint_describes_the_demo(db: Session) -> None:
         "brand": "Kilau Carpet Care",
         "logo": "KCC",  # initials when no badge mark is configured
         "address": "",
+        "logo_image": "",
     }
 
 
@@ -175,6 +176,7 @@ def test_real_business_endpoint_and_no_demo_landing_page(
         "brand": "Cuci-Cuci Senawang",
         "logo": "CS",
         "address": "",
+        "logo_image": "",
     }
     landing = client.get("/", follow_redirects=False)
     assert landing.status_code == 307 and landing.headers["location"] == "/admin.html"

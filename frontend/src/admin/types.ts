@@ -193,6 +193,7 @@ export type Receipt = {
   business: {
     name: string // as printed on the receipt
     logo: string
+    logo_image: string // a picture for the badge instead of the letters; '' = none
     reg_no: string
     address: string
     phone: string

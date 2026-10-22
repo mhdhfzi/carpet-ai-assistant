@@ -9,6 +9,7 @@ export type Business = {
   orders: boolean
   brand: string // the name on receipts and in the header, e.g. a trading name
   logo: string // the short mark in the round badge
+  logo_image: string // the badge's picture instead of the letters; '' = none
   address: string
 }
 

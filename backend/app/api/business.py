@@ -16,6 +16,7 @@ def business() -> BusinessInfo:
     return BusinessInfo(
         brand=brand,
         logo=settings.receipt_logo or initials(brand),
+        logo_image=settings.receipt_logo_image,
         address=settings.business_address,
         name=settings.business_name,
         demo=settings.demo_business,

@@ -1,6 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Turning the receipt into a picture needs a real browser; here it returns a tiny JPEG.
+vi.mock('html-to-image', () => ({ toJpeg: vi.fn(async () => 'data:image/jpeg;base64,/9j/') }))
 import { App } from './App'
 import { AuthProvider } from './auth'
 import type { Order, Receipt, Service, WorkItem } from './types'
@@ -36,6 +39,7 @@ const REAL_BUSINESS = {
   orders: true,
   brand: 'Dobi Karpet Xpress',
   logo: 'RGL',
+  logo_image: '',
   address: 'No.89, Jalan Bandar Senawang 5',
 }
 const me = (role: 'owner' | 'staff') => () => ({ body: { id: 1, email: 'x@example.com', name: role === 'owner' ? 'Herman' : 'Pekerja', role } })
@@ -117,6 +121,7 @@ function receipt(overrides: Partial<Order> = {}): Receipt {
     business: {
       name: 'Dobi Karpet Xpress',
       logo: 'RGL',
+      logo_image: '',
       reg_no: '201903262495 (NS0229212-P)',
       address: '89-G, Jalan Bandar Senawang 5',
       phone: '019-276 2890',
@@ -946,3 +951,41 @@ describe('summary cards', () => {
     expect(screen.queryByRole('link', { name: /Menunggu cuci/ })).toBeNull()
   })
 })
+
+describe('saving a receipt', () => {
+  const backend = () =>
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [order()] }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+
+  it('names the PDF "RESIT CUCI CUCI SENAWANG" while printing', async () => {
+    backend()
+    let titleWhilePrinting = ''
+    vi.stubGlobal('print', vi.fn(() => (titleWhilePrinting = document.title)))
+    const user = renderSignedIn('#/orders/7/resit')
+
+    await user.click(await screen.findByRole('button', { name: 'Cetak / simpan PDF' }))
+
+    expect(titleWhilePrinting).toBe('RESIT CUCI CUCI SENAWANG')
+    window.dispatchEvent(new Event('afterprint'))
+    expect(document.title).not.toBe('RESIT CUCI CUCI SENAWANG') // the page's own title again
+  })
+
+  it('saves the receipt as a JPEG with the same name', async () => {
+    backend()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const user = renderSignedIn('#/orders/7/resit')
+
+    await user.click(await screen.findByRole('button', { name: 'Simpan / kongsi gambar (JPEG)' }))
+
+    await waitFor(() => expect(click).toHaveBeenCalled())
+    const link = click.mock.contexts[0] as HTMLAnchorElement
+    expect(link.download).toBe('RESIT CUCI CUCI SENAWANG.jpg')
+    expect(link.href).toMatch(/^data:image\/jpeg/)
+    click.mockRestore()
+  })
+})
+
