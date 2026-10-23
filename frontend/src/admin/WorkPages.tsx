@@ -108,24 +108,18 @@ function useStaffName(): string {
 // --- Borang Cuci -----------------------------------------------------------------------------
 
 export function WashPage() {
-  const today = todayInMalaysia()
   const staff = useStaffName()
   const work = useWorkItems('received')
-  const [version, setVersion] = useState(0)
-  const { log } = useWorkLog(today, version)
   const [notes, setNotes] = useState<Record<number, string>>({})
   // Carpets that came in without their size are measured now, before they're marked washed.
   const [sizes, setSizes] = useState<Record<number, { length: string; width: string }>>({})
   const sizeOf = (id: number) => sizes[id] ?? { length: '', width: '' }
   const measured = (id: number) => Number(sizeOf(id).length) > 0 && Number(sizeOf(id).width) > 0
-  const { move, busy, notice } = useMove(() => {
-    work.reload()
-    setVersion((v) => v + 1)
-  })
+  const { move, busy, notice } = useMove(work.reload)
   const [query, setQuery] = useState('')
+  // Only carpets still to wash: once washed they leave the form (Rekod harian keeps the day's).
   const toWash = (work.items ?? []).filter((item) => carpetMatches(item, query))
-  const washedToday = (log?.washed ?? []).filter((item) => carpetMatches(item, query))
-  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) > 0 && toWash.length === 0 && washedToday.length === 0
+  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) > 0 && toWash.length === 0
 
   return (
     <section className="space-y-6">
@@ -219,17 +213,6 @@ export function WashPage() {
                   >
                     <CheckIcon className="size-3.5" /> Tandakan siap cuci
                   </button>
-                </div>
-              </li>
-            ))}
-            {washedToday.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 bg-emerald-50/40 p-4">
-                <CarpetSummary item={item} />
-                <div className="text-right">
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-                    <CheckIcon className="size-3.5" /> Telah dicuci ({formatShortDate(item.washed_on as string)})
-                  </span>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Oleh: {item.washed_by ?? 'Staf'}</p>
                 </div>
               </li>
             ))}
@@ -424,13 +407,8 @@ export function PackPage() {
   const today = todayInMalaysia()
   const staff = useStaffName()
   const work = useWorkItems('washed')
-  const [version, setVersion] = useState(0)
-  const { log } = useWorkLog(today, version)
   const [folds, setFolds] = useState<Record<number, ItemFold>>({})
-  const { move, busy, notice, setNotice } = useMove(() => {
-    work.reload()
-    setVersion((v) => v + 1)
-  })
+  const { move, busy, notice, setNotice } = useMove(work.reload)
 
   const pack = (item: WorkItem) => {
     const fold = folds[item.id]
@@ -443,9 +421,9 @@ export function PackPage() {
 
   const due = (work.items ?? []).filter((i) => readyToPack(i, today)).length
   const [query, setQuery] = useState('')
+  // Only carpets still to pack: once packed they leave the form (Rekod harian keeps the day's).
   const toPack = (work.items ?? []).filter((item) => carpetMatches(item, query))
-  const packedToday = (log?.packed ?? []).filter((item) => carpetMatches(item, query))
-  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) + (log?.packed.length ?? 0) > 0 && toPack.length + packedToday.length === 0
+  const noMatch = query.trim() !== '' && (work.items?.length ?? 0) > 0 && toPack.length === 0
 
   return (
     <section className="space-y-6">
@@ -483,7 +461,7 @@ export function PackPage() {
         </div>
         <Loading work={work} empty="Tiada karpet untuk dipack." />
         {noMatch && <p className="p-6 text-center text-sm text-ink-soft">Tiada karpet sepadan dengan carian.</p>}
-        {(toPack.length > 0 || packedToday.length > 0) && (
+        {toPack.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm max-md:block">
               <thead className="max-md:hidden">
@@ -545,28 +523,6 @@ export function PackPage() {
                     </PackRow>
                   )
                 })}
-                {packedToday.map((item) => (
-                  <PackRow key={item.id} item={item} label={`Karpet ${item.tag}, sudah dipack`} className="bg-emerald-50/40">
-                    <td className={packCell}>
-                      <p className="text-xs font-semibold text-slate-700">Dicuci: {item.washed_on && formatShortDate(item.washed_on)}</p>
-                    </td>
-                    <td className={packCell}>
-                      {item.fold ? (
-                        <span className="rounded bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 uppercase">
-                          Velvet: {FOLD_LABEL[item.fold]}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">{item.service.needs_fold ? '—' : 'Tiada (bukan velvet)'}</span>
-                      )}
-                    </td>
-                    <td className={`${packCell} md:text-right`}>
-                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white">
-                        <CheckIcon className="size-3.5" /> Siap pack ({formatShortDate(item.ready_on as string)})
-                      </span>
-                      <p className="mt-0.5 text-[11px] text-slate-500">Oleh: {item.packed_by ?? 'Staf'}</p>
-                    </td>
-                  </PackRow>
-                ))}
               </tbody>
             </table>
           </div>

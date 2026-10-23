@@ -587,9 +587,9 @@ describe('back office', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('412-1 dicuci.')
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed', note: 'tompok tak hilang' })
-    expect(await screen.findByText('Telah dicuci (10/10/26)')).toBeInTheDocument()
-    expect(screen.getByText('Oleh: Amir')).toBeInTheDocument()
-    expect(screen.getByText('Semua karpet sudah dicuci.')).toBeInTheDocument()
+    // Washed carpets leave the form: it lists only what is still to wash.
+    expect(await screen.findByText('Semua karpet sudah dicuci.')).toBeInTheDocument()
+    expect(screen.queryByText(/Telah dicuci/)).toBeNull()
   })
 
   it('packs velvet rolled or folded and keeps drying carpets apart', async () => {
@@ -723,7 +723,7 @@ describe("jobs at the customer's home", () => {
   }
 
   it('lists home jobs by visit and marks one done', async () => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayInMalaysia() // Malaysia's date, not UTC's (they differ before 8 am)
     const visits = [
       order({ id: 7, kind: 'on_site', code: 'L412', items: [sofa], visit_at: `${today}T02:00:00Z`, next_status: 'ready' }),
       order({ id: 8, kind: 'on_site', number: 413, code: 'L413', items: [{ ...sofa, id: 3, tag: 'L413-1' }], visit_at: null, next_status: 'ready' }),
