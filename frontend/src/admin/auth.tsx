@@ -1,27 +1,54 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, fetchMe, login, type Owner } from './api'
 
-// The token is kept in sessionStorage: it survives a page reload but is cleared when the
-// tab closes, which suits a shared family computer. The server still checks every request.
+// By default the token is kept in sessionStorage: it survives a page reload but is cleared
+// when the tab closes, which suits a shared family computer. "Ingat saya" (remember me)
+// keeps a longer-lived token in localStorage instead, so a worker's own phone stays signed
+// in after the app is closed. The password itself is never stored; the server still checks
+// every request.
 const TOKEN_KEY = 'kilau-admin-token'
+// The last email used with "Ingat saya", to fill the login form in after signing out.
+const EMAIL_KEY = 'kilau-admin-email'
 
 type Stored = { token: string; expiresAt: number }
 
 function readToken(): string | null {
+  for (const storage of [sessionStorage, localStorage]) {
+    try {
+      const stored: Stored | null = JSON.parse(storage.getItem(TOKEN_KEY) ?? 'null')
+      if (stored && stored.expiresAt > Date.now()) return stored.token
+    } catch {
+      /* unreadable: try the other one */
+    }
+  }
+  return null
+}
+
+function writeToken(stored: Stored | null, remember = false) {
   try {
-    const stored: Stored | null = JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? 'null')
-    return stored && stored.expiresAt > Date.now() ? stored.token : null
+    sessionStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(TOKEN_KEY)
+    if (stored) (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, JSON.stringify(stored))
   } catch {
-    return null
+    /* storage unavailable: the session just won't survive a reload */
   }
 }
 
-function writeToken(stored: Stored | null) {
+// oxlint-disable-next-line react/only-export-components
+export function rememberedEmail(): string {
   try {
-    if (stored) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(stored))
-    else sessionStorage.removeItem(TOKEN_KEY)
+    return localStorage.getItem(EMAIL_KEY) ?? ''
   } catch {
-    /* storage unavailable: the session just won't survive a reload */
+    return ''
+  }
+}
+
+function rememberEmail(email: string | null) {
+  try {
+    if (email) localStorage.setItem(EMAIL_KEY, email)
+    else localStorage.removeItem(EMAIL_KEY)
+  } catch {
+    /* storage unavailable: the form just starts empty */
   }
 }
 
@@ -32,7 +59,8 @@ export type AuthState =
 
 type AuthContextValue = {
   state: AuthState
-  signIn: (email: string, password: string) => Promise<void>
+  /** remember: stay signed in on this device after the app is closed ("Ingat saya"). */
+  signIn: (email: string, password: string, remember?: boolean) => Promise<void>
   signOut: (notice?: string) => void
   /** The public demo login: it can look but not change anything (the server enforces this). */
   readOnly: boolean
@@ -66,10 +94,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [signOut])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { access_token, expires_in } = await login(email, password)
+  const signIn = useCallback(async (email: string, password: string, remember = false) => {
+    const { access_token, expires_in } = await login(email, password, remember)
     const owner = await fetchMe(access_token)
-    writeToken({ token: access_token, expiresAt: Date.now() + expires_in * 1000 })
+    writeToken({ token: access_token, expiresAt: Date.now() + expires_in * 1000 }, remember)
+    rememberEmail(remember ? email : null)
     setState({ status: 'signed-in', owner, token: access_token })
   }, [])
 

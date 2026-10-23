@@ -6,6 +6,7 @@ from app.db.models import OwnerRole
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=200)
+    remember: bool = False  # "Ingat saya": a long-lived token for the user's own phone
 
 
 class TokenResponse(BaseModel):

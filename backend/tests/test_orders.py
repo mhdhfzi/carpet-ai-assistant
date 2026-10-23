@@ -149,7 +149,7 @@ def test_car_seats_are_priced_per_car(client: TestClient, services: dict[str, in
         json={"customer": ALI, "items": [counted(services, "Cucian Seat Kereta MPV", 1)]},
     ).json()
 
-    assert order["total"] == "170.00"
+    assert order["total"] == "180.00"
 
 
 @pytest.mark.parametrize(

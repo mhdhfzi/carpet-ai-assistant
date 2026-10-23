@@ -46,10 +46,15 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
-def create_access_token(owner_id: int) -> tuple[str, int]:
-    """A signed token proving who logged in. Returns (token, lifetime in seconds)."""
+def create_access_token(owner_id: int, *, remember: bool = False) -> tuple[str, int]:
+    """A signed token proving who logged in. Returns (token, lifetime in seconds).
+    remember=True ("Ingat saya") lasts days instead of hours."""
     settings = get_settings()
-    lifetime = timedelta(minutes=settings.access_token_minutes)
+    lifetime = (
+        timedelta(days=settings.remember_token_days)
+        if remember
+        else timedelta(minutes=settings.access_token_minutes)
+    )
     # Real time, not app.core.clock: PyJWT checks expiry against the real clock.
     now = datetime.now(UTC)
     claims = {"sub": str(owner_id), "iat": now, "exp": now + lifetime, "type": "access"}

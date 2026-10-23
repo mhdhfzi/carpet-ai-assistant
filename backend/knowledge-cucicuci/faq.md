@@ -57,5 +57,6 @@ carpet there is, and your name and phone number, and the owner will arrange the 
 
 ## Do you clean car seats?
 
-Yes. We clean fabric car seats, car carpet and the dashboard, usually at your home. The
-price is per car and depends on its size: sedan, SUV or MPV.
+Yes, usually at your home. Seat cleaning is priced per car and depends on the type of
+car (compact, sedan or SUV, luxury sedan, 4x4, MPV or large MPV); vans and buses are
+priced per seat. We also clean the roof lining, door panels, floor carpet and foot mats.

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def login(data: LoginRequest, db: DbSession) -> TokenResponse:
     """Exchange the owner's email and password for an access token."""
     owner = owners.authenticate(db, data.email, data.password)
-    token, expires_in = create_access_token(owner.id)
+    token, expires_in = create_access_token(owner.id, remember=data.remember)
     return TokenResponse(access_token=token, expires_in=expires_in)
 
 

@@ -56,18 +56,27 @@ def on_site(name: str, kind: str, per: str, price: str) -> dict:
     }
 
 
-def car_seats(size: str, price: str) -> dict:
+def car(name: str, description: str, price: str, price_max: str | None = None) -> dict:
+    """Car interior work, done at the customer's home. A range (e.g. RM60-RM100) means the
+    team sets the price after seeing the car."""
     return {
-        "name": f"Cucian Seat Kereta {size}",
-        "description": (
-            f"Car interior cleaning for a {size}: fabric seats, car carpet and dashboard, "
-            f"priced per car. {ON_SITE_PROCESS}"
-        ),
+        "name": name,
+        "description": f"{description} {ON_SITE_PROCESS}",
         "pricing_unit": PricingUnit.PER_ITEM,
         "unit_price": D(price),
+        "unit_price_max": D(price_max) if price_max else None,
         "visit_minutes": 120,
         "on_site": True,
     }
+
+
+def car_seats(size: str, kind: str, price: str, price_max: str | None = None) -> dict:
+    return car(
+        f"Cucian Seat Kereta {size}",
+        f"Car seat cleaning for a {kind}, priced per car.",
+        price,
+        price_max,
+    )
 
 
 SERVICES: list[dict] = [
@@ -82,16 +91,44 @@ SERVICES: list[dict] = [
     on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
     on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),
     on_site("Cucian Tilam King", "King mattress", "mattress", "160.00"),
-    car_seats("Sedan", "130.00"),
-    car_seats("SUV", "150.00"),
-    car_seats("MPV", "170.00"),
+    car_seats("Compact", "compact car", "140.00"),
+    car_seats("Sedan / SUV", "sedan or SUV", "150.00"),
+    car_seats("Sedan Luxury", "luxury sedan", "160.00"),
+    car_seats("4x4", "4x4 (pickup)", "150.00"),
+    car_seats("MPV", "MPV", "180.00"),
+    car_seats("MPV Besar", "large MPV", "250.00", "300.00"),
+    car(
+        "Cucian Seat Van / Bas",
+        "Seat cleaning for a van or bus, priced per seat.",
+        "25.00",
+        "35.00",
+    ),
+    car("Cucian Bumbung Kereta", "Car roof lining cleaning, priced per car.", "60.00", "100.00"),
+    car(
+        "Cucian Panel Pintu & Keliling",
+        "Car door panels and interior trim cleaning, priced per car.",
+        "40.00",
+        "80.00",
+    ),
+    car(
+        "Cucian Karpet Lantai Kereta",
+        "Car floor carpet cleaning, priced per car.",
+        "60.00",
+        "100.00",
+    ),
+    car("Cucian Karpet Kaki Kereta", "Car foot mat cleaning, priced per car.", "30.00", "80.00"),
     # Mosque/surau/office carpets are quoted after a site visit, so they have no catalogue
     # price (the assistant sends those requests to the owner).
 ]
 
+# Services no longer on the price list. They are switched off, not deleted, so old orders
+# that used them keep their history; re-adding one to SERVICES switches it back on.
+RETIRED = ["Cucian Seat Kereta Sedan", "Cucian Seat Kereta SUV"]
+
 
 def seed_services(db: Session) -> tuple[int, int]:
-    """Insert or update every service in SERVICES. Returns (created, updated)."""
+    """Insert or update every service in SERVICES and switch off the RETIRED ones.
+    Returns (created, updated)."""
     existing = {s.name: s for s in db.scalars(select(Service))}
     created = updated = 0
     for data in SERVICES:
@@ -100,6 +137,7 @@ def seed_services(db: Session) -> tuple[int, int]:
             "minimum_charge": D("0"),
             "needs_fold": False,
             "on_site": False,
+            "is_active": True,
             **data,
         }
         service = existing.get(data["name"])
@@ -110,6 +148,9 @@ def seed_services(db: Session) -> tuple[int, int]:
             for field, value in values.items():
                 setattr(service, field, value)
             updated += 1
+    for name in RETIRED:
+        if name in existing:
+            existing[name].is_active = False
     db.commit()
     return created, updated
 

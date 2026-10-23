@@ -69,6 +69,19 @@ def test_login_returns_a_token_that_identifies_the_owner(
     }
 
 
+def test_remember_me_keeps_the_login_for_days(anon_client: TestClient, owner: Owner) -> None:
+    response = anon_client.post(
+        "/api/auth/login",
+        json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD, "remember": True},
+    )
+
+    body = response.json()
+    assert body["expires_in"] == 30 * 24 * 60 * 60
+    claims = jwt.decode(body["access_token"], TEST_JWT_SECRET, algorithms=["HS256"])
+    assert claims["exp"] - claims["iat"] == 30 * 24 * 60 * 60
+    assert me(anon_client, body["access_token"]).status_code == 200
+
+
 def test_email_is_case_insensitive(anon_client: TestClient, owner: Owner) -> None:
     assert login(anon_client, email="  Owner@Example.COM ").status_code == 200
 

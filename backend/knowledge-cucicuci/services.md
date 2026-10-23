@@ -39,9 +39,11 @@ Mattress cleaning is priced per mattress, by size: single, queen or king.
 
 ## Car seat cleaning (cuci seat kereta)
 
-We clean a car's fabric seats, car carpet (karpet kereta) and dashboard. It is a cleaning
-of the car interior, not a full car wash. It is priced per car, by the size of the car:
-sedan, SUV or MPV.
+We clean a car's interior, not a full car wash. Seat cleaning is priced per car, by the
+type of car: compact, sedan or SUV, luxury sedan, 4x4, MPV or large MPV. Vans and buses
+are priced per seat. We can also clean the roof lining (bumbung), the door panels and trim
+(panel pintu & keliling), the floor carpet (karpet lantai) and the foot mats (karpet kaki).
+Some of these have a price range: the team confirms the price after seeing the car.
 
 ## Mosque, surau and hall carpets (karpet masjid, surau, dewan)
 
