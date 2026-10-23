@@ -72,16 +72,6 @@ ITEM_STEP = {
     OrderStatus.READY: ItemStatus.READY,
     OrderStatus.COMPLETED: ItemStatus.READY,
 }
-# An item's progress: kept when the order's items are edited.
-_PROGRESS = (
-    "status",
-    "washed_on",
-    "washed_by_id",
-    "wash_note",
-    "ready_on",
-    "packed_by_id",
-    "fold",
-)
 # Any fixed number: serialises order creation so two saves never get the same number.
 _NUMBER_LOCK = 774_101
 
@@ -117,6 +107,7 @@ def _with_details():
         selectinload(Order.items).selectinload(OrderItem.service),
         selectinload(Order.items).selectinload(OrderItem.washed_by),
         selectinload(Order.items).selectinload(OrderItem.packed_by),
+        selectinload(Order.items).selectinload(OrderItem.cancelled_by),
         selectinload(Order.events).selectinload(OrderEvent.by),
         selectinload(Order.payments).selectinload(Payment.received_by),
     )
@@ -175,6 +166,7 @@ def work_items(db: Session, status: ItemStatus, *, limit: int = 300) -> list[Ord
         .join(OrderItem.service)
         .where(
             OrderItem.status == status,
+            OrderItem.cancelled_on.is_(None),
             Order.status.not_in(CLOSED),
             Service.on_site.is_(False),
         )
@@ -212,7 +204,11 @@ def house_visits(db: Session) -> list[Order]:
     pending = (
         select(OrderItem.order_id)
         .join(OrderItem.service)
-        .where(Service.on_site.is_(True), OrderItem.status != ItemStatus.READY)
+        .where(
+            Service.on_site.is_(True),
+            OrderItem.status != ItemStatus.READY,
+            OrderItem.cancelled_on.is_(None),
+        )
     )
     query = (
         select(Order)
@@ -242,7 +238,11 @@ def work_summary(db: Session) -> WorkSummary:
         select(OrderItem.status, OrderItem.washed_on, Service.pricing_unit, Service.on_site)
         .join(OrderItem.order)
         .join(OrderItem.service)
-        .where(Order.status.not_in(CLOSED), OrderItem.status != ItemStatus.READY)
+        .where(
+            Order.status.not_in(CLOSED),
+            OrderItem.status != ItemStatus.READY,
+            OrderItem.cancelled_on.is_(None),
+        )
     )
     everything = db.execute(open_items).all()
     house_jobs = sum(1 for *_, home in everything if home)
@@ -291,7 +291,7 @@ def _order_value_and_owed():
     item without a price yet counts as 0) and what is still owed on it."""
     items = (
         select(func.coalesce(func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0))
-        .where(OrderItem.order_id == Order.id)
+        .where(OrderItem.order_id == Order.id, OrderItem.cancelled_on.is_(None))
         .scalar_subquery()
     )
     paid = (
@@ -361,8 +361,14 @@ def _item_details():
     )
 
 
+def live_items(order: Order) -> list[OrderItem]:
+    """The order's items the customer still wants: cancelled ones stay on the order (so
+    tags keep their numbers) but count for nothing."""
+    return [i for i in order.items if i.cancelled_on is None]
+
+
 def totals(order: Order) -> Totals:
-    lines = [line_total(item) for item in order.items]
+    lines = [line_total(item) for item in live_items(order)]
     subtotal = sum((line for line in lines if line is not None), Decimal("0"))
     total = max(subtotal - order.discount, Decimal("0"))
     paid = sum((p.amount for p in order.payments if p.voided_at is None), Decimal("0"))
@@ -379,7 +385,7 @@ def line_total(item: OrderItem) -> Decimal | None:
 
 def ready_window(order: Order) -> tuple[date, date] | None:
     """When the carpets should all be dry enough to pack: 5-7 days after the last wash."""
-    carpets = [i for i in order.items if i.service.pricing_unit is PricingUnit.PER_SQFT]
+    carpets = [i for i in live_items(order) if i.service.pricing_unit is PricingUnit.PER_SQFT]
     if not carpets or any(i.washed_on is None for i in carpets):
         return None
     if all(i.status is ItemStatus.READY for i in carpets):  # all packed
@@ -400,8 +406,9 @@ def item_ready_window(item: OrderItem) -> tuple[date, date] | None:
 
 def progress(order: Order) -> tuple[int, int]:
     """(items washed or packed, items packed): shown as "2 / 3 siap" on the order list."""
-    washed = sum(1 for i in order.items if i.status is not ItemStatus.RECEIVED)
-    ready = sum(1 for i in order.items if i.status is ItemStatus.READY)
+    items = live_items(order)
+    washed = sum(1 for i in items if i.status is not ItemStatus.RECEIVED)
+    ready = sum(1 for i in items if i.status is ItemStatus.READY)
     return washed, ready
 
 
@@ -447,6 +454,7 @@ def list_customers(
                 func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0
             ).label("items"),
         )
+        .where(OrderItem.cancelled_on.is_(None))
         .group_by(OrderItem.order_id)
         .subquery()
     )
@@ -624,9 +632,9 @@ def update_item_status(
     order then follows its slowest item."""
     if order.status in CLOSED:
         raise BusinessRuleError(f"This order is {order.status.value}")
-    item = next((i for i in order.items if i.id == item_id), None)
-    if item is None:
-        raise NotFoundError(f"Item {item_id} not found on this order")
+    item = _item(order, item_id)
+    if item.cancelled_on is not None:
+        raise BusinessRuleError(f"{tag(order, item)} was cancelled")
     if size is not None:
         if item.service.pricing_unit is not PricingUnit.PER_SQFT:
             raise BusinessRuleError(f"{tag(order, item)} is not measured in feet")
@@ -673,7 +681,7 @@ def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owne
         )
     if new is not OrderStatus.CANCELLED:
         backward = _rank(new) < _rank(order.status)
-        for item in order.items:
+        for item in live_items(order):
             steps = _steps(item)
             goal = ITEM_STEP[new]
             if goal not in steps:
@@ -701,7 +709,7 @@ def _steps(item: OrderItem) -> list[ItemStatus]:
 
 
 def _shop_items(order: Order) -> list[OrderItem]:
-    return [i for i in order.items if not i.service.on_site]
+    return [i for i in live_items(order) if not i.service.on_site]
 
 
 def _rank(status: OrderStatus) -> int:
@@ -750,10 +758,11 @@ def _move_item(
 def _follow_items(order: Order) -> None:
     """An open order sits at its slowest carpet's step, so nothing is forgotten. It is ready
     only once every home job is done too; an order of home jobs only is ready when they are."""
-    if order.status in CLOSED or not order.items:
+    items = live_items(order)
+    if order.status in CLOSED or not items:
         return
     shop = _shop_items(order)
-    homes_done = all(i.status is ItemStatus.READY for i in order.items if i.service.on_site)
+    homes_done = all(i.status is ItemStatus.READY for i in items if i.service.on_site)
     if shop:
         step = ORDER_STEP[min(shop, key=lambda i: ITEM_STEPS.index(i.status)).status]
         if step is OrderStatus.READY and not homes_done:
@@ -785,23 +794,116 @@ def _set_step_dates(order: Order, status: OrderStatus) -> None:
 
 
 def _replace_items(db: Session, order: Order, items: list[OrderItemIn], actor: Owner) -> None:
-    # An item that stays (same service, same place) keeps its price (not today's price
-    # list, unless the owner sends a new one) and its progress.
-    kept = {(i.service_id, i.position): i for i in order.items}
-    built = _build_items(db, items, actor, keep=kept)
-    if _kind_of(built) is not order.kind:
+    """The order's edited list. Items already on it come back with their id and keep their
+    tag number, progress and price (not today's price list, unless the service changed or
+    the owner sends a new price); new items are numbered after the last one. An item the
+    customer no longer wants is cancelled (cancel_item), never left out: leaving it out
+    would renumber the tags sewn on the carpets."""
+    live = {i.id: i for i in live_items(order)}
+    sent_ids = [data.id for data in items if data.id is not None]
+    unknown = set(sent_ids) - set(live)
+    if unknown or len(sent_ids) != len(set(sent_ids)):
+        raise BusinessRuleError("An item in the list isn't on this order (or was cancelled)")
+    if set(live) - set(sent_ids):
+        raise BusinessRuleError(
+            "To remove an item, cancel it (Batal barang) so the other tags keep their numbers"
+        )
+    built = _build_items(db, [d for d in items if d.id is None], actor)
+    services = [db.get(Service, d.service_id) for d in items]
+    if any(s is None for s in services):
+        raise NotFoundError("Service not found")
+    if _kind_of_services(services) is not order.kind:
         raise BusinessRuleError(
             "A carpet order can't take house jobs, nor a kerja luar order carpets: "
             "make a separate order"
         )
-    order.items.clear()
-    db.flush()
-    order.items.extend(built)
+    for data in items:
+        if data.id is not None:
+            _update_item(db, live[data.id], data, actor)
+    last = max((i.position for i in order.items), default=0)
+    for position, item in enumerate(built, start=last + 1):
+        item.position = position
+        order.items.append(item)
+
+
+def _update_item(db: Session, item: OrderItem, data: OrderItemIn, actor: Owner) -> None:
+    """One item edited in place: same tag, same progress."""
+    service = db.get(Service, data.service_id)
+    if service is None:
+        raise NotFoundError(f"Service {data.service_id} not found")
+    quantity, length, width = _quantity(service, data)
+    if data.unit_price is not None:
+        _owner_only(actor, "set a price")
+        item.unit_price = data.unit_price
+    elif service.id != item.service_id:
+        # Another service: its price from the price list (a range waits for the owner).
+        item.unit_price = service.unit_price if service.unit_price_max is None else None
+    item.service = service
+    item.length_ft, item.width_ft, item.quantity = length, width, quantity
+    item.notes = data.notes
+
+
+def cancel_item(db: Session, order: Order, item_id: int, reason: str, actor: Owner) -> Order:
+    """The customer no longer wants one item (e.g. too expensive). It stays on the order,
+    crossed out, so the other tags keep their numbers; the total and the work lists drop
+    it. Staff may do it while the order is open; after that, only the owner."""
+    item = _item(order, item_id)
+    if order.status is OrderStatus.CANCELLED:
+        raise BusinessRuleError("A cancelled order can't be changed")
+    if order.status in CLOSED and not is_owner(actor):
+        raise ForbiddenError("Only the owner can change a finished order")
+    if item.cancelled_on is not None:
+        raise BusinessRuleError(f"{tag(order, item)} is already cancelled")
+    if len(live_items(order)) == 1:
+        raise BusinessRuleError("This is the last item: cancel the whole order instead")
+    # The relationship, not just the id: the reply is built from this session's objects.
+    item.cancelled_on, item.cancelled_by, item.cancel_reason = today(), actor, reason
+    order.events.append(
+        OrderEvent(
+            status=OrderStatus.CANCELLED, item_tag=tag(order, item), note=reason, by_id=actor.id
+        )
+    )
+    _follow_items(order)
+    db.commit()
+    return get_order(db, order.id)
+
+
+def restore_item(db: Session, order: Order, item_id: int, actor: Owner) -> Order:
+    """Owner only: undo a cancelled item (cancelled by mistake). It keeps its tag."""
+    _owner_only(actor, "restore a cancelled item")
+    item = _item(order, item_id)
+    if order.status is OrderStatus.CANCELLED:
+        raise BusinessRuleError("A cancelled order can't be changed")
+    if item.cancelled_on is None:
+        raise BusinessRuleError(f"{tag(order, item)} isn't cancelled")
+    item.cancelled_on = item.cancelled_by = item.cancel_reason = None
+    order.events.append(
+        OrderEvent(
+            status=ORDER_STEP[item.status],
+            item_tag=tag(order, item),
+            note="Dipulihkan",
+            by_id=actor.id,
+        )
+    )
+    _follow_items(order)
+    db.commit()
+    return get_order(db, order.id)
+
+
+def _item(order: Order, item_id: int) -> OrderItem:
+    item = next((i for i in order.items if i.id == item_id), None)
+    if item is None:
+        raise NotFoundError(f"Item {item_id} not found on this order")
+    return item
 
 
 def _kind_of(items: list[OrderItem]) -> OrderKind:
     """Carpets (shop) or house jobs (kerja luar): one order is one or the other."""
-    kinds = {OrderKind.ON_SITE if i.service.on_site else OrderKind.SHOP for i in items}
+    return _kind_of_services([i.service for i in items])
+
+
+def _kind_of_services(services: list[Service]) -> OrderKind:
+    kinds = {OrderKind.ON_SITE if s.on_site else OrderKind.SHOP for s in services}
     if len(kinds) > 1:
         raise BusinessRuleError(
             "Carpets and house jobs (sofa, mattress, car seats) go in separate orders"
@@ -813,7 +915,6 @@ def _build_items(
     db: Session,
     items: list[OrderItemIn],
     actor: Owner,
-    keep: dict[tuple[int, int], OrderItem] | None = None,
 ) -> list[OrderItem]:
     built = []
     for position, data in enumerate(items, start=1):
@@ -824,8 +925,6 @@ def _build_items(
         if data.unit_price is not None:
             _owner_only(actor, "set a price")
             unit_price = data.unit_price
-        elif keep is not None and (service.id, position) in keep:
-            unit_price = keep[(service.id, position)].unit_price
         else:
             # A fixed price comes from the price list; a range (handmade) waits for the owner.
             unit_price = service.unit_price if service.unit_price_max is None else None
@@ -843,10 +942,6 @@ def _build_items(
                 status=ItemStatus.RECEIVED,
             )
         )
-        before = keep.get((service.id, position)) if keep else None
-        if before is not None:
-            for field in _PROGRESS:
-                setattr(built[-1], field, getattr(before, field))
     return built
 
 

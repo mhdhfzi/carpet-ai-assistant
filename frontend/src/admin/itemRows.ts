@@ -5,6 +5,8 @@ import type { OrderItem, OrderItemInput, Service } from './types'
 /** One editable line of an order, as typed (strings, so half-typed numbers are fine). */
 export type ItemRow = {
   key: number
+  id?: number // an item already on the order: it keeps its tag number
+  tag?: string
   serviceId: number | null
   length: string
   width: string
@@ -22,6 +24,8 @@ export function emptyRow(serviceId: number | null = null): ItemRow {
 export function rowsFromItems(items: OrderItem[]): ItemRow[] {
   return items.map((item) => ({
     key: nextKey++,
+    id: item.id,
+    tag: item.tag,
     serviceId: item.service.id,
     length: item.length_ft ? String(Number(item.length_ft)) : '',
     width: item.width_ft ? String(Number(item.width_ft)) : '',
@@ -35,6 +39,7 @@ export function rowsToInput(rows: ItemRow[]): OrderItemInput[] {
   return rows
     .filter((row) => row.serviceId !== null)
     .map((row) => ({
+      ...(row.id ? { id: row.id } : {}),
       service_id: row.serviceId as number,
       ...(row.length && row.width ? { length_ft: row.length, width_ft: row.width } : {}),
       ...(row.quantity ? { quantity: row.quantity } : {}),

@@ -494,11 +494,19 @@ class OrderItem(Base):
     ready_on: Mapped[date | None] = mapped_column(Date)
     packed_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
     fold: Mapped[ItemFold | None] = mapped_column(str_enum(ItemFold, "item_fold"))
+    # Dropped by the customer (e.g. "harga mahal"): it stays on the order, crossed out, so
+    # the other tags keep their numbers, but no longer counts in the total or the work lists.
+    cancelled_on: Mapped[date | None] = mapped_column(Date)
+    cancelled_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="SET NULL")
+    )
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
 
     order: Mapped[Order] = relationship(back_populates="items")
     service: Mapped["Service"] = relationship()
     washed_by: Mapped["Owner | None"] = relationship(foreign_keys=[washed_by_id])
     packed_by: Mapped["Owner | None"] = relationship(foreign_keys=[packed_by_id])
+    cancelled_by: Mapped["Owner | None"] = relationship(foreign_keys=[cancelled_by_id])
 
 
 class OrderEvent(Base):

@@ -135,6 +135,10 @@ export type OrderItem = {
   fold: ItemFold | null
   ready_from: string | null
   ready_by: string | null
+  // Dropped by the customer (only on an order's cancelled_items).
+  cancelled_on?: string | null
+  cancelled_by?: string | null
+  cancel_reason?: string | null
 }
 
 /** An item on the washing or packing list, with its order. */
@@ -176,7 +180,8 @@ export type Order = {
   total: string
   paid: string
   balance: string
-  items: OrderItem[]
+  items: OrderItem[] // what the customer still wants
+  cancelled_items: OrderItem[] // dropped by the customer: kept, crossed out, tags unchanged
   payments: Payment[]
   events: { status: OrderStatus; item_tag: string | null; note: string | null; by: string | null; at: string }[]
   created_at: string

@@ -227,6 +227,9 @@ function BookRow({
   const homePending = order.items.some((i) => isHomeJob(i) && i.status !== 'ready')
   const carpetsLeft = order.items.some((i) => !isHomeJob(i) && i.status !== 'ready')
   const open = OPEN.includes(order.status)
+  const { state } = useAuth()
+  // Staff change items while the order is open; a finished order is the owner's.
+  const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   return (
     <tr aria-label={`Pesanan ${order.code}, ${order.customer.name}`} className="align-top hover:bg-slate-50/80 max-md:block max-md:px-4 max-md:py-3">
       <td className={cell}>
@@ -278,6 +281,11 @@ function BookRow({
             </li>
           ))}
         </ul>
+        {order.cancelled_items.length > 0 && (
+          <p className="mt-1.5 text-xs text-slate-500">
+            {order.cancelled_items.map((i) => i.tag).join(', ')} dibatalkan
+          </p>
+        )}
       </td>
 
       <td className={cell}>
@@ -364,9 +372,16 @@ function BookRow({
             Ke Kerja Luar <ArrowIcon className="size-3" />
           </a>
         )}
-        <a href={href({ page: 'order', id: order.id })} className="block text-center text-xs font-semibold text-slate-600 underline">
-          Buka pesanan
-        </a>
+        <p className="flex justify-center gap-3 text-xs font-semibold text-slate-600">
+          <a href={href({ page: 'order', id: order.id })} className="underline">
+            Buka
+          </a>
+          {(open || isOwner) && order.status !== 'cancelled' && (
+            <a href={href({ page: 'order', id: order.id, edit: true })} className="underline">
+              Ubah barang
+            </a>
+          )}
+        </p>
       </td>
     </tr>
   )

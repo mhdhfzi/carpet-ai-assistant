@@ -57,6 +57,11 @@ def counted(services: dict[str, int], name: str, quantity: int) -> dict:
     return {"service_id": services[name], "quantity": quantity}
 
 
+def same(order: dict, index: int, item: dict) -> dict:
+    """An item already on the order, edited: sent back with its id so it keeps its tag."""
+    return {"id": order["items"][index]["id"], **item}
+
+
 def new_order(client: TestClient, services: dict[str, int], **extra) -> dict:
     """Two carpets: 8 x 10 ft (RM144) and 10 x 10 ft (RM180), RM324 in all."""
     body = {
@@ -136,7 +141,11 @@ def test_handmade_carpet_waits_for_the_owner_to_price_it(
 
     priced = client.patch(
         f"/api/orders/{order['id']}",
-        json={"items": [carpet(services, "Karpet Handmade", "5", "8", unit_price="3.20")]},
+        json={
+            "items": [
+                same(order, 0, carpet(services, "Karpet Handmade", "5", "8", unit_price="3.20"))
+            ]
+        },
     ).json()
 
     assert priced["price_pending"] is False
@@ -241,10 +250,12 @@ def test_old_orders_keep_their_prices_when_the_price_list_changes(
     db.flush()
 
     edited = client.patch(
-        f"/api/orders/{order['id']}", json={"items": [counted(services, "Cucian Sofa", 3)]}
+        f"/api/orders/{order['id']}",
+        json={"items": [same(order, 0, counted(services, "Cucian Sofa", 4))]},
     ).json()
 
     assert edited["items"][0]["unit_price"] == "60.00"
+    assert edited["total"] == "240.00"
 
 
 # --- Status ----------------------------------------------------------------------------------
@@ -372,7 +383,7 @@ def test_staff_move_a_carpet_one_step_and_the_owner_corrects(
     assert back["items"][0]["washed_on"] is None
 
 
-def test_editing_items_keeps_each_carpets_progress(
+def test_editing_items_keeps_each_carpets_tag_and_progress(
     client: TestClient, services: dict[str, int]
 ) -> None:
     order = two_carpets(client, services)
@@ -382,14 +393,126 @@ def test_editing_items_keeps_each_carpets_progress(
         f"/api/orders/{order['id']}",
         json={
             "items": [
-                carpet(services, "Karpet Biasa", "8", "10"),
-                carpet(services, "Karpet Shaggy", "5", "8"),
-                carpet(services, "Karpet Biasa", "5", "5"),
+                same(order, 0, carpet(services, "Karpet Biasa", "8", "12")),  # re-measured
+                same(order, 1, carpet(services, "Karpet Shaggy", "5", "8")),
+                carpet(services, "Karpet Biasa", "5", "5"),  # new: numbered after the rest
             ]
         },
     ).json()
 
     assert [i["status"] for i in edited["items"]] == ["washed", "received", "received"]
+    assert [i["tag"] for i in edited["items"]] == [f"{order['code']}-{n}" for n in (1, 2, 3)]
+    assert edited["items"][0]["quantity"] == "96.00"
+
+
+def test_an_item_cannot_be_dropped_by_leaving_it_out(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = two_carpets(client, services)
+
+    response = client.patch(
+        f"/api/orders/{order['id']}",
+        json={"items": [same(order, 1, carpet(services, "Karpet Shaggy", "5", "8"))]},
+    )
+
+    assert response.status_code == 422
+    assert "Batal barang" in response.json()["detail"]  # renumbering would break the tags
+
+
+# --- Cancelling one item ---------------------------------------------------------------------
+
+
+def cancel(client: TestClient, order: dict, index: int, reason: str = "harga mahal"):
+    item_id = order["items"][index]["id"]
+    return client.post(f"/api/orders/{order['id']}/items/{item_id}/cancel", json={"reason": reason})
+
+
+def test_a_cancelled_item_stays_on_the_order_but_counts_for_nothing(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [
+                carpet(services, "Karpet Biasa", "8", "10"),  # 144
+                carpet(services, "Karpet Shaggy", "5", "8"),  # 80
+                carpet(services, "Karpet Biasa", "5", "5"),  # 45
+            ],
+        },
+    ).json()
+    for position in (1, 3):
+        move(client, order, position, "washed")
+
+    body = cancel(client, order, 1).json()
+
+    [middle] = body["cancelled_items"]
+    assert (middle["tag"], middle["cancel_reason"], middle["cancelled_by"]) == (
+        f"{order['code']}-2",
+        "harga mahal",
+        "Test Owner",
+    )
+    assert [i["tag"] for i in body["items"]] == [f"{order['code']}-{n}" for n in (1, 3)]
+    assert body["total"] == "189.00"  # 144 + 45
+    assert body["status"] == "washed"  # the order follows the carpets still wanted
+    assert body["events"][-1]["item_tag"] == f"{order['code']}-2"
+    to_wash = client.get("/api/work/items", params={"status": "received"}).json()
+    assert f"{order['code']}-2" not in [i["tag"] for i in to_wash]
+    assert move(client, order, 2, "washed").status_code == 422  # it can't move any more
+
+    # A carpet added later is numbered after the cancelled one.
+    edited = client.patch(
+        f"/api/orders/{order['id']}",
+        json={
+            "items": [
+                same(body, 0, carpet(services, "Karpet Biasa", "8", "10")),
+                same(body, 1, carpet(services, "Karpet Biasa", "5", "5")),
+                carpet(services, "Karpet Tatami", "4", "6"),
+            ]
+        },
+    ).json()
+    assert [i["tag"] for i in edited["items"]][-1] == f"{order['code']}-4"
+    assert edited["cancelled_items"][0]["tag"] == f"{order['code']}-2"  # still there
+
+
+def test_a_cancelled_item_can_leave_money_to_give_back(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services, deposit="300.00")  # RM324 in all
+
+    body = cancel(client, order, 1).json()  # the RM180 carpet
+
+    assert (body["total"], body["paid"], body["balance"]) == ("144.00", "300.00", "-156.00")
+
+
+def test_the_last_item_is_not_cancelled_alone(client: TestClient, services: dict[str, int]) -> None:
+    order = home_job(client, services)
+
+    response = cancel(client, order, 0)
+
+    assert response.status_code == 422
+    assert "whole order" in response.json()["detail"]
+
+
+def test_staff_cancel_items_while_the_order_is_open_and_only_the_owner_restores(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)
+    cancelled = cancel(staff_client, order, 1)
+    item_id = order["items"][1]["id"]
+    restore_url = f"/api/orders/{order['id']}/items/{item_id}/restore"
+
+    refused = staff_client.post(restore_url)
+    restored = client.post(restore_url).json()
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["cancelled_items"][0]["cancelled_by"] == "Worker"
+    assert refused.status_code == 403
+    assert (len(restored["items"]), restored["cancelled_items"]) == (2, [])
+    assert restored["total"] == "324.00"
+    # Finished: only the owner changes it now.
+    client.patch(f"/api/orders/{order['id']}", json={"status": "completed"})
+    assert cancel(staff_client, order, 1).status_code == 403
 
 
 def test_a_finished_order_s_carpets_cannot_move(
@@ -646,8 +769,15 @@ def test_carpets_and_house_jobs_go_in_separate_orders(
     mixed = client.post("/api/orders", json={"customer": ALI, "items": both})
     order = new_order(client, services)
     url = f"/api/orders/{order['id']}"
-    sofa_added = client.patch(url, json={"items": both})
-    switched = client.patch(url, json={"items": [counted(services, "Cucian Sofa", 3)]})
+    kept = [
+        same(order, 0, carpet(services, "Karpet Biasa", "8", "10")),
+        same(order, 1, carpet(services, "Karpet Biasa", "10", "10")),
+    ]
+    sofa_added = client.patch(url, json={"items": [*kept, counted(services, "Cucian Sofa", 3)]})
+    switched = client.patch(
+        url,
+        json={"items": [kept[0], same(order, 1, counted(services, "Cucian Sofa", 3))]},
+    )
 
     assert mixed.status_code == 422
     assert "separate orders" in mixed.json()["detail"]

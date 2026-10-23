@@ -42,7 +42,7 @@ import { useServices } from './useServices'
 
 const ALL_STATUSES: OrderStatus[] = ['received', 'washed', 'ready', 'completed', 'cancelled']
 
-export function OrderPage({ id }: { id: number }) {
+export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) {
   const { request, state } = useAuth()
   const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const [order, setOrder] = useState<Order | null>(null)
@@ -50,7 +50,7 @@ export function OrderPage({ id }: { id: number }) {
   const [loadError, setLoadError] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(edit) // opened from the book's "Ubah barang"
 
   useEffect(() => {
     let current = true
@@ -181,7 +181,14 @@ export function OrderPage({ id }: { id: number }) {
       </section>
 
       {editing ? (
-        <EditItems order={order} isOwner={isOwner} busy={busy} onCancel={() => setEditing(false)} onSave={save} />
+        <EditItems
+          order={order}
+          isOwner={isOwner}
+          busy={busy}
+          onCancel={() => setEditing(false)}
+          onSave={save}
+          onCancelItem={(itemId, reason) => send(`/items/${itemId}/cancel`, 'POST', { reason })}
+        />
       ) : (
         <section className="space-y-2">
           <div className="flex items-center justify-between">
@@ -216,6 +223,31 @@ export function OrderPage({ id }: { id: number }) {
                   busy={busy}
                   onMove={(status, fold) => send(`/items/${item.id}`, 'PATCH', { status, fold })}
                 />
+              </li>
+            ))}
+            {order.cancelled_items.map((item) => (
+              <li key={item.id} className="flex items-start justify-between gap-3 bg-slate-50 p-3 text-ink-soft">
+                <div className="min-w-0">
+                  <p className="font-semibold line-through">
+                    <span className="mr-2 rounded bg-slate-300 px-1.5 py-0.5 font-mono text-xs text-slate-700">{item.tag}</span>
+                    {item.service.name}
+                  </p>
+                  <p className="text-xs">
+                    Dibatalkan{item.cancelled_on && ` ${formatDay(item.cancelled_on)}`}
+                    {item.cancelled_by && ` (${item.cancelled_by})`}
+                    {item.cancel_reason && ` · ${item.cancel_reason}`}
+                  </p>
+                </div>
+                {isOwner && order.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => send(`/items/${item.id}/restore`, 'POST', {})}
+                    className="shrink-0 text-xs underline"
+                  >
+                    Pulihkan
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -337,7 +369,15 @@ function Payments({
         {Number(order.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(order.discount)}`} />}
         <Row label={order.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(order.total)} strong />
         <Row label="Sudah dibayar" value={formatMoney(order.paid)} />
-        <Row label="Baki" value={formatMoney(order.balance)} strong />
+        {owed < 0 ? (
+          // e.g. an item cancelled after a big deposit: money to give back.
+          <p className="flex justify-between rounded-lg bg-rose-50 px-2 py-1 font-semibold text-rose-800">
+            <span>Lebihan bayar, perlu dipulangkan</span>
+            <span>{formatMoney(String(-owed))}</span>
+          </p>
+        ) : (
+          <Row label="Baki" value={formatMoney(order.balance)} strong />
+        )}
       </div>
 
       {order.payments.length > 0 && (
@@ -581,20 +621,28 @@ function EditItems({
   busy,
   onCancel,
   onSave,
+  onCancelItem,
 }: {
   order: Order
   isOwner: boolean
   busy: boolean
   onCancel: () => void
   onSave: (changes: Record<string, unknown>) => Promise<void>
+  onCancelItem: (itemId: number, reason: string) => Promise<void>
 }) {
   const services = useServices()
   const [rows, setRows] = useState<ItemRow[]>(() => rowsFromItems(order.items))
   if (services === null) return <p className="text-ink-soft">Memuatkan…</p>
+  const cancelItem = (row: ItemRow) => {
+    const name = services.find((s) => s.id === row.serviceId)?.name ?? ''
+    const reason = window.prompt(`Batalkan ${row.tag} ${name}? Tulis sebab (cth. harga mahal):`)
+    if (reason && reason.trim().length >= 3 && row.id) void onCancelItem(row.id, reason.trim())
+  }
   return (
     <section className="space-y-3">
       <h2 className="font-semibold">Ubah barang</h2>
-      <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} />
+      <p className="text-sm text-ink-soft">Pelanggan tak mahu satu barang? Tekan "Batal barang": nombor tag yang lain kekal.</p>
+      <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} onCancelItem={cancelItem} />
       <div className="flex gap-3">
         <button type="button" disabled={busy} onClick={() => onSave({ items: rowsToInput(rows) })} className="flex-1 rounded-full bg-brand py-3 font-semibold disabled:opacity-50">
           Simpan barang

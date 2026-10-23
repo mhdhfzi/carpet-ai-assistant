@@ -7,9 +7,11 @@ type Props = {
   rows: ItemRow[]
   onChange: (rows: ItemRow[]) => void
   isOwner: boolean
+  /** Editing an order: an item already on it is cancelled (it keeps its tag), not removed. */
+  onCancelItem?: (row: ItemRow) => void
 }
 
-export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
+export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }: Props) {
   const byId = new Map(services.map((s) => [s.id, s]))
   const carpets = services.filter((s) => s.pricing_unit === 'per_sqft')
   const others = services.filter((s) => s.pricing_unit !== 'per_sqft')
@@ -22,13 +24,20 @@ export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
         const service = row.serviceId === null ? undefined : byId.get(row.serviceId)
         const isCarpet = service?.pricing_unit === 'per_sqft'
         const { units, total } = rowPrice(row, service)
-        const label = `Barang ${index + 1}`
+        const label = row.tag ? `Barang ${row.tag}` : `Barang ${index + 1}`
         return (
           <fieldset key={row.key} className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
             <legend className="sr-only">{label}</legend>
             <div className="flex items-center justify-between gap-2">
               <p className="font-semibold">{label}</p>
-              {rows.length > 1 && (
+              {row.id && onCancelItem ? (
+                rows.some((r) => r.id && r.key !== row.key) && (
+                  <button type="button" onClick={() => onCancelItem(row)} className="text-sm text-danger underline">
+                    Batal barang
+                  </button>
+                )
+              ) : (
+                rows.length > 1 && (
                 <button
                   type="button"
                   onClick={() => onChange(rows.filter((r) => r.key !== row.key))}
@@ -36,6 +45,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner }: Props) {
                 >
                   Buang
                 </button>
+                )
               )}
             </div>
             <label className="block space-y-1">

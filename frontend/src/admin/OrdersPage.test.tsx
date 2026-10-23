@@ -112,6 +112,7 @@ function order(overrides: Partial<Order> = {}): Order {
     payments: [
       { id: 1, amount: '50.00', method: 'transfer', paid_on: '2026-10-10', note: 'Deposit', received_by: 'Pekerja', voided: false, void_reason: null },
     ],
+    cancelled_items: [],
     created_at: '2026-10-10T02:00:00Z',
     ...overrides,
   }
@@ -920,6 +921,77 @@ describe('closing a ready order', () => {
     await user.click(await screen.findByRole('button', { name: 'Sudah diambil / dihantar' }))
 
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+})
+
+describe('cancelling one item', () => {
+  const two = () => [order().items[0], { ...order().items[0], id: 2, position: 2, tag: '412-2', notes: null }]
+
+  it('opens the item editor straight from the book', async () => {
+    const cancelled = [{ ...order().items[0], id: 3, position: 3, tag: '412-3', cancelled_on: '2026-10-12', cancel_reason: 'harga mahal' }]
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [order({ items: two(), cancelled_items: cancelled })] }),
+    })
+    renderSignedIn()
+
+    const row = await screen.findByRole('row', { name: /Pesanan 412/ })
+    expect(within(row).getByRole('link', { name: 'Ubah barang' })).toHaveAttribute('href', '#/orders/7?ubah')
+    expect(row).toHaveTextContent('412-3 dibatalkan')
+    expect(row).toHaveTextContent('Progress: 0 / 2 barang') // the cancelled one doesn't count
+  })
+
+  it('cancels an item with a reason; the others keep their tags', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => 'harga mahal'))
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ items: two() }) }),
+      'POST /api/orders/7/items/2/cancel': () => ({
+        body: order({
+          items: [order().items[0]],
+          cancelled_items: [{ ...two()[1], cancelled_on: '2026-10-12', cancelled_by: 'Pekerja', cancel_reason: 'harga mahal' }],
+        }),
+      }),
+    })
+    const user = renderSignedIn('#/orders/7?ubah')
+
+    const editor = await screen.findByRole('group', { name: 'Barang 412-2' })
+    await user.click(within(editor).getByRole('button', { name: 'Batal barang' }))
+
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ reason: 'harga mahal' })
+    expect(await screen.findByText(/Dibatalkan 12 \w+ \(Pekerja\) · harga mahal/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pulihkan' })).toBeNull() // the owner's
+  })
+
+  it('sends items back with their ids so they keep their tags', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ items: two() }) }),
+      'PATCH /api/orders/7': () => ({ body: order({ items: two() }) }),
+    })
+    const user = renderSignedIn('#/orders/7?ubah')
+
+    await user.click(await screen.findByRole('button', { name: 'Simpan barang' }))
+
+    const sent = calls.find((c) => c.method === 'PATCH')?.body as { items: { id?: number }[] }
+    expect(sent.items.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('shows money to give back when a cancelled item leaves the order overpaid', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ total: '144.00', paid: '300.00', balance: '-156.00' }) }),
+    })
+    renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText('Lebihan bayar, perlu dipulangkan')).toBeInTheDocument()
+    expect(screen.getByText('RM156.00')).toBeInTheDocument()
   })
 })
 

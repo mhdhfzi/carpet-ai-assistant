@@ -22,6 +22,7 @@ from app.db.models import (
 from app.schemas.order import (
     CustomerDetail,
     CustomerSummary,
+    ItemCancel,
     ItemStatusUpdate,
     OrderCreate,
     OrderCustomerRead,
@@ -101,6 +102,23 @@ def update_item_status(
             db, order, item_id, data.status, data.note, actor, data.fold, size
         )
     )
+
+
+@router.post("/{order_id}/items/{item_id}/cancel", response_model=OrderRead)
+def cancel_item(
+    order_id: int, item_id: int, data: ItemCancel, db: DbSession, actor: CurrentOwner
+) -> OrderRead:
+    """The customer no longer wants one item: kept on the order crossed out (the other tags
+    keep their numbers), dropped from the total. Staff while the order is open."""
+    order = orders.get_order(db, order_id)
+    return to_read(orders.cancel_item(db, order, item_id, data.reason, actor))
+
+
+@router.post("/{order_id}/items/{item_id}/restore", response_model=OrderRead)
+def restore_item(order_id: int, item_id: int, db: DbSession, actor: CurrentOwner) -> OrderRead:
+    """Owner only: undo a cancelled item."""
+    order = orders.get_order(db, order_id)
+    return to_read(orders.restore_item(db, order, item_id, actor))
 
 
 @router.post("/{order_id}/payments", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -305,7 +323,10 @@ def to_read(order: Order) -> OrderRead:
             )
             for p in order.payments
         ],
-        items=[_item_read(order, item) for item in order.items],
+        items=[_item_read(order, item) for item in orders.live_items(order)],
+        cancelled_items=[
+            _item_read(order, item) for item in order.items if item.cancelled_on is not None
+        ],
         events=[
             OrderEventRead(
                 status=event.status,
@@ -342,4 +363,7 @@ def _item_read(order: Order, item: OrderItem) -> OrderItemRead:
         fold=item.fold,
         ready_from=window[0] if window else None,
         ready_by=window[1] if window else None,
+        cancelled_on=item.cancelled_on,
+        cancelled_by=item.cancelled_by.name if item.cancelled_by else None,
+        cancel_reason=item.cancel_reason,
     )

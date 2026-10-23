@@ -191,7 +191,7 @@ def _services(orders: list[Order]) -> list[ServiceStat]:
     counts: Counter[str] = Counter()
     values: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for order in orders:
-        for item in order.items:
+        for item in order_service.live_items(order):
             # A sofa line of 3 seats counts as 3; a carpet counts as 1 whatever its size.
             many = item.service.pricing_unit is not PricingUnit.PER_SQFT
             counts[item.service.name] += int(item.quantity or 0) if many else 1
@@ -209,7 +209,7 @@ def _days_to_ready(orders: list[Order]) -> float | None:
     waits = [
         (item.ready_on - order.received_on).days
         for order in orders
-        for item in order.items
+        for item in order_service.live_items(order)
         if item.service.pricing_unit is PricingUnit.PER_SQFT
         and item.status is ItemStatus.READY
         and item.ready_on is not None
