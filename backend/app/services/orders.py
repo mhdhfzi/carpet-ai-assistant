@@ -530,6 +530,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
     )
     order.events.append(OrderEvent(status=OrderStatus.RECEIVED, by_id=actor.id))
     if data.deposit > 0:
+        _owner_only(actor, "record a deposit")
         order.payments.append(
             Payment(
                 amount=data.deposit,
@@ -569,8 +570,10 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
 
 
 def record_payment(db: Session, order: Order, data: PaymentIn, actor: Owner) -> Order:
-    """Money received. Staff may record it (they collect at pickup); it can't exceed what
-    is owed, unless some price isn't set yet and the total isn't known."""
+    """Money received. Owner only: staff who take money tell the owner, who records it once
+    it's in hand or in the bank, so every ringgit on record has been checked by one person.
+    It can't exceed what is owed, unless some price isn't set yet and the total isn't known."""
+    _owner_only(actor, "record a payment")
     if order.status is OrderStatus.CANCELLED:
         raise BusinessRuleError("A cancelled order can't take payments")
     owed = totals(order)

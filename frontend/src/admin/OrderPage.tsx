@@ -33,7 +33,7 @@ import {
   type Receipt,
   type ReturnMethod,
 } from './types'
-import { QrPayButton } from './QrPay'
+import { OwnerRecordsNote, QrPayButton } from './QrPay'
 import { notifyWorkChanged } from './summary'
 import { VisitEditor } from './VisitEditor'
 import { readyMessage, receiptMessage } from './whatsappMessages'
@@ -382,11 +382,13 @@ function Payments({
           reference={order.code}
           payee={business.name}
           busy={busy}
-          onReceived={() => onPay({ amount: owed.toFixed(2), method: 'duitnow', note: 'DuitNow QR' })}
+          onReceived={isOwner ? () => onPay({ amount: owed.toFixed(2), method: 'duitnow', note: 'DuitNow QR' }) : undefined}
         />
       )}
 
-      {canPay && (
+      {canPay && !isOwner && <OwnerRecordsNote />}
+
+      {canPay && isOwner && (
         <div className="space-y-3 border-t border-line pt-3">
           <p className="text-sm font-semibold">Rekod bayaran</p>
           <NumberField label="Jumlah dibayar (RM)" value={amount} onChange={setAmount} />

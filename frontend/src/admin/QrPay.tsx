@@ -6,7 +6,8 @@ import { CheckIcon } from './icons'
 // Paying by the shop's DuitNow QR: the dashboard shows the QR full screen with the amount
 // and the order number; the customer scans it with any bank or e-wallet app and types the
 // amount (it's a static QR, accepted by every app). Nothing tells the system the money
-// arrived, so a worker taps "Sudah terima" once it shows in the bank, which records it.
+// arrived, so the owner taps "Sudah terima" once it shows in the bank, which records it.
+// Staff can show the QR too, but they tell the owner instead of recording the payment.
 
 type Props = {
   qr: string // the text inside the shop's DuitNow QR
@@ -14,7 +15,7 @@ type Props = {
   reference: string // the order's number as written, e.g. 412 or L12, for matching in the bank app
   payee: string // shown under the QR
   busy: boolean
-  onReceived: () => Promise<void>
+  onReceived?: () => Promise<void> // owner only; without it the dialog just shows the QR
 }
 
 export function QrPayButton(props: Props) {
@@ -82,23 +83,38 @@ function QrPayDialog({ qr, amount, reference, payee, busy, onReceived, onClose }
           Imbas dengan app bank atau e-wallet, masukkan <strong>{formatMoney(amount)}</strong> dan rujukan{' '}
           <strong>{reference}</strong>.
         </p>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            await onReceived()
-            onClose()
-          }}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          <CheckIcon /> Sudah terima {formatMoney(amount)}
-        </button>
-        <p className="text-xs text-slate-500">Tekan hanya selepas wang masuk dalam akaun bank.</p>
+        {onReceived ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                await onReceived()
+                onClose()
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <CheckIcon /> Sudah terima {formatMoney(amount)}
+            </button>
+            <p className="text-xs text-slate-500">Tekan hanya selepas wang masuk dalam akaun bank.</p>
+          </>
+        ) : (
+          <OwnerRecordsNote />
+        )}
         <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-600 underline">
           Tutup
         </button>
       </div>
     </div>
+  )
+}
+
+/** What staff see where the owner has a "record payment" button. */
+export function OwnerRecordsNote() {
+  return (
+    <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+      Selepas pelanggan bayar, beritahu pemilik. Hanya pemilik boleh rekod bayaran.
+    </p>
   )
 }
 

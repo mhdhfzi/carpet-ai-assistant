@@ -18,7 +18,8 @@ import { paymentLines, readyMessage, receiptMessage } from './whatsappMessages'
 // it isn't.
 
 export function ReceiptPage({ id }: { id?: number }) {
-  const { request } = useAuth()
+  const { request, state } = useAuth()
+  const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [error, setError] = useState(false)
@@ -108,6 +109,20 @@ export function ReceiptPage({ id }: { id?: number }) {
   // The "carpets are ready" message is for carpets; home jobs are done at the customer's house.
   const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
   const paid = paidOn(order)
+  // Owner only (the server refuses staff too): the DuitNow money is in the bank.
+  const recordQrPayment = async () => {
+    setPaying(true)
+    try {
+      await request(`/api/orders/${order.id}/payments`, {
+        method: 'POST',
+        body: { amount: Number(order.balance).toFixed(2), method: 'duitnow', note: 'DuitNow QR' },
+      })
+      setReceipt(await request<Receipt>(`/api/orders/${order.id}/receipt`))
+      notifyWorkChanged()
+    } finally {
+      setPaying(false)
+    }
+  }
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-12">
@@ -142,9 +157,11 @@ export function ReceiptPage({ id }: { id?: number }) {
           ) : (
             <span className="text-right text-xs text-slate-600">
               {order.price_pending ? 'Harga belum lengkap. ' : `Baki ${formatMoney(order.balance)}. `}
-              <a href={href({ page: 'order', id: order.id })} className="font-semibold text-slate-900 underline">
-                Rekod bayaran
-              </a>
+              {isOwner && (
+                <a href={href({ page: 'order', id: order.id })} className="font-semibold text-slate-900 underline">
+                  Rekod bayaran
+                </a>
+              )}
             </span>
           )}
         </div>
@@ -156,19 +173,7 @@ export function ReceiptPage({ id }: { id?: number }) {
             reference={order.code}
             payee={business.name}
             busy={paying}
-            onReceived={async () => {
-              setPaying(true)
-              try {
-                await request(`/api/orders/${order.id}/payments`, {
-                  method: 'POST',
-                  body: { amount: Number(order.balance).toFixed(2), method: 'duitnow', note: 'DuitNow QR' },
-                })
-                setReceipt(await request<Receipt>(`/api/orders/${order.id}/receipt`))
-                notifyWorkChanged()
-              } finally {
-                setPaying(false)
-              }
-            }}
+            onReceived={isOwner ? recordQrPayment : undefined}
           />
         )}
 
