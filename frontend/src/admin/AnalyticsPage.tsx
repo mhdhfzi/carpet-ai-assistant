@@ -63,7 +63,7 @@ export function AnalyticsPage() {
 
   const openUnanswered = summary ? Object.values(summary.open_unanswered).reduce((a, b) => a + b, 0) : 0
 
-  // The AI chat's period. The business numbers have their own month picker.
+  // The AI chat's period. The business numbers have their own year and month pickers.
   const periodPicker = (
     <div role="group" aria-label="Period" className="flex rounded-full bg-white p-1 ring-1 ring-line">
       {PERIODS.map((value) => (
