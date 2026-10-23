@@ -168,7 +168,7 @@ export function WashPage() {
           <ul className="divide-y divide-slate-200">
             {toWash.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 p-4 hover:bg-slate-50">
-                <CarpetSummary item={item} />
+                <CarpetSummary item={item} waiting />
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                   {needsMeasuring(item) && (
                     <div className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
@@ -243,7 +243,7 @@ export function WashPage() {
 }
 
 /** "#412-1  Karpet Biasa  Saiz: 8 x 10 kaki", the customer, and any notes. */
-function CarpetSummary({ item }: { item: WorkItem }) {
+function CarpetSummary({ item, waiting = false }: { item: WorkItem; waiting?: boolean }) {
   return (
     <div className="min-w-0 space-y-1">
       <p className="flex flex-wrap items-center gap-2">
@@ -262,9 +262,28 @@ function CarpetSummary({ item }: { item: WorkItem }) {
         </a>{' '}
         (#{item.order_number})
       </p>
+      {waiting && <ArrivedBadge receivedOn={item.received_on} />}
       {item.notes && <p className="text-xs font-semibold text-rose-700">Catatan pesanan: {item.notes}</p>}
       {item.wash_note && <p className="text-xs font-semibold text-rose-700">Catatan cuci: {item.wash_note}</p>}
     </div>
+  )
+}
+
+/** When the carpet came in, and how long it has been waiting to be washed: amber after 3
+ * days, red after a week, so the oldest ones get washed first. */
+function ArrivedBadge({ receivedOn }: { receivedOn: string }) {
+  const days = Math.max(0, daysBetween(receivedOn, todayInMalaysia()))
+  const ago = days === 0 ? 'hari ini' : days === 1 ? 'semalam' : `${days} hari lalu`
+  const tone =
+    days >= 7
+      ? 'border-rose-300 bg-rose-50 text-rose-800'
+      : days >= 3
+        ? 'border-amber-300 bg-amber-50 text-amber-900'
+        : 'border-slate-200 bg-slate-50 text-slate-600'
+  return (
+    <p className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-semibold ${tone}`}>
+      <ClockIcon className="size-3" /> Diterima {formatShortDate(receivedOn)} · {ago}
+    </p>
   )
 }
 

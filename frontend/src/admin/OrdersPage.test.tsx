@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('html-to-image', () => ({ toJpeg: vi.fn(async () => 'data:image/jpeg;base64,/9j/') }))
 import { App } from './App'
 import { AuthProvider } from './auth'
+import { formatShortDate, todayInMalaysia } from './format'
 import type { Order, Receipt, Service, WorkItem } from './types'
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown }
@@ -1010,5 +1011,32 @@ describe('finding a receipt', () => {
     await user.click(within(results).getByRole('link', { name: /Puan Aisyah/ }))
     expect(await screen.findByRole('article', { name: 'Resit 20' })).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Hasil carian' })).toBeNull()
+  })
+})
+
+describe('waiting to be washed', () => {
+  it('shows when each carpet arrived and how long it has waited', async () => {
+    const daysAgo = (n: number) => {
+      const d = new Date(`${todayInMalaysia()}T12:00:00+08:00`)
+      d.setUTCDate(d.getUTCDate() - n)
+      return d.toISOString().slice(0, 10)
+    }
+    const items = [
+      workItem({ id: 1, tag: '412-1', received_on: daysAgo(8) }),
+      workItem({ id: 2, tag: '413-1', order_id: 8, order_number: 413, received_on: daysAgo(4) }),
+      workItem({ id: 3, tag: '414-1', order_id: 9, order_number: 414, received_on: daysAgo(0) }),
+    ]
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: items }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+    })
+    renderSignedIn('#/cuci')
+
+    expect(await screen.findByText(/8 hari lalu/)).toHaveClass('text-rose-800') // a week or more: red
+    expect(screen.getByText(/4 hari lalu/)).toHaveClass('text-amber-900')
+    expect(screen.getByText(/hari ini/)).toHaveTextContent(`Diterima ${formatShortDate(daysAgo(0))} · hari ini`)
   })
 })
