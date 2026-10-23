@@ -239,10 +239,10 @@ describe('back office', () => {
     await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Biasa')
     await user.type(screen.getByLabelText('Panjang (kaki)'), '8')
     await user.type(screen.getByLabelText('Lebar (kaki)'), '10')
-    await user.type(screen.getByLabelText('Deposit (RM)'), '50')
 
     expect(screen.getByText('80 kaki persegi · RM144.00')).toBeInTheDocument()
     expect(screen.queryByLabelText('Diskaun (RM)')).toBeNull() // owner only
+    await user.type(screen.getByLabelText('Deposit (RM)'), '50') // staff may take the deposit
     await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
 
     await waitFor(() => expect(window.location.hash).toBe('#/orders/7'))
@@ -363,7 +363,7 @@ describe('back office', () => {
   it('records the balance at pickup and offers the receipt on WhatsApp', async () => {
     const paidUp = { paid: '144.00', balance: '0.00', status: 'ready' as const }
     const calls = mockBackend({
-      'GET /api/auth/me': me('staff'),
+      'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
       'GET /api/orders/7/receipt': () => ({ body: receipt({ status: 'ready' }) }),
       'POST /api/orders/7/payments': () => ({ status: 201, body: order(paidUp) }),
@@ -785,7 +785,7 @@ describe('paying by DuitNow QR', () => {
     const withQr = receipt()
     withQr.business.duitnow_qr = '00020101021126330014A0000006150001010600000102111234567890520400005303458580'
     const calls = mockBackend({
-      'GET /api/auth/me': me('staff'),
+      'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
       'GET /api/orders/7/receipt': () => ({ body: withQr }),
       'POST /api/orders/7/payments': () => ({ status: 201, body: order({ paid: '144.00', balance: '0.00' }) }),
@@ -802,9 +802,29 @@ describe('paying by DuitNow QR', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('lets staff show the QR but leaves recording the money to the owner', async () => {
+    const withQr = receipt()
+    withQr.business.duitnow_qr = '00020101021126330014A0000006150001010600000102111234567890520400005303458580'
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: withQr }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    await user.click(await screen.findByRole('button', { name: 'Bayar dengan DuitNow QR' }))
+    const dialog = screen.getByRole('dialog', { name: 'Bayar dengan DuitNow QR' })
+
+    expect(dialog).toHaveTextContent('RM94.00')
+    expect(within(dialog).queryByRole('button', { name: /Sudah terima/ })).toBeNull()
+    expect(dialog).toHaveTextContent('Hanya pemilik boleh rekod bayaran')
+    expect(screen.queryByRole('button', { name: 'Simpan bayaran' })).toBeNull()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
   it('has no QR button when the shop has no QR set', async () => {
     mockBackend({
-      'GET /api/auth/me': me('staff'),
+      'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
       'GET /api/orders/7/receipt': () => ({ body: receipt() }),
     })

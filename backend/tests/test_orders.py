@@ -836,18 +836,29 @@ def test_the_owner_voids_a_wrong_payment_and_it_stays_on_record(
     assert voided["payments"][0]["void_reason"] == "salah masuk"
 
 
-def test_staff_record_payments_but_cannot_void_them(
-    staff_client: TestClient, services: dict[str, int]
+def test_only_the_owner_records_or_voids_payments(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
 ) -> None:
     order = new_order(staff_client, services)
-    payment = pay(staff_client, order, "100.00").json()["payments"][0]
 
-    response = staff_client.post(
+    refused = pay(staff_client, order, "100.00")
+    payment = pay(client, order, "100.00").json()["payments"][0]
+    void = staff_client.post(
         f"/api/orders/{order['id']}/payments/{payment['id']}/void", json={"reason": "salah"}
     )
 
-    assert payment["received_by"] == "Worker"
-    assert response.status_code == 403
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == "Only the owner can record a payment"
+    assert void.status_code == 403
+
+
+def test_staff_take_the_deposit_under_their_own_name(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services, deposit="20.00", deposit_method="cash")
+
+    assert [(p["amount"], p["received_by"]) for p in order["payments"]] == [("20.00", "Worker")]
+    assert order["balance"] == "304.00"
 
 
 def test_the_customer_table_shows_what_each_customer_still_owes(
@@ -898,7 +909,7 @@ def test_a_receipt_has_the_business_details_and_the_order(
 def test_staff_record_orders_and_move_them_one_step(
     staff_client: TestClient, services: dict[str, int]
 ) -> None:
-    order = new_order(staff_client, services, deposit="20.00")
+    order = new_order(staff_client, services)
 
     washed = staff_client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
 

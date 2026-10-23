@@ -133,6 +133,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
 
       <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
         <h2 className="font-semibold">Bayaran & lain-lain</h2>
+        {/* Staff may take the deposit when the order is made; later payments are the owner's. */}
         <NumberField label="Deposit (RM)" value={deposit} onChange={setDeposit} />
         {Number(deposit) > 0 && (
           <div className="flex flex-wrap gap-2" role="group" aria-label="Cara bayaran deposit">
