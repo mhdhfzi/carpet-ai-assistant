@@ -989,3 +989,26 @@ describe('saving a receipt', () => {
   })
 })
 
+
+describe('finding a receipt', () => {
+  it('searches every order by name or phone and opens the one tapped', async () => {
+    const other = order({ id: 9, number: 20, code: '20', customer: { ...order().customer, id: 4, name: 'Puan Aisyah', phone: '+60135550352' } })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': (call) => ({ body: call.query.get('q') ? [other] : [order()] }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+      'GET /api/orders/9/receipt': () => ({ body: { ...receipt(), order: other } }),
+    })
+    const user = renderSignedIn('#/orders/7/resit')
+
+    await user.type(await screen.findByLabelText('Cari resit pelanggan'), 'aisyah')
+    const results = await screen.findByRole('list', { name: 'Hasil carian' })
+    expect(results).toHaveTextContent('#20 Puan Aisyah')
+    expect(calls.find((c) => c.query.get('q'))?.query.get('q')).toBe('aisyah')
+
+    await user.click(within(results).getByRole('link', { name: /Puan Aisyah/ }))
+    expect(await screen.findByRole('article', { name: 'Resit 20' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Hasil carian' })).toBeNull()
+  })
+})

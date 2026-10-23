@@ -5,6 +5,7 @@ import { useBusiness } from './business'
 import { formatMoney, formatShortDate, formatSize, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
 import { QrPayButton } from './QrPay'
+import { SearchBox } from './SearchBox'
 import { notifyWorkChanged } from './summary'
 import type { Order, Receipt } from './types'
 import { href } from './useHashRoute'
@@ -112,6 +113,8 @@ export function ReceiptPage({ id }: { id?: number }) {
     <div className="grid items-start gap-6 lg:grid-cols-12">
       <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-5 print:hidden">
         <h1 className="text-base font-bold text-slate-900">Pilih pelanggan & resit</h1>
+
+        <ReceiptSearch current={order.id} />
 
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-slate-600">No. siri resit pelanggan</span>
@@ -388,3 +391,72 @@ function Total({ label, value, strong = false }: { label: string; value: string;
     </p>
   )
 }
+
+/** Find a customer's receipt by name, phone or order number, across every order (both books,
+ * finished ones too), and open it with one tap. */
+function ReceiptSearch({ current }: { current: number }) {
+  const { request } = useAuth()
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState<Order[] | null>(null)
+  const q = query.trim()
+
+  useEffect(() => {
+    if (!q) return
+    let live = true
+    const timer = setTimeout(() => {
+      request<Order[]>(`/api/orders?${new URLSearchParams({ q })}`)
+        .then((orders) => {
+          if (live) setFound(orders.slice(0, 8))
+        })
+        .catch(() => {
+          if (live) setFound([])
+        })
+    }, 250) // wait for typing to pause
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [q, request])
+
+  return (
+    <div className="space-y-2">
+      <SearchBox value={query} onChange={setQuery} label="Cari resit pelanggan" placeholder="Cari nama, no. HP atau no. siri" />
+      {q && found === null && <p className="text-xs text-ink-soft">Mencari…</p>}
+      {q && found?.length === 0 && <p className="text-xs text-ink-soft">Tiada pelanggan sepadan.</p>}
+      {q && found && found.length > 0 && (
+        <ul aria-label="Hasil carian" className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200">
+          {found.map((o) => (
+            <li key={o.id}>
+              <a
+                href={href({ page: 'receipt', id: o.id })}
+                onClick={() => {
+                  setQuery('')
+                  setFound(null)
+                }}
+                aria-current={o.id === current ? 'true' : undefined}
+                className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm hover:bg-slate-50 aria-[current=true]:bg-emerald-50"
+              >
+                <span className="min-w-0">
+                  <span className="font-bold text-slate-900">{o.kind === 'on_site' ? o.code : `#${o.code}`}</span>{' '}
+                  <span className="font-semibold">{o.customer.name}</span>
+                  <span className="block truncate text-xs text-slate-500">
+                    {o.customer.phone} · {formatShortDate(o.received_on)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right text-xs">
+                  <span className="block font-bold">{o.price_pending ? '—' : formatMoney(o.total)}</span>
+                  {Number(o.balance) > 0 && !o.price_pending ? (
+                    <span className="text-rose-700">Baki {formatMoney(o.balance)}</span>
+                  ) : (
+                    <span className="text-emerald-700">{o.price_pending ? 'Harga belum lengkap' : 'PAID'}</span>
+                  )}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
