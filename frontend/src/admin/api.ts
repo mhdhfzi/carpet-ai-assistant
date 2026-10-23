@@ -43,8 +43,9 @@ async function errorDetail(response: Response): Promise<string> {
   }
 }
 
-export function login(email: string, password: string): Promise<TokenResponse> {
-  return api<TokenResponse>('/api/auth/login', { method: 'POST', body: { email, password } })
+export function login(email: string, password: string, remember = false): Promise<TokenResponse> {
+  const body = remember ? { email, password, remember } : { email, password }
+  return api<TokenResponse>('/api/auth/login', { method: 'POST', body })
 }
 
 export function fetchMe(token: string): Promise<Owner> {

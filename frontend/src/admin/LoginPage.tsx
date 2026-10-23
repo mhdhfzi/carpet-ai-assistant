@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { ApiError } from './api'
-import { useAuth } from './auth'
+import { rememberedEmail, useAuth } from './auth'
 import type { Business } from './business'
 
 // The public, read-only demo login (created by python -m app.seed_demo). Published on
@@ -10,21 +10,23 @@ export const DEMO_PASSWORD = 'kilau-demo-2026'
 
 export function LoginPage({ notice, business }: { notice?: string; business?: Business | null }) {
   const { signIn } = useAuth()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(rememberedEmail)
   const [password, setPassword] = useState('')
+  // Ticked by default for whoever ticked it last time on this device.
+  const [remember, setRemember] = useState(() => rememberedEmail() !== '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    await attempt(email, password)
+    await attempt(email, password, remember)
   }
 
-  const attempt = async (email: string, password: string) => {
+  const attempt = async (email: string, password: string, remember = false) => {
     setBusy(true)
     setError(null)
     try {
-      await signIn(email, password)
+      await signIn(email, password, remember)
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401
@@ -75,6 +77,18 @@ export function LoginPage({ notice, business }: { notice?: string; business?: Bu
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-xl bg-foam px-3 py-2.5 outline-none focus:ring-2 focus:ring-brand"
           />
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="mt-0.5 size-5 accent-brand"
+          />
+          <span>
+            <span className="font-semibold">Ingat saya</span>
+            <span className="block text-ink-soft">Kekal log masuk di telefon ini selama 30 hari. Jangan tanda di komputer kongsi.</span>
+          </span>
         </label>
         <button
           type="submit"

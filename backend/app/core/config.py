@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # Owner login. Tokens are signed with this secret: long, random, never committed.
     jwt_secret: SecretStr | None = None
     access_token_minutes: int = 8 * 60
+    # "Ingat saya" (remember me) on a worker's own phone: stays signed in this long.
+    remember_token_days: int = 30
 
     # Embeddings for RAG. SecretStr keeps the key out of logs and error messages.
     voyage_api_key: SecretStr | None = None

@@ -48,6 +48,7 @@ async function signIn(password = 'correct horse') {
 
 beforeEach(() => {
   sessionStorage.clear()
+  localStorage.clear()
   window.location.hash = ''
 })
 
@@ -73,6 +74,42 @@ describe('owner dashboard', () => {
     expect(screen.getByRole('heading', { name: 'Bookings' })).toBeInTheDocument()
     expect(requests.find((r) => r.key === 'GET /api/auth/me')?.auth).toBe('Bearer tok-123')
     expect(JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? '{}').token).toBe('tok-123')
+  })
+
+  it('"Ingat saya" keeps the login after the app is closed and fills in the email', async () => {
+    let sent: unknown
+    mockBackend({
+      'POST /api/auth/login': (init) => {
+        sent = JSON.parse(String(init?.body))
+        return loginOk(init)
+      },
+      'GET /api/auth/me': meOk,
+    })
+    const { unmount } = renderApp()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Email'), 'owner@example.com')
+    await user.type(screen.getByLabelText('Password'), 'correct horse')
+    await user.click(screen.getByRole('checkbox', { name: /Ingat saya/ }))
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByText('Owner Name')).toBeInTheDocument()
+    expect(sent).toEqual({ email: 'owner@example.com', password: 'correct horse', remember: true })
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) ?? '{}').token).toBe('tok-123')
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(JSON.stringify(localStorage)).not.toContain('correct horse') // never the password
+
+    // Closing the app clears sessionStorage; the remembered login survives.
+    unmount()
+    sessionStorage.clear()
+    const reopened = renderApp()
+    expect(await screen.findByText('Owner Name')).toBeInTheDocument()
+
+    // After signing out, the email is filled in and the box stays ticked.
+    reopened.unmount()
+    localStorage.removeItem(TOKEN_KEY)
+    renderApp()
+    expect(screen.getByLabelText('Email')).toHaveValue('owner@example.com')
+    expect(screen.getByRole('checkbox', { name: /Ingat saya/ })).toBeChecked()
   })
 
   it('signs in to the demo account with one click', async () => {
