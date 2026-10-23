@@ -57,17 +57,19 @@ class MonthStatRead(BaseModel):
 
 
 class BusinessAnalytics(BaseModel):
-    """Money and orders from the back office (for a real business): totals to date, the last
-    12 months side by side, and one month in detail."""
+    """Money and orders from the back office (for a real business), for one year: its
+    totals, its months side by side, and the whole year or one month in detail."""
 
-    month: str  # the month in detail, "2026-10"
-    start: date
+    year: int
+    years: list[int]  # the years that can be picked, newest first
+    month: int | None  # the month in detail (1-12), or None for the whole year
+    start: date  # the detail period
     end: date
-    revenue_total: Decimal  # everything ever received
-    unpaid: Decimal  # owed now, on every order
+    revenue_total: Decimal  # received in the year
+    unpaid: Decimal  # owed now on the year's orders
     unpaid_orders: int
-    months: list[MonthStatRead]  # the last 12 months, oldest first
-    revenue: Decimal  # the chosen month's
+    months: list[MonthStatRead]  # January onwards (up to this month for this year)
+    revenue: Decimal  # the detail period's
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int
     order_value: Decimal

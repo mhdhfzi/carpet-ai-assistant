@@ -1,5 +1,6 @@
-"""Business numbers from the back office, month by month: money received, orders and the
-most popular services, plus what's owed and everything received to date.
+"""Business numbers from the back office for one year: money received and owed, each
+month side by side (money, orders, most popular service), and the whole year or one of its
+months in detail.
 
 Computed in Python from the period's orders and payments: a small business has a few
 thousand orders a year, so clarity beats squeezing it into one SQL query.
@@ -44,14 +45,16 @@ class MonthStat:
 
 @dataclass(frozen=True)
 class BusinessSummary:
-    month: date  # the month shown in detail (its first day)
-    start: date
+    year: int
+    years: list[int]  # years that can be picked: this one back to the first with data
+    month: int | None  # the month shown in detail (1-12), or None for the whole year
+    start: date  # the detail period
     end: date
-    revenue_total: Decimal  # every payment ever received (not voided)
-    unpaid: Decimal  # owed now on every order that isn't cancelled
+    revenue_total: Decimal  # every payment received in the year (not voided)
+    unpaid: Decimal  # owed now on the year's orders that aren't cancelled
     unpaid_orders: int
-    months: list[MonthStat]  # the last 12 months, oldest first
-    # The chosen month:
+    months: list[MonthStat]  # January onwards: all 12, or up to this month for this year
+    # The detail period (the whole year, or the chosen month):
     revenue: Decimal
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int  # received that month, not cancelled
@@ -70,51 +73,75 @@ def first_of_month(day: date) -> date:
     return day.replace(day=1)
 
 
-def summary(db: Session, month: date) -> BusinessSummary:
-    """Totals for the whole business, the last 12 months side by side, and one month in
-    detail (`month`: any day in it)."""
-    start = first_of_month(month)
-    end = _next_month(start) - timedelta(days=1)
+def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary:
+    """One year: its totals, its months side by side, and the whole year (month=None) or
+    one of its months in detail."""
+    year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+    if month is None:
+        start, end = year_start, year_end
+    else:
+        start = date(year, month, 1)
+        end = _next_month(start) - timedelta(days=1)
 
-    month_orders = _orders(db, Order.received_on.between(start, end))
-    kept = [o for o in month_orders if o.status is not OrderStatus.CANCELLED]
+    period_orders = _orders(db, Order.received_on.between(start, end))
+    kept = [o for o in period_orders if o.status is not OrderStatus.CANCELLED]
     by_method = {method: Decimal("0") for method in PaymentMethod}
     for payment in _payments(db, start, end):
         by_method[payment.method] += payment.amount
 
-    owing = _orders(db, Order.status != OrderStatus.CANCELLED)
-    balances = [order_service.totals(o).balance for o in owing]
-    every_payment = db.scalar(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(Payment.voided_at.is_(None))
+    # What's still owed on the orders received this year.
+    owing = _orders(
+        db,
+        Order.received_on.between(year_start, year_end) & (Order.status != OrderStatus.CANCELLED),
     )
+    balances = [order_service.totals(o).balance for o in owing]
+    received = sum((p.amount for p in _payments(db, year_start, year_end)), Decimal("0"))
 
     return BusinessSummary(
-        month=start,
+        year=year,
+        years=_years(db),
+        month=month,
         start=start,
         end=end,
-        revenue_total=Decimal(every_payment),
+        revenue_total=received,
         unpaid=sum((b for b in balances if b > 0), Decimal("0")),
         unpaid_orders=sum(1 for b in balances if b > 0),
-        months=_last_twelve_months(db),
+        months=_months_of(db, year),
         revenue=sum(by_method.values(), Decimal("0")),
         revenue_by_method=by_method,
         orders=len(kept),
         order_value=sum((order_service.totals(o).total for o in kept), Decimal("0")),
-        cancelled=len(month_orders) - len(kept),
+        cancelled=len(period_orders) - len(kept),
         services=_services(kept),
         busy_days=_busy_days(kept),
         average_days_to_ready=_days_to_ready(kept),
     )
 
 
-def _last_twelve_months(db: Session) -> list[MonthStat]:
-    """Money, orders and the favourite service for each of the last 12 months (this one
-    included), so the owner can compare months at a glance."""
-    this_month = first_of_month(order_service.today())
-    firsts = [this_month]
-    for _ in range(11):
-        firsts.insert(0, first_of_month(firsts[0] - timedelta(days=1)))
-    end = _next_month(this_month) - timedelta(days=1)
+def _years(db: Session) -> list[int]:
+    """This year back to the first year with an order or a payment, newest first."""
+    this_year = order_service.today().year
+    firsts = [
+        day.year
+        for day in (
+            db.scalar(select(func.min(Order.received_on))),
+            db.scalar(select(func.min(Payment.paid_on))),
+        )
+        if day is not None
+    ]
+    first = min([*firsts, this_year])
+    return list(range(this_year, first - 1, -1))
+
+
+def _months_of(db: Session, year: int) -> list[MonthStat]:
+    """Money, orders and the favourite service for each month of the year, so the owner
+    can compare months at a glance. This year stops at this month (no empty future months)."""
+    today = order_service.today()
+    last = 12 if year < today.year else today.month if year == today.year else 0
+    if not last:
+        return []
+    firsts = [date(year, m, 1) for m in range(1, last + 1)]
+    end = _next_month(firsts[-1]) - timedelta(days=1)
 
     revenue: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
     for payment in _payments(db, firsts[0], end):

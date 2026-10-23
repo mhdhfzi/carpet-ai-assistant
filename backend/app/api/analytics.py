@@ -1,4 +1,3 @@
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -56,15 +55,17 @@ def get_summary(db: DbSession, days: Annotated[int, Query(ge=1, le=365)] = 30) -
 @router.get("/business", response_model=BusinessAnalytics, dependencies=[RequireOrdersEnabled])
 def get_business(
     db: DbSession,
-    month: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
 ) -> BusinessAnalytics:
-    """Everything received to date and what's owed now, the last 12 months side by side
-    (money, orders, most popular service), and one month in detail (?month=2026-10, default
-    this month). Owner only; where the back office is switched on."""
-    chosen = date.fromisoformat(f"{month}-01") if month else business_analytics.today()
-    s = business_analytics.summary(db, chosen)
+    """One year (?year=2026, default this year): money received and still owed, each month
+    side by side (money, orders, most popular service), and the whole year or one month in
+    detail (&month=10). Owner only; where the back office is switched on."""
+    s = business_analytics.summary(db, year or business_analytics.today().year, month)
     return BusinessAnalytics(
-        month=f"{s.month:%Y-%m}",
+        year=s.year,
+        years=s.years,
+        month=s.month,
         start=s.start,
         end=s.end,
         revenue_total=s.revenue_total,

@@ -23,24 +23,31 @@ const WEEKDAY_SHORT: Record<string, string> = {
   Sun: 'Aha',
 }
 
-const monthLong = new Intl.DateTimeFormat('ms-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
-const asDate = (month: string) => new Date(`${month}-15T12:00:00+08:00`)
+// Month names alone ("Oktober"): the year is picked once, at the top.
+const monthLong = new Intl.DateTimeFormat('ms-MY', { month: 'long', timeZone: 'Asia/Kuala_Lumpur' })
+const MONTHS = Array.from({ length: 12 }, (_, i) => monthLong.format(new Date(Date.UTC(2026, i, 15))))
 
-/** "Oktober 2026" from "2026-10". */
+/** "Oktober" from "2026-10". */
 function monthName(month: string): string {
-  return monthLong.format(asDate(month))
+  return MONTHS[Number(month.slice(5, 7)) - 1]
 }
 
-/** The business side: totals to date, the last 12 months side by side, and one month in detail. */
+/** The business side for one year: its totals, its months side by side, and the whole year or
+ * one month in detail. */
 export function BusinessSection() {
   const { request } = useAuth()
-  const [month, setMonth] = useState<string | null>(null) // null: this month (the server decides)
+  const [year, setYear] = useState<number | null>(null) // null: this year (the server decides)
+  const [month, setMonth] = useState<number | null>(null) // null: the whole year
   const [data, setData] = useState<BusinessAnalytics | null>(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     let current = true
-    request<BusinessAnalytics>(`/api/analytics/business${month ? `?month=${month}` : ''}`)
+    const query = new URLSearchParams()
+    if (year) query.set('year', String(year))
+    if (month) query.set('month', String(month))
+    const search = query.toString() // not query.size: older phone browsers lack it
+    request<BusinessAnalytics>(`/api/analytics/business${search ? `?${search}` : ''}`)
       .then((body) => {
         if (!current) return
         setData(body)
@@ -52,7 +59,7 @@ export function BusinessSection() {
     return () => {
       current = false
     }
-  }, [month, request])
+  }, [year, month, request])
 
   if (error) return <p role="alert" className="text-danger">Tak dapat muatkan data perniagaan.</p>
   if (!data) return <p className="text-ink-soft">Memuatkan data perniagaan…</p>
@@ -63,20 +70,40 @@ export function BusinessSection() {
   // What the shop should collect in all: received so far plus what's still owed (in sen, so
   // the sum has no rounding error).
   const expected = ((Math.round(Number(data.revenue_total) * 100) + Math.round(Number(data.unpaid) * 100)) / 100).toFixed(2)
+  const period = data.month ? 'bulan ini' : 'tahun ini'
 
   return (
     <section aria-labelledby="business-heading" className="space-y-4">
-      <h2 id="business-heading" className="font-display text-xl font-bold">
-        Perniagaan
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="business-heading" className="font-display text-xl font-bold">
+          Perniagaan
+        </h2>
+        {/* Everything below belongs to the chosen year. */}
+        <div role="group" aria-label="Tahun" className="flex flex-wrap rounded-full bg-white p-1 ring-1 ring-line">
+          {data.years.map((y) => (
+            <button
+              key={y}
+              type="button"
+              aria-pressed={data.year === y}
+              onClick={() => {
+                setYear(y)
+                setMonth(null)
+              }}
+              className="rounded-full px-4 py-1.5 text-sm font-bold text-ink-soft aria-pressed:bg-ink aria-pressed:text-white"
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile label="Jumlah hasil keseluruhan" value={formatMoney(expected)} hint="Diterima + baki belum dibayar" />
-        <StatTile label="Jumlah hasil diterima" value={formatMoney(data.revenue_total)} hint="Semua bayaran setakat ini" />
+        <StatTile label="Jumlah hasil diterima" value={formatMoney(data.revenue_total)} hint="Semua bayaran sepanjang tahun" />
         <StatTile
           label="Baki belum dibayar"
           value={formatMoney(data.unpaid)}
-          hint={data.unpaid_orders ? `${data.unpaid_orders} pesanan (semua masa)` : 'Semua sudah dibayar'}
+          hint={data.unpaid_orders ? `${data.unpaid_orders} pesanan tahun ini` : 'Semua sudah dibayar'}
         />
       </div>
 
@@ -85,7 +112,7 @@ export function BusinessSection() {
           <h3 id="monthly-heading" className="font-semibold">
             Setiap bulan
           </h3>
-          <p className="text-xs text-ink-soft">Hasil diterima, pesanan dan servis paling popular, 12 bulan terakhir</p>
+          <p className="text-xs text-ink-soft">Hasil diterima, pesanan dan servis paling popular, bulan terkini dahulu</p>
         </div>
         {/* Sideways bars, newest month first: twelve standing columns don't fit a phone. */}
         <BarList
@@ -104,16 +131,17 @@ export function BusinessSection() {
       </section>
 
       <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
-        <h3 className="text-lg font-bold">{monthName(data.month)}</h3>
+        <h3 className="text-lg font-bold">{data.month ? MONTHS[data.month - 1] : 'Sepanjang tahun'}</h3>
         <label className="text-sm">
-          <span className="mb-1 block text-xs font-bold text-slate-600">Lihat bulan</span>
+          <span className="mb-1 block text-xs font-bold text-slate-600">Lihat</span>
           <select
-            value={data.month}
-            onChange={(e) => setMonth(e.target.value)}
+            value={data.month ?? ''}
+            onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : null)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold"
           >
-            {newestFirst.map((m) => (
-              <option key={m.month} value={m.month}>
+            <option value="">Sepanjang tahun</option>
+            {data.months.map((m) => (
+              <option key={m.month} value={Number(m.month.slice(5, 7))}>
                 {monthName(m.month)}
               </option>
             ))}
@@ -122,7 +150,7 @@ export function BusinessSection() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile label="Hasil diterima" value={formatMoney(data.revenue)} hint="Bayaran bulan ini" />
+        <StatTile label="Hasil diterima" value={formatMoney(data.revenue)} hint={`Bayaran ${period}`} />
         <StatTile
           label="Pesanan"
           value={String(data.orders)}
@@ -138,7 +166,7 @@ export function BusinessSection() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Servis paling popular"
-          subtitle="Barang dalam pesanan bulan ini (sofa dikira ikut tempat duduk)"
+          subtitle={`Barang dalam pesanan ${period} (sofa dikira ikut tempat duduk)`}
           chart={
             data.services.length ? (
               <BarList
@@ -150,7 +178,7 @@ export function BusinessSection() {
                 }))}
               />
             ) : (
-              <p className="text-sm text-ink-soft">Tiada pesanan bulan ini.</p>
+              <p className="text-sm text-ink-soft">Tiada pesanan {period}.</p>
             )
           }
           table={
@@ -163,7 +191,7 @@ export function BusinessSection() {
 
         <ChartCard
           title="Cara bayaran"
-          subtitle="Bahagian hasil bulan ini"
+          subtitle={`Bahagian hasil ${period}`}
           chart={
             <div className="space-y-4">
               {methods.map((m) => (
@@ -187,7 +215,7 @@ export function BusinessSection() {
 
         <ChartCard
           title="Hari sibuk"
-          subtitle="Pesanan diterima mengikut hari, bulan ini"
+          subtitle={`Pesanan diterima mengikut hari, ${period}`}
           chart={
             <>
               <ColumnChart

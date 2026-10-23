@@ -229,16 +229,19 @@ export const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   ready: 'completed',
 }
 
-/** GET /api/analytics/business: totals to date, the last 12 months, and one month in detail. */
+/** GET /api/analytics/business: one year's totals, its months, and the whole year or one month
+ * in detail. */
 export type BusinessAnalytics = {
-  month: string // the month in detail, "2026-10"
+  year: number
+  years: number[] // the years that can be picked, newest first
+  month: number | null // the month in detail (1-12), or null for the whole year
   start: string
   end: string
-  revenue_total: string // everything ever received
-  unpaid: string // owed now, on every order
+  revenue_total: string // received in the year
+  unpaid: string // owed now on the year's orders
   unpaid_orders: number
-  months: { month: string; revenue: string; orders: number; top_service: string | null }[] // oldest first
-  revenue: string // the chosen month's
+  months: { month: string; revenue: string; orders: number; top_service: string | null }[] // January first
+  revenue: string // the detail period's
   revenue_by_method: Record<PaymentMethod, string>
   orders: number
   order_value: string
