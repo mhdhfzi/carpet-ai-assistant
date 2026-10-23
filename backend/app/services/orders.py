@@ -529,8 +529,9 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         items=items,
     )
     order.events.append(OrderEvent(status=OrderStatus.RECEIVED, by_id=actor.id))
+    # A deposit is taken face to face when the order is made, so staff may key it in; it is
+    # recorded under their name. Later payments are recorded by the owner only.
     if data.deposit > 0:
-        _owner_only(actor, "record a deposit")
         order.payments.append(
             Payment(
                 amount=data.deposit,

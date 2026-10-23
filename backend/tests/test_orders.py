@@ -852,13 +852,13 @@ def test_only_the_owner_records_or_voids_payments(
     assert void.status_code == 403
 
 
-def test_staff_cannot_take_a_deposit(staff_client: TestClient, services: dict[str, int]) -> None:
-    response = staff_client.post(
-        "/api/orders",
-        json={"customer": ALI, "items": [counted(services, "Cucian Sofa", 1)], "deposit": "20.00"},
-    )
+def test_staff_take_the_deposit_under_their_own_name(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services, deposit="20.00", deposit_method="cash")
 
-    assert response.status_code == 403
+    assert [(p["amount"], p["received_by"]) for p in order["payments"]] == [("20.00", "Worker")]
+    assert order["balance"] == "304.00"
 
 
 def test_the_customer_table_shows_what_each_customer_still_owes(

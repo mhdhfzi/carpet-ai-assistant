@@ -242,13 +242,13 @@ describe('back office', () => {
 
     expect(screen.getByText('80 kaki persegi · RM144.00')).toBeInTheDocument()
     expect(screen.queryByLabelText('Diskaun (RM)')).toBeNull() // owner only
-    expect(screen.queryByLabelText('Deposit (RM)')).toBeNull() // money is recorded by the owner
+    await user.type(screen.getByLabelText('Deposit (RM)'), '50') // staff may take the deposit
     await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
 
     await waitFor(() => expect(window.location.hash).toBe('#/orders/7'))
     const posted = calls.find((c) => c.method === 'POST')?.body as Record<string, unknown>
     expect(posted.items).toEqual([{ service_id: 1, length_ft: '8', width_ft: '10' }])
-    expect(posted.deposit).toBe('0')
+    expect(posted.deposit).toBe('50')
     expect(posted).not.toHaveProperty('discount')
   })
 
