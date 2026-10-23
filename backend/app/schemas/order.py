@@ -20,6 +20,9 @@ Amount = Annotated[Decimal, Field(ge=0, max_digits=10, decimal_places=2)]
 
 
 class OrderItemIn(BaseModel):
+    # Set when editing an item already on the order: it keeps its tag number and progress.
+    # Unset: a new item, numbered after the last one.
+    id: int | None = None
     service_id: int
     # Carpets: the measured size in feet (the book's "Size Karpet"); square feet follow.
     length_ft: Feet | None = None
@@ -64,6 +67,10 @@ class ItemStatusUpdate(BaseModel):
 
 class PaymentVoid(BaseModel):
     reason: str = Field(min_length=3, max_length=200)
+
+
+class ItemCancel(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)  # e.g. "harga mahal"
 
 
 class PaymentRead(BaseModel):
@@ -131,6 +138,10 @@ class OrderItemRead(BaseModel):
     # that aren't carpets).
     ready_from: date | None
     ready_by: date | None
+    # Dropped by the customer: shown crossed out, not counted in the total.
+    cancelled_on: date | None = None
+    cancelled_by: str | None = None
+    cancel_reason: str | None = None
 
 
 class WorkItemRead(OrderItemRead):
@@ -185,7 +196,9 @@ class OrderRead(BaseModel):
     total: Decimal  # subtotal - discount
     paid: Decimal  # payments, not counting voided ones
     balance: Decimal  # total - paid
-    items: list[OrderItemRead]
+    items: list[OrderItemRead]  # what the customer still wants
+    # Dropped by the customer: shown crossed out on the order page only.
+    cancelled_items: list[OrderItemRead] = []
     payments: list[PaymentRead]
     events: list[OrderEventRead]
     created_at: datetime

@@ -142,7 +142,7 @@ function Page({ route }: { route: Route }) {
     case 'new-order':
       return <NewOrderPage key={route.kind ?? 'shop'} kind={route.kind ?? 'shop'} />
     case 'order':
-      return <OrderPage key={route.id} id={route.id} />
+      return <OrderPage key={`${route.id}-${route.edit ?? false}`} id={route.id} edit={route.edit} />
     case 'customer':
       return <CustomerPage key={route.id} id={route.id} />
     default:

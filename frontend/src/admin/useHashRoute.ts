@@ -14,7 +14,7 @@ export type Route =
   | { page: 'visits'; book?: boolean; filter?: string } // Kerja Luar: the visit schedule, or its book
   | { page: 'log' }
   | { page: 'new-order'; kind?: OrderKind }
-  | { page: 'order'; id: number }
+  | { page: 'order'; id: number; edit?: boolean } // edit: open with "Ubah barang" showing
   | { page: 'receipt'; id: number }
   | { page: 'customer'; id: number }
 
@@ -30,7 +30,8 @@ export function parseRoute(hash: string): Route | null {
     case 'orders':
       if (id === 'new') return { page: 'new-order', kind: new URLSearchParams(query).get('jenis') === 'luar' ? 'on_site' : 'shop' }
       if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
-      if (id && Number.isInteger(number) && number > 0) return { page: 'order', id: number }
+      if (id && Number.isInteger(number) && number > 0)
+        return { page: 'order', id: number, edit: new URLSearchParams(query).has('ubah') }
       return { page: 'orders', filter: new URLSearchParams(query).get('tapis') ?? undefined }
     case 'resit':
       return { page: 'receipts' }
@@ -61,7 +62,7 @@ export function href(route: Route): string {
     case 'new-order':
       return route.kind === 'on_site' ? '#/orders/new?jenis=luar' : '#/orders/new'
     case 'order':
-      return `#/orders/${route.id}`
+      return `#/orders/${route.id}${route.edit ? '?ubah' : ''}`
     case 'receipt':
       return `#/orders/${route.id}/resit`
     case 'customer':
