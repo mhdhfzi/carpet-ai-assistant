@@ -24,17 +24,11 @@ const WEEKDAY_SHORT: Record<string, string> = {
 }
 
 const monthLong = new Intl.DateTimeFormat('ms-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
-const monthShort = new Intl.DateTimeFormat('ms-MY', { month: 'short', timeZone: 'Asia/Kuala_Lumpur' })
 const asDate = (month: string) => new Date(`${month}-15T12:00:00+08:00`)
 
 /** "Oktober 2026" from "2026-10". */
 function monthName(month: string): string {
   return monthLong.format(asDate(month))
-}
-
-/** "RM150", "RM1.2k": short enough to sit on top of a column. */
-function shortMoney(value: number): string {
-  return value >= 1000 ? `RM${(value / 1000).toFixed(1)}k` : `RM${Math.round(value)}`
 }
 
 /** The business side: totals to date, the last 12 months side by side, and one month in detail. */
@@ -93,18 +87,16 @@ export function BusinessSection() {
           </h3>
           <p className="text-xs text-ink-soft">Hasil diterima, pesanan dan servis paling popular, 12 bulan terakhir</p>
         </div>
-        <div>
-          <ColumnChart
-            valueLabel="Hasil diterima setiap bulan"
-            formatValue={shortMoney}
-            data={data.months.map((m) => ({
-              label: m.month,
-              value: Number(m.revenue),
-              description: `${monthName(m.month)}: ${formatMoney(m.revenue)}, ${m.orders} pesanan`,
-            }))}
-          />
-          <ColumnLabels labels={data.months.map((m) => monthShort.format(asDate(m.month)))} />
-        </div>
+        {/* Sideways bars, newest month first: twelve standing columns don't fit a phone. */}
+        <BarList
+          formatValue={(value) => formatMoney(String(value))}
+          data={newestFirst.map((m) => ({
+            label: monthName(m.month),
+            sublabel: `${m.orders} pesanan`,
+            value: Number(m.revenue),
+            description: `${monthName(m.month)}: ${formatMoney(m.revenue)}, ${m.orders} pesanan`,
+          }))}
+        />
         <DataTable
           columns={['Bulan', 'Hasil diterima', 'Pesanan', 'Servis paling popular']}
           rows={newestFirst.map((m) => [monthName(m.month), formatMoney(m.revenue), m.orders, m.top_service ?? '–'])}
@@ -129,7 +121,7 @@ export function BusinessSection() {
         </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <StatTile label="Hasil diterima" value={formatMoney(data.revenue)} hint="Bayaran bulan ini" />
         <StatTile
           label="Pesanan"
