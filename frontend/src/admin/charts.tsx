@@ -4,9 +4,10 @@ import { type ReactNode, useId, useState } from 'react'
 
 export function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-2xl bg-white p-4 ring-1 ring-line">
+    <div className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line">
       <p className="text-sm text-ink-soft">{label}</p>
-      <p className="mt-1 text-3xl font-semibold">{value}</p>
+      {/* A bit smaller on a phone, and it wraps rather than run into the next tile. */}
+      <p className="mt-1 text-2xl font-semibold break-words sm:text-3xl">{value}</p>
       {hint && <p className="mt-1 text-xs text-ink-soft">{hint}</p>}
     </div>
   )
@@ -150,29 +151,33 @@ export function BarList({
   )
 }
 
+/** A plain table. Words never wrap or run into each other: on a narrow phone the table
+ * slides sideways instead of squeezing its columns. */
 export function DataTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-left text-ink-soft">
-          {columns.map((column) => (
-            <th key={column} className="border-b border-line pb-2 font-semibold">
-              {column}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className="tabular-nums">
-        {rows.map((row, i) => (
-          <tr key={i}>
-            {row.map((cell, j) => (
-              <td key={j} className="border-b border-line py-2">
-                {cell}
-              </td>
+    <div className="-mx-1 overflow-x-auto px-1">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-ink-soft">
+            {columns.map((column) => (
+              <th key={column} className="border-b border-line pr-5 pb-2 font-semibold whitespace-nowrap last:pr-0">
+                {column}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="tabular-nums">
+          {rows.map((row, i) => (
+            <tr key={i}>
+              {row.map((cell, j) => (
+                <td key={j} className="border-b border-line py-2 pr-5 whitespace-nowrap last:pr-0">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
