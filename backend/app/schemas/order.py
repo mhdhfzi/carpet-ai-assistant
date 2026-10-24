@@ -11,6 +11,7 @@ from app.db.models import (
     OrderStatus,
     PaymentMethod,
     PricingUnit,
+    ReceiptChannel,
     ReturnMethod,
 )
 from app.schemas.booking import CustomerIn
@@ -71,6 +72,16 @@ class PaymentVoid(BaseModel):
 
 class ItemCancel(BaseModel):
     reason: str = Field(min_length=3, max_length=200)  # e.g. "harga mahal"
+
+
+class ReceiptSendIn(BaseModel):
+    channel: ReceiptChannel = ReceiptChannel.WHATSAPP
+
+
+class ReceiptSendRead(BaseModel):
+    sent_at: datetime
+    sent_by: str | None
+    channel: ReceiptChannel
 
 
 class PaymentRead(BaseModel):
@@ -199,6 +210,7 @@ class OrderRead(BaseModel):
     items: list[OrderItemRead]  # what the customer still wants
     # Dropped by the customer: shown crossed out on the order page only.
     cancelled_items: list[OrderItemRead] = []
+    receipt_sends: list[ReceiptSendRead] = []  # each confirmed send, oldest first
     payments: list[PaymentRead]
     events: list[OrderEventRead]
     created_at: datetime

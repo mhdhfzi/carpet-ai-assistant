@@ -18,6 +18,7 @@ import { ArrowIcon, BellIcon, CheckIcon, PhoneIcon, PlusIcon, ReceiptIcon, Searc
 import { notifyWorkChanged } from './summary'
 import type { Order, OrderItem, OrderKind, OrderStatus } from './types'
 import { href } from './useHashRoute'
+import { ReceiptSentLine } from './ReceiptSent'
 
 // The books: Buku Utama for carpets, and the Kerja Luar book for sofa, mattress and car seat
 // jobs done at customers' homes. Each lists its orders, where each item is, and what's owed.
@@ -336,6 +337,9 @@ function BookRow({
           {order.price_pending ? 'Harga belum lengkap' : formatMoney(order.total)}
         </p>
         <PaidBadge order={order} />
+        <div className="mt-1">
+          <ReceiptSentLine order={order} />
+        </div>
       </td>
 
       <td className={`${cell} space-y-1.5 md:w-36 md:text-right`}>

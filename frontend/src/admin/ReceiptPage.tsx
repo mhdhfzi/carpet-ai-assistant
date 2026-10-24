@@ -5,6 +5,7 @@ import { useBusiness } from './business'
 import { formatMoney, formatShortDate, formatSize, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
 import { QrPayButton } from './QrPay'
+import { ReceiptSentLine, lastSend, useReceiptSent } from './ReceiptSent'
 import { SearchBox } from './SearchBox'
 import { notifyWorkChanged } from './summary'
 import type { Order, Receipt } from './types'
@@ -40,8 +41,8 @@ export function ReceiptPage({ id }: { id?: number }) {
   }
 
   /** The receipt as a JPEG picture: shared (e.g. to WhatsApp) on a phone, downloaded otherwise. */
-  const saveImage = async () => {
-    if (!sheet.current) return
+  const saveImage = async (): Promise<boolean> => {
+    if (!sheet.current) return false
     setSaving(true)
     setImageError(false)
     try {
@@ -55,13 +56,23 @@ export function ReceiptPage({ id }: { id?: number }) {
         link.download = `${fileName}.jpg`
         link.click()
       }
+      return true
     } catch {
       setImageError(true)
+      return false
     } finally {
       setSaving(false)
     }
   }
   const selected = id ?? orders?.[0]?.id
+  // "Sudah hantar?" after the receipt is opened for sending; the answer updates the order.
+  const { ask: askSent, prompt: sentPrompt } = useReceiptSent(
+    receipt && receipt.order.id === selected ? receipt.order : null,
+    (updated) => {
+      setReceipt((r) => (r && r.order.id === updated.id ? { ...r, order: updated } : r))
+      setOrders((list) => list?.map((o) => (o.id === updated.id ? updated : o)) ?? list)
+    },
+  )
 
   useEffect(() => {
     let current = true
@@ -143,6 +154,7 @@ export function ReceiptPage({ id }: { id?: number }) {
             {choices.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.kind === 'on_site' ? o.code : `#${o.code}`} — {o.customer.name} ({o.items.length} barang)
+                {lastSend(o) ? ' ✓ dihantar' : ''}
               </option>
             ))}
           </select>
@@ -187,13 +199,15 @@ export function ReceiptPage({ id }: { id?: number }) {
           <pre className="max-h-80 overflow-y-auto rounded-lg border border-emerald-200 bg-white p-3 font-sans text-xs leading-relaxed whitespace-pre-wrap text-slate-700">
             {message}
           </pre>
+          <ReceiptSentLine order={order} />
           <a
             href={whatsAppUrl(order.customer.phone, message)}
             target="_blank"
             rel="noreferrer"
+            onClick={() => askSent('whatsapp')}
             className="block w-full rounded-xl bg-emerald-600 py-3 text-center text-sm font-bold text-white shadow transition hover:bg-emerald-700"
           >
-            Hantar resit melalui WhatsApp
+            {lastSend(order) ? 'Hantar semula resit melalui WhatsApp' : 'Hantar resit melalui WhatsApp'}
           </a>
           {ready && (
             <a
@@ -207,9 +221,13 @@ export function ReceiptPage({ id }: { id?: number }) {
           )}
         </div>
 
+        {sentPrompt}
         <button
           type="button"
-          onClick={printReceipt}
+          onClick={() => {
+            printReceipt()
+            askSent('pdf')
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-bold text-white hover:bg-slate-800"
         >
           <PrintIcon /> Cetak / simpan PDF
@@ -217,7 +235,9 @@ export function ReceiptPage({ id }: { id?: number }) {
         <button
           type="button"
           disabled={saving}
-          onClick={saveImage}
+          onClick={async () => {
+            if (await saveImage()) askSent('image')
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-bold text-slate-900 ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50"
         >
           <ImageIcon /> {saving ? 'Menyediakan gambar…' : 'Simpan / kongsi gambar (JPEG)'}

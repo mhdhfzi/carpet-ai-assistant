@@ -38,6 +38,8 @@ from app.db.models import (
     OwnerRole,
     Payment,
     PricingUnit,
+    ReceiptChannel,
+    ReceiptSend,
     Service,
     UntaggedItem,
 )
@@ -110,6 +112,7 @@ def _with_details():
         selectinload(Order.items).selectinload(OrderItem.cancelled_by),
         selectinload(Order.events).selectinload(OrderEvent.by),
         selectinload(Order.payments).selectinload(Payment.received_by),
+        selectinload(Order.receipt_sends).selectinload(ReceiptSend.sent_by),
     )
 
 
@@ -597,6 +600,15 @@ def record_payment(db: Session, order: Order, data: PaymentIn, actor: Owner) -> 
             received_by_id=actor.id,
         )
     )
+    db.commit()
+    return get_order(db, order.id)
+
+
+def record_receipt_sent(db: Session, order: Order, channel: ReceiptChannel, actor: Owner) -> Order:
+    """The worker says the receipt reached the customer. Staff may: they send receipts."""
+    if order.status is OrderStatus.CANCELLED:
+        raise BusinessRuleError("A cancelled order has no receipt to send")
+    order.receipt_sends.append(ReceiptSend(channel=channel, sent_at=clock.now(), sent_by=actor))
     db.commit()
     return get_order(db, order.id)
 

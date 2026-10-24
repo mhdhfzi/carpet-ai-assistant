@@ -34,6 +34,7 @@ import {
   type ReturnMethod,
 } from './types'
 import { OwnerRecordsNote, QrPayButton } from './QrPay'
+import { ReceiptSentLine, useReceiptSent } from './ReceiptSent'
 import { notifyWorkChanged } from './summary'
 import { VisitEditor } from './VisitEditor'
 import { readyMessage, receiptMessage } from './whatsappMessages'
@@ -273,7 +274,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
         onVoid={(paymentId, reason) => send(`/payments/${paymentId}/void`, 'POST', { reason })}
       />
 
-      {business && <SendToCustomer order={order} business={business} />}
+      {business && <SendToCustomer order={order} business={business} onRecorded={setOrder} />}
 
       {/* Only carpets go back to the customer; a home job is finished at their house. */}
       {order.items.some((i) => !i.service.on_site) && (
@@ -475,13 +476,23 @@ function eventLabel(order: Order, event: Order['events'][number]): string {
   return ITEM_STATUS_LABEL[event.status as ItemStatus] ?? ORDER_STATUS_LABEL[event.status]
 }
 
-function SendToCustomer({ order, business }: { order: Order; business: Receipt['business'] }) {
+function SendToCustomer({
+  order,
+  business,
+  onRecorded,
+}: {
+  order: Order
+  business: Receipt['business']
+  onRecorded: (order: Order) => void
+}) {
   // "Your carpets are ready to collect" is about carpets; a home job is done in front of them.
   const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
+  const { ask, prompt } = useReceiptSent(order, onRecorded)
   return (
     <section className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-line">
       <h2 className="font-semibold">Hantar kepada pelanggan</h2>
       <p className="text-sm text-ink-soft">WhatsApp dibuka dengan mesej siap ditulis. Semak, kemudian tekan Hantar.</p>
+      <ReceiptSentLine order={order} />
       <div className="flex flex-wrap gap-2">
         {ready && (
           <a
@@ -497,6 +508,7 @@ function SendToCustomer({ order, business }: { order: Order; business: Receipt['
           href={whatsAppUrl(order.customer.phone, receiptMessage(order, business))}
           target="_blank"
           rel="noreferrer"
+          onClick={() => ask('whatsapp')}
           className="rounded-full bg-[#1f9e4f] px-4 py-2 text-sm font-semibold text-white"
         >
           WhatsApp: resit
@@ -505,6 +517,7 @@ function SendToCustomer({ order, business }: { order: Order; business: Receipt['
           Lihat / cetak resit
         </a>
       </div>
+      {prompt}
     </section>
   )
 }
