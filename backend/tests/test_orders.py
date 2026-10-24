@@ -1113,3 +1113,27 @@ def test_the_back_office_is_hidden_unless_switched_on(
 
     assert client.get("/api/orders").status_code == 404
     assert client.get("/api/business").json()["orders"] is False
+
+
+# --- Receipt sent ----------------------------------------------------------------------------
+
+
+def test_a_worker_confirms_the_receipt_was_sent(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services)
+    url = f"/api/orders/{order['id']}/receipt-sent"
+    assert order["receipt_sends"] == []
+
+    first = staff_client.post(url, json={"channel": "whatsapp"})
+    again = client.post(url, json={"channel": "image"}).json()
+
+    assert first.status_code == 201
+    assert [(r["sent_by"], r["channel"]) for r in again["receipt_sends"]] == [
+        ("Worker", "whatsapp"),
+        ("Test Owner", "image"),
+    ]
+    assert again["receipt_sends"][0]["sent_at"].startswith("2026-10-10")
+    # A cancelled order has nothing to send.
+    client.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
+    assert client.post(url, json={"channel": "whatsapp"}).status_code == 422

@@ -36,6 +36,8 @@ from app.schemas.order import (
     PaymentVoid,
     ReceiptBusiness,
     ReceiptRead,
+    ReceiptSendIn,
+    ReceiptSendRead,
     UntaggedIn,
     UntaggedMatch,
     UntaggedRead,
@@ -135,6 +137,17 @@ def void_payment(
     """Owner only: mark a wrongly recorded payment void. It stays on record."""
     order = orders.get_order(db, order_id)
     return to_read(orders.void_payment(db, order, payment_id, data.reason, actor))
+
+
+@router.post(
+    "/{order_id}/receipt-sent", response_model=OrderRead, status_code=status.HTTP_201_CREATED
+)
+def record_receipt_sent(
+    order_id: int, data: ReceiptSendIn, db: DbSession, actor: CurrentOwner
+) -> OrderRead:
+    """The worker confirms the receipt went to the customer ("Sudah hantar")."""
+    order = orders.get_order(db, order_id)
+    return to_read(orders.record_receipt_sent(db, order, data.channel, actor))
 
 
 @router.get("/{order_id}/receipt", response_model=ReceiptRead)
@@ -324,6 +337,14 @@ def to_read(order: Order) -> OrderRead:
             for p in order.payments
         ],
         items=[_item_read(order, item) for item in orders.live_items(order)],
+        receipt_sends=[
+            ReceiptSendRead(
+                sent_at=r.sent_at,
+                sent_by=r.sent_by.name if r.sent_by else None,
+                channel=r.channel,
+            )
+            for r in order.receipt_sends
+        ],
         cancelled_items=[
             _item_read(order, item) for item in order.items if item.cancelled_on is not None
         ],

@@ -141,6 +141,10 @@ export type OrderItem = {
   cancel_reason?: string | null
 }
 
+export type ReceiptChannel = 'whatsapp' | 'image' | 'pdf'
+
+export type ReceiptSend = { sent_at: string; sent_by: string | null; channel: ReceiptChannel }
+
 /** An item on the washing or packing list, with its order. */
 export type WorkItem = OrderItem & {
   order_id: number
@@ -182,6 +186,7 @@ export type Order = {
   balance: string
   items: OrderItem[] // what the customer still wants
   cancelled_items: OrderItem[] // dropped by the customer: kept, crossed out, tags unchanged
+  receipt_sends: ReceiptSend[] // each time a worker confirmed the receipt went out, oldest first
   payments: Payment[]
   events: { status: OrderStatus; item_tag: string | null; note: string | null; by: string | null; at: string }[]
   created_at: string

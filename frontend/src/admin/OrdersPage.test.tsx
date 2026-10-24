@@ -113,6 +113,7 @@ function order(overrides: Partial<Order> = {}): Order {
       { id: 1, amount: '50.00', method: 'transfer', paid_on: '2026-10-10', note: 'Deposit', received_by: 'Pekerja', voided: false, void_reason: null },
     ],
     cancelled_items: [],
+    receipt_sends: [],
     created_at: '2026-10-10T02:00:00Z',
     ...overrides,
   }
@@ -992,6 +993,74 @@ describe('cancelling one item', () => {
 
     expect(await screen.findByText('Lebihan bayar, perlu dipulangkan')).toBeInTheDocument()
     expect(screen.getByText('RM156.00')).toBeInTheDocument()
+  })
+})
+
+describe('receipt sent', () => {
+  const sent = { sent_at: '2026-10-24T02:15:00Z', sent_by: 'Amir', channel: 'whatsapp' as const }
+
+  it('asks after WhatsApp opens and records "Ya, sudah"', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+      'POST /api/orders/7/receipt-sent': () => ({ status: 201, body: order({ receipt_sends: [sent] }) }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText('Resit belum dihantar')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'WhatsApp: resit' }))
+    const ask = screen.getByRole('group', { name: 'Sudah hantar resit?' })
+    expect(ask).toHaveTextContent('Sudah hantar resit kepada Ali?')
+    await user.click(within(ask).getByRole('button', { name: 'Ya, sudah' }))
+
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ channel: 'whatsapp' })
+    expect(await screen.findByText(/Resit dihantar .* \(Amir\)/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Sudah hantar resit?' })).toBeNull()
+  })
+
+  it('records nothing when the worker says "Belum"', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    await user.click(await screen.findByRole('link', { name: 'WhatsApp: resit' }))
+    await user.click(screen.getByRole('button', { name: 'Belum' }))
+
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    expect(screen.getByText('Resit belum dihantar')).toBeInTheDocument()
+  })
+
+  it('shows in the book which customers already have their receipt', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({
+        body: [order({ receipt_sends: [sent] }), order({ id: 8, number: 413, code: '413', customer: { ...order().customer, id: 4, name: 'Siti' } })],
+      }),
+    })
+    renderSignedIn()
+
+    expect(await screen.findByRole('row', { name: /Pesanan 412/ })).toHaveTextContent(/Resit dihantar .* \(Amir\)/)
+    expect(screen.getByRole('row', { name: /Pesanan 413/ })).toHaveTextContent('Resit belum dihantar')
+  })
+
+  it('offers to send again on the receipt page once sent, and asks after a PDF too', async () => {
+    vi.stubGlobal('print', vi.fn())
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [order({ receipt_sends: [sent] })] }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ receipt_sends: [sent] }) }),
+    })
+    const user = renderSignedIn('#/orders/7/resit')
+
+    expect(await screen.findByRole('link', { name: 'Hantar semula resit melalui WhatsApp' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Cetak \/ simpan PDF/ }))
+    expect(screen.getByRole('group', { name: 'Sudah hantar resit?' })).toBeInTheDocument()
   })
 })
 

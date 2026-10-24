@@ -97,6 +97,14 @@ class PaymentMethod(StrEnum):
     DUITNOW = "duitnow"  # DuitNow QR or an e-wallet
 
 
+class ReceiptChannel(StrEnum):
+    """How a receipt reached the customer."""
+
+    WHATSAPP = "whatsapp"  # the WhatsApp message with the receipt
+    IMAGE = "image"  # the receipt as a JPEG picture
+    PDF = "pdf"  # printed or saved as a PDF
+
+
 class ReturnMethod(StrEnum):
     PICKUP = "pickup"  # the customer collects from the shop
     DELIVERY = "delivery"  # we deliver
@@ -455,6 +463,12 @@ class Order(TimestampMixin, Base):
         passive_deletes=True,
         order_by="Payment.id",
     )
+    receipt_sends: Mapped[list["ReceiptSend"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReceiptSend.id",
+    )
 
 
 class OrderItem(Base):
@@ -544,6 +558,22 @@ class UntaggedItem(Base):
 
     found_by: Mapped["Owner | None"] = relationship(foreign_keys=[found_by_id])
     matched_by: Mapped["Owner | None"] = relationship(foreign_keys=[matched_by_id])
+
+
+class ReceiptSend(Base):
+    """A worker confirmed the receipt went to the customer ("Sudah hantar"). The dashboard
+    can't see inside WhatsApp, so it asks after the message opens instead of assuming."""
+
+    __tablename__ = "receipt_sends"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    channel: Mapped[ReceiptChannel] = mapped_column(str_enum(ReceiptChannel, "receipt_channel"))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+
+    order: Mapped[Order] = relationship(back_populates="receipt_sends")
+    sent_by: Mapped["Owner | None"] = relationship()
 
 
 class Payment(Base):
