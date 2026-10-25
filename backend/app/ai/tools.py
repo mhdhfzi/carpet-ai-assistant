@@ -146,6 +146,7 @@ def get_services(ctx: ToolContext, _: NoInput) -> dict[str, Any]:
                 "description": s.description,
             }
             for s in catalog.list_services(ctx.db)
+            if not s.custom  # "Lain-lain" is priced on the order, never quoted
         ]
     }
 

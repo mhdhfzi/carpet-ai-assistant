@@ -411,7 +411,7 @@ export function PackPage() {
   const { move, busy, notice, setNotice } = useMove(work.reload)
 
   const pack = (item: WorkItem) => {
-    const fold = folds[item.id]
+    const fold = folds[item.id] ?? item.fold ?? undefined
     if (item.service.needs_fold && !fold) {
       setNotice({ ok: false, text: `Pilih Gulung atau Lipat untuk karpet velvet ${item.tag} dulu.` })
       return
@@ -498,7 +498,7 @@ export function PackPage() {
                                 key={fold}
                                 type="button"
                                 role="radio"
-                                aria-checked={folds[item.id] === fold}
+                                aria-checked={(folds[item.id] ?? item.fold) === fold}
                                 onClick={() => setFolds({ ...folds, [item.id]: fold })}
                                 className="rounded border border-purple-300 bg-white px-3 py-1 text-xs font-bold text-purple-800 uppercase transition hover:bg-purple-50 aria-checked:border-purple-700 aria-checked:bg-purple-700 aria-checked:text-white"
                               >

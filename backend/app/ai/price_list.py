@@ -24,7 +24,7 @@ def price_list_chunks(services: Iterable[Service]) -> list[Chunk]:
     return [
         Chunk(SOURCE, TITLE, service.name, describe_service(service))
         for service in services
-        if service.is_active
+        if service.is_active and not service.custom  # "Lain-lain" has no price to quote
     ]
 
 

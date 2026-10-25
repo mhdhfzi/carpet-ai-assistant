@@ -1,4 +1,4 @@
-import { formatMoney } from './format'
+import { FOLD_LABEL, formatMoney } from './format'
 import { type ItemRow, emptyRow, rowPrice } from './itemRows'
 import type { Service } from './types'
 
@@ -93,12 +93,37 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }:
               )
             )}
 
-            {isOwner && service && (
+            {service?.needs_fold && (
+              <div role="radiogroup" aria-label={`Gulung atau lipat ${label}`} className="space-y-1">
+                <p className="text-sm font-semibold">
+                  Cara pack <span className="font-normal text-ink-soft">(wajib)</span>
+                </p>
+                <div className="flex gap-2">
+                  {(['rolled', 'folded'] as const).map((fold) => (
+                    <button
+                      key={fold}
+                      type="button"
+                      role="radio"
+                      aria-checked={row.fold === fold}
+                      onClick={() => update(row.key, { fold })}
+                      className="flex-1 rounded-xl border border-purple-300 py-2.5 text-sm font-bold text-purple-800 aria-checked:border-purple-700 aria-checked:bg-purple-700 aria-checked:text-white"
+                    >
+                      {FOLD_LABEL[fold]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* "Lain-lain" is priced by whoever takes the order; list prices are the owner's. */}
+            {(isOwner || service?.custom) && service && (
               <NumberField
                 label={
-                  service.unit_price_max
-                    ? `Harga seunit (RM${service.unit_price}–RM${service.unit_price_max})`
-                    : `Harga seunit (biasa RM${service.unit_price})`
+                  service.custom
+                    ? 'Harga seunit (RM)'
+                    : service.unit_price_max
+                      ? `Harga seunit (RM${service.unit_price}–RM${service.unit_price_max})`
+                      : `Harga seunit (biasa RM${service.unit_price})`
                 }
                 value={row.unitPrice}
                 onChange={(v) => update(row.key, { unitPrice: v })}
@@ -106,11 +131,13 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }:
             )}
 
             <label className="block space-y-1">
-              <span className="text-sm font-semibold">Catatan (pilihan)</span>
+              <span className="text-sm font-semibold">
+                {service?.custom ? 'Kerja apa (wajib)' : 'Catatan (pilihan)'}
+              </span>
               <input
                 value={row.notes}
                 onChange={(e) => update(row.key, { notes: e.target.value })}
-                placeholder="cth. tompok kopi di tepi"
+                placeholder={service?.custom ? 'cth. Cuci langsir 3 helai' : 'cth. tompok kopi di tepi'}
                 className="w-full rounded-xl bg-foam px-3 py-3"
               />
             </label>
@@ -119,7 +146,9 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }:
               <p className="text-sm text-ink-soft" aria-live="polite">
                 {isCarpet && units > 0 && `${Math.round(units * 100) / 100} kaki persegi · `}
                 {total === null
-                  ? service.unit_price_max
+                  ? service.custom
+                    ? 'Masukkan harga'
+                    : service.unit_price_max
                     ? 'Harga ditetapkan oleh pemilik selepas diperiksa'
                     : isCarpet
                       ? 'Saiz boleh diisi semasa cuci; harga dikira selepas itu'

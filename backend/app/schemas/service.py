@@ -61,6 +61,8 @@ class ServiceRead(BaseModel):
     description: str
     pricing_unit: PricingUnit
     on_site: bool
+    needs_fold: bool  # velvet: packed rolled (gulung) or folded (lipat)
+    custom: bool  # "Lain-lain": described and priced when the order is taken
     unit_price: Decimal
     unit_price_max: Decimal | None
     minimum_charge: Decimal

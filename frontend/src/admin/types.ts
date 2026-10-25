@@ -110,6 +110,8 @@ export type Service = {
   unit_price: string
   unit_price_max: string | null
   on_site: boolean // done at the customer's home: no washing or packing forms
+  needs_fold: boolean // velvet: gulung or lipat, chosen with the order
+  custom: boolean // "Lain-lain": described and priced when the order is taken
   is_active: boolean
 }
 
@@ -119,7 +121,7 @@ export type OrderItem = {
   id: number
   position: number
   tag: string
-  service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean; on_site: boolean }
+  service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean; on_site: boolean; custom?: boolean }
   length_ft: string | null
   width_ft: string | null
   quantity: string | null // null: a carpet not measured yet (measured when washed)

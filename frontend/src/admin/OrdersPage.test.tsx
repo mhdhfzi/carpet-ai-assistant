@@ -46,9 +46,9 @@ const REAL_BUSINESS = {
 const me = (role: 'owner' | 'staff') => () => ({ body: { id: 1, email: 'x@example.com', name: role === 'owner' ? 'Herman' : 'Pekerja', role } })
 
 const SERVICES: Service[] = [
-  { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', unit_price: '1.80', unit_price_max: null, on_site: false, is_active: true },
-  { id: 2, name: 'Karpet Handmade', pricing_unit: 'per_sqft', unit_price: '2.50', unit_price_max: '4.00', on_site: false, is_active: true },
-  { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', unit_price: '60.00', unit_price_max: null, on_site: true, is_active: true },
+  { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', unit_price: '1.80', unit_price_max: null, on_site: false, needs_fold: false, custom: false, is_active: true },
+  { id: 2, name: 'Karpet Handmade', pricing_unit: 'per_sqft', unit_price: '2.50', unit_price_max: '4.00', on_site: false, needs_fold: false, custom: false, is_active: true },
+  { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', unit_price: '60.00', unit_price_max: null, on_site: true, needs_fold: false, custom: false, is_active: true },
 ]
 
 const NEXT: Record<Order['status'], Order['next_status']> = {
@@ -1061,6 +1061,101 @@ describe('receipt sent', () => {
     expect(await screen.findByRole('link', { name: 'Hantar semula resit melalui WhatsApp' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Cetak \/ simpan PDF/ }))
     expect(screen.getByRole('group', { name: 'Sudah hantar resit?' })).toBeInTheDocument()
+  })
+})
+
+describe('order form', () => {
+  const VELVET: Service = { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', unit_price: '0.90', unit_price_max: null, on_site: false, needs_fold: true, custom: false, is_active: true }
+  const OTHER: Service = { id: 5, name: 'Lain-lain', pricing_unit: 'per_item', unit_price: '0.00', unit_price_max: null, on_site: true, needs_fold: false, custom: true, is_active: true }
+
+  it('asks gulung or lipat for velvet before saving, and drops the sen from the total', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: [...SERVICES, VELVET] }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Velvet')
+    await user.type(screen.getByLabelText('Panjang (kaki)'), '6')
+    await user.type(screen.getByLabelText('Lebar (kaki)'), '7')
+
+    expect(screen.getByText('42 kaki persegi · RM37.80')).toBeInTheDocument()
+    expect(screen.getByText('Pembundaran (sen dibuang)').nextSibling).toHaveTextContent('RM0.80')
+    expect(screen.getByText(/^Jumlah/).nextSibling).toHaveTextContent('RM37.00')
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('pilih Gulung atau Lipat untuk Karpet Velvet')
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+
+    await user.click(within(screen.getByRole('radiogroup', { name: /Gulung atau lipat/ })).getByRole('radio', { name: 'Gulung' }))
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
+    expect(posted.items[0]).toMatchObject({ service_id: 4, fold: 'rolled' })
+  })
+
+  it('lets staff describe and price "Lain-lain"', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: [...SERVICES, OTHER] }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new?jenis=luar')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Lain-lain')
+    await user.type(screen.getByLabelText('Kuantiti'), '3')
+    await user.type(screen.getByLabelText('Harga seunit (RM)'), '25') // staff may, for Lain-lain
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('tulis kerja apa untuk Lain-lain')
+
+    await user.type(screen.getByLabelText('Kerja apa (wajib)'), 'Cuci langsir')
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
+    expect(posted.items[0]).toMatchObject({ service_id: 5, quantity: '3', unit_price: '25', notes: 'Cuci langsir' })
+  })
+
+  it('edits a kerja luar order with only kerja luar services, and the owner gives a discount', async () => {
+    const sofa = { ...order().items[0], service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3.00', unit_price: '60.00', line_total: '180.00', tag: 'L412-1', notes: null }
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: [...SERVICES, OTHER] }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ kind: 'on_site', code: 'L412', items: [sofa] }) }),
+      'PATCH /api/orders/7': () => ({ body: order({ kind: 'on_site', code: 'L412', items: [sofa], discount: '20.00' }) }),
+    })
+    const user = renderSignedIn('#/orders/7?ubah')
+
+    const kinds = within(await screen.findByRole('group', { name: 'Barang L412-1' })).getByLabelText('Jenis')
+    expect([...kinds.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Pilih jenis…', 'Cucian Sofa', 'Lain-lain'])
+    await user.type(screen.getByLabelText('Diskaun (RM)'), '20')
+    await user.click(screen.getByRole('button', { name: 'Simpan barang' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true))
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({ discount: '20' })
+  })
+
+  it('has no discount box for staff when editing items', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+    })
+    renderSignedIn('#/orders/7?ubah')
+
+    expect(await screen.findByRole('button', { name: 'Simpan barang' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Diskaun (RM)')).toBeNull()
   })
 })
 
