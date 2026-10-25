@@ -527,17 +527,18 @@ def test_a_finished_order_s_carpets_cannot_move(
 # --- Washing and packing forms --------------------------------------------------------------
 
 
-def velvet_order(client: TestClient, services: dict[str, int]) -> dict:
+def velvet_order(client: TestClient, services: dict[str, int], fold: str = "rolled") -> dict:
     response = client.post(
         "/api/orders",
         json={
             "customer": ALI,
             "items": [
-                carpet(services, "Karpet Velvet", "5", "8"),
+                carpet(services, "Karpet Velvet", "5", "8", fold=fold),
                 carpet(services, "Karpet Biasa", "8", "10"),
             ],
         },
     )
+    assert response.status_code == 201, response.text
     return response.json()
 
 
@@ -560,33 +561,45 @@ def test_washing_and_packing_record_the_day_and_who_did_it(
     assert (packed["ready_on"], packed["packed_by"]) == (TODAY.isoformat(), "Worker")
 
 
-def test_a_velvet_carpet_is_packed_rolled_or_folded(
+def test_velvet_says_gulung_or_lipat_when_the_order_is_taken(
     staff_client: TestClient, services: dict[str, int]
 ) -> None:
-    order = velvet_order(staff_client, services)
-    staff_client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
-
-    unsaid = pack(staff_client, order, 1)
-    rolled = pack(staff_client, order, 1, "rolled").json()
-    other = pack(staff_client, order, 2, "folded").json()
+    unsaid = staff_client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [carpet(services, "Karpet Premium Velvet", "5", "8")]},
+    )
+    order = velvet_order(staff_client, services, fold="rolled")
 
     assert unsaid.status_code == 422
-    assert "1-1" in unsaid.json()["detail"]
-    assert rolled["items"][0]["fold"] == "rolled"
-    assert rolled["items"][0]["service"]["needs_fold"] is True
-    assert other["items"][1]["fold"] is None  # only velvet is rolled or folded
+    assert "gulung or lipat" in unsaid.json()["detail"]
+    assert [i["fold"] for i in order["items"]] == ["rolled", None]  # only velvet
 
 
-def test_the_whole_order_cannot_be_packed_without_choosing_for_velvet(
+def test_packing_keeps_the_fold_chosen_with_the_order_unless_the_packer_changes_it(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = velvet_order(staff_client, services, fold="rolled")
+    staff_client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
+
+    as_chosen = pack(staff_client, order, 1).json()
+    other = velvet_order(staff_client, services, fold="rolled")
+    staff_client.patch(f"/api/orders/{other['id']}", json={"status": "washed"})
+    changed = pack(staff_client, other, 1, "folded").json()
+
+    assert as_chosen["items"][0]["fold"] == "rolled"
+    assert changed["items"][0]["fold"] == "folded"
+
+
+def test_the_whole_order_is_packed_in_one_go_once_velvet_s_fold_is_known(
     client: TestClient, services: dict[str, int]
 ) -> None:
-    order = velvet_order(client, services)
+    order = velvet_order(client, services, fold="folded")
     client.patch(f"/api/orders/{order['id']}", json={"status": "washed"})
 
-    response = client.patch(f"/api/orders/{order['id']}", json={"status": "ready"})
+    packed = client.patch(f"/api/orders/{order['id']}", json={"status": "ready"}).json()
 
-    assert response.status_code == 422
-    assert client.get(f"/api/orders/{order['id']}").json()["status"] == "washed"
+    assert packed["status"] == "ready"
+    assert packed["items"][0]["fold"] == "folded"
 
 
 def test_going_back_clears_the_packing_record(client: TestClient, services: dict[str, int]) -> None:
@@ -600,7 +613,7 @@ def test_going_back_clears_the_packing_record(client: TestClient, services: dict
         "washed",
         None,
         None,
-        None,
+        "folded",  # chosen with the order: it stays
     )
     assert back["washed_on"] == TODAY.isoformat()  # the wash still happened
 
@@ -1137,3 +1150,66 @@ def test_a_worker_confirms_the_receipt_was_sent(
     # A cancelled order has nothing to send.
     client.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
     assert client.post(url, json={"channel": "whatsapp"}).status_code == 422
+
+
+# --- Whole ringgit ---------------------------------------------------------------------------
+
+
+def test_the_total_drops_the_sen(client: TestClient, services: dict[str, int]) -> None:
+    order = client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [carpet(services, "Karpet Velvet", "6", "7", fold="rolled")],  # 42 x 0.90
+        },
+    ).json()
+
+    assert order["items"][0]["line_total"] == "37.80"  # each line keeps its real price
+    assert (order["subtotal"], order["total"], order["balance"]) == ("37.80", "37.00", "37.00")
+    paid = client.post(
+        f"/api/orders/{order['id']}/payments", json={"amount": "37.00", "method": "cash"}
+    ).json()
+    assert paid["balance"] == "0.00"
+
+
+# --- Lain-lain -------------------------------------------------------------------------------
+
+
+def test_lain_lain_is_described_and_priced_by_whoever_takes_the_order(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    other = services["Lain-lain"]
+    unsaid = staff_client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [{"service_id": other, "quantity": "1"}]},
+    )
+    pending = staff_client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [{"service_id": other, "quantity": "3", "notes": "Cuci langsir"}],
+        },
+    ).json()
+    priced = staff_client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [
+                {"service_id": other, "quantity": "3", "notes": "Cuci langsir", "unit_price": "25"}
+            ],
+        },
+    ).json()
+    sofa_priced = staff_client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [{**counted(services, "Cucian Sofa", 2), "unit_price": "50"}],
+        },
+    )
+
+    assert unsaid.status_code == 422
+    assert "what the job is" in unsaid.json()["detail"]
+    assert (pending["kind"], pending["price_pending"]) == ("on_site", True)
+    assert (priced["total"], priced["items"][0]["notes"]) == ("75.00", "Cuci langsir")
+    assert priced["items"][0]["service"]["custom"] is True
+    assert sofa_priced.status_code == 403  # list prices stay the owner's call

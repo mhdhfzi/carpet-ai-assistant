@@ -117,6 +117,16 @@ SERVICES: list[dict] = [
         "100.00",
     ),
     car("Cucian Karpet Kaki Kereta", "Car foot mat cleaning, priced per car.", "30.00", "80.00"),
+    # Anything else done at a customer's home: described and priced when the order is taken.
+    {
+        "name": "Lain-lain",
+        "description": "Other work at the customer's home, described and priced on the order.",
+        "pricing_unit": PricingUnit.PER_ITEM,
+        "unit_price": D("0.00"),
+        "visit_minutes": 120,
+        "on_site": True,
+        "custom": True,
+    },
     # Mosque/surau/office carpets are quoted after a site visit, so they have no catalogue
     # price (the assistant sends those requests to the owner).
 ]
@@ -137,6 +147,7 @@ def seed_services(db: Session) -> tuple[int, int]:
             "minimum_charge": D("0"),
             "needs_fold": False,
             "on_site": False,
+            "custom": False,
             "is_active": True,
             **data,
         }

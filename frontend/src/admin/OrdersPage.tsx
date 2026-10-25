@@ -13,6 +13,7 @@ import {
   isHomeJob,
   readyToPack,
   todayInMalaysia,
+  FOLD_LABEL,
 } from './format'
 import { ArrowIcon, BellIcon, CheckIcon, PhoneIcon, PlusIcon, ReceiptIcon, SearchIcon } from './icons'
 import { notifyWorkChanged } from './summary'
@@ -268,6 +269,7 @@ function BookRow({
                 <span className="font-mono font-bold text-slate-700">{item.tag}:</span>{' '}
                 <span className={`font-semibold ${item.service.needs_fold ? 'text-purple-700' : 'text-slate-800'}`}>
                   {item.service.name}
+                  {item.fold && ` (${FOLD_LABEL[item.fold]})`}
                 </span>{' '}
                 <span className="text-slate-500">({formatSize(item)})</span>
                 {item.wash_note && (

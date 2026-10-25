@@ -30,9 +30,11 @@ class OrderItemIn(BaseModel):
     width_ft: Feet | None = None
     # Sofa seats, mattresses, cars; or square feet when the size isn't known as L x W.
     quantity: Annotated[Decimal, Field(gt=0, max_digits=10, decimal_places=2)] | None = None
-    # Owner only. Unset = the price list's price (handmade carpet: set after inspection).
+    # Owner only (anyone for "Lain-lain"). Unset = the price list's price, or the price it
+    # already has when editing (handmade carpet: set after inspection).
     unit_price: Amount | None = None
-    notes: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=500)  # "Lain-lain": what the job is
+    fold: ItemFold | None = None  # velvet: gulung or lipat, chosen when the order is taken
 
 
 class OrderCreate(BaseModel):
@@ -125,6 +127,7 @@ class OrderServiceRead(BaseModel):
     pricing_unit: PricingUnit
     needs_fold: bool  # velvet: packed rolled or folded
     on_site: bool  # done at the customer's home: no washing or packing forms
+    custom: bool = False  # "Lain-lain": the item's notes say what the job is
 
 
 class OrderItemRead(BaseModel):

@@ -21,6 +21,18 @@ export function formatDateTime(value: string): string {
   return dateTimeFormat.format(new Date(value))
 }
 
+/** The shop charges whole ringgit: the sen are dropped (37.80 -> 37), never below 0. The
+ * server decides for real; this is for the live preview on the order form. */
+export function wholeRinggit(amount: number): number {
+  return Math.max(Math.floor(Math.round(amount * 100) / 100), 0)
+}
+
+/** The sen dropped from an order's total (shown as "Pembundaran"), or 0. */
+export function roundingOf(order: { subtotal: string; discount: string; total: string }): number {
+  const before = Number(order.subtotal) - Number(order.discount)
+  return before > 0 ? Math.round((before - Number(order.total)) * 100) / 100 : 0
+}
+
 /** "RM180.00", or "RM250.00 – RM400.00" for a price range. */
 export function formatMoney(low: string, high: string = low): string {
   const rm = (value: string) => `RM${Number(value).toFixed(2)}`

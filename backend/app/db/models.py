@@ -151,6 +151,9 @@ class Service(TimestampMixin, Base):
     # Done at the customer's home in one visit (sofa, mattress, car seats): no washing or
     # packing form, just "done". Carpets (False) go through the shop.
     on_site: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # "Lain-lain": a job off the price list. Whoever takes the order describes it (the item's
+    # notes) and sets its price; the assistant never quotes it.
+    custom: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Customer(TimestampMixin, Base):

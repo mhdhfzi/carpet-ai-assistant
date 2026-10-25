@@ -20,9 +20,10 @@ import {
   isHomeJob,
   needsMeasuring,
   whatsAppUrl,
+  roundingOf,
 } from './format'
 import { ItemsEditor, NumberField } from './ItemsEditor'
-import { type ItemRow, rowsFromItems, rowsToInput } from './itemRows'
+import { type ItemRow, rowProblem, rowsFromItems, rowsToInput } from './itemRows'
 import {
   type ItemFold,
   type ItemStatus,
@@ -208,6 +209,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
                   <p className="font-semibold">
                     <span className="mr-2 rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-white">{item.tag}</span>
                     {item.service.name}
+                    {item.fold && <span className="ml-1 text-sm font-normal text-purple-800">({FOLD_LABEL[item.fold]})</span>}
                   </p>
                   <p className="text-sm text-ink-soft">
                     {formatSize(item)}
@@ -368,6 +370,7 @@ function Payments({
       <div className="space-y-1">
         <Row label="Jumlah barang" value={formatMoney(order.subtotal)} />
         {Number(order.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(order.discount)}`} />}
+        {roundingOf(order) > 0 && <Row label="Pembundaran (sen dibuang)" value={`− ${formatMoney(roundingOf(order).toFixed(2))}`} />}
         <Row label={order.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(order.total)} strong />
         <Row label="Sudah dibayar" value={formatMoney(order.paid)} />
         {owed < 0 ? (
@@ -643,9 +646,24 @@ function EditItems({
   onSave: (changes: Record<string, unknown>) => Promise<void>
   onCancelItem: (itemId: number, reason: string) => Promise<void>
 }) {
-  const services = useServices()
+  const all = useServices()
   const [rows, setRows] = useState<ItemRow[]>(() => rowsFromItems(order.items))
-  if (services === null) return <p className="text-ink-soft">Memuatkan…</p>
+  const [discount, setDiscount] = useState(Number(order.discount) > 0 ? String(Number(order.discount)) : '')
+  const [problem, setProblem] = useState<string | null>(null)
+  if (all === null) return <p className="text-ink-soft">Memuatkan…</p>
+  // Only this book's services: carpets in Buku Utama, kerja luar in Buku Kerja Luar.
+  const services = all.filter((s) => s.on_site === (order.kind === 'on_site'))
+  const saveItems = () => {
+    const missing = rows
+      .map((row) => rowProblem(row, services.find((s) => s.id === row.serviceId), row.tag ? `Barang ${row.tag}` : 'Barang baru'))
+      .find(Boolean)
+    setProblem(missing ?? null)
+    if (missing) return
+    void onSave({
+      items: rowsToInput(rows),
+      ...(isOwner && discount !== (Number(order.discount) > 0 ? String(Number(order.discount)) : '') ? { discount: discount || '0' } : {}),
+    })
+  }
   const cancelItem = (row: ItemRow) => {
     const name = services.find((s) => s.id === row.serviceId)?.name ?? ''
     const reason = window.prompt(`Batalkan ${row.tag} ${name}? Tulis sebab (cth. harga mahal):`)
@@ -656,8 +674,18 @@ function EditItems({
       <h2 className="font-semibold">Ubah barang</h2>
       <p className="text-sm text-ink-soft">Pelanggan tak mahu satu barang? Tekan "Batal barang": nombor tag yang lain kekal.</p>
       <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} onCancelItem={cancelItem} />
+      {isOwner && (
+        <div className="rounded-2xl bg-white p-4 ring-1 ring-line">
+          <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />
+        </div>
+      )}
+      {problem && (
+        <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger ring-1 ring-red-200">
+          {problem}
+        </p>
+      )}
       <div className="flex gap-3">
-        <button type="button" disabled={busy} onClick={() => onSave({ items: rowsToInput(rows) })} className="flex-1 rounded-full bg-brand py-3 font-semibold disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={saveItems} className="flex-1 rounded-full bg-brand py-3 font-semibold disabled:opacity-50">
           Simpan barang
         </button>
         <button type="button" onClick={onCancel} className="rounded-full px-5 py-3 font-semibold ring-1 ring-line">

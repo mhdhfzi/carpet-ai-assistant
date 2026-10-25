@@ -18,9 +18,9 @@ Rules live here, not in the dashboard, so they hold whoever calls the API:
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import cast, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import clock
@@ -29,6 +29,7 @@ from app.db.models import (
     Customer,
     ItemFold,
     ItemStatus,
+    Money,
     Order,
     OrderEvent,
     OrderItem,
@@ -302,7 +303,7 @@ def _order_value_and_owed():
         .where(Payment.order_id == Order.id, Payment.voided_at.is_(None))
         .scalar_subquery()
     )
-    value = func.greatest(items - Order.discount, 0)
+    value = cast(func.floor(func.greatest(items - Order.discount, 0)), Money)  # whole ringgit
     return value, func.greatest(value - paid, 0)
 
 
@@ -373,10 +374,15 @@ def live_items(order: Order) -> list[OrderItem]:
 def totals(order: Order) -> Totals:
     lines = [line_total(item) for item in live_items(order)]
     subtotal = sum((line for line in lines if line is not None), Decimal("0"))
-    total = max(subtotal - order.discount, Decimal("0"))
+    total = whole_ringgit(subtotal - order.discount)
     paid = sum((p.amount for p in order.payments if p.voided_at is None), Decimal("0"))
     pending = any(line is None for line in lines)
     return Totals(subtotal, total, paid, total - paid, pending)
+
+
+def whole_ringgit(amount: Decimal) -> Decimal:
+    """The shop charges whole ringgit: the sen are dropped (RM37.80 -> RM37), never below 0."""
+    return max(amount, Decimal("0")).to_integral_value(ROUND_FLOOR).quantize(CENT)
 
 
 def line_total(item: OrderItem) -> Decimal | None:
@@ -467,7 +473,9 @@ def list_customers(
         .group_by(Payment.order_id)
         .subquery()
     )
-    value = func.greatest(func.coalesce(lines.c["items"], 0) - Order.discount, 0)
+    value = cast(
+        func.floor(func.greatest(func.coalesce(lines.c["items"], 0) - Order.discount, 0)), Money
+    )
     owed = func.greatest(value - func.coalesce(paid.c.paid, 0), 0)
     counted = Order.status != OrderStatus.CANCELLED
     query = (
@@ -750,7 +758,8 @@ def _move_item(
             f"{_tag(item)}: measure the carpet (length x width) when marking it washed"
         )
     packing = reached >= 2 and item.ready_on is None
-    fold = fold if item.service.needs_fold else None
+    # Velvet: gulung or lipat was chosen with the order; the packer may change it.
+    fold = (fold or item.fold) if item.service.needs_fold else None
     if packing and item.service.needs_fold and fold is None:
         raise BusinessRuleError(
             f"{_tag(item)}: {item.service.name} is packed rolled or folded; "
@@ -762,7 +771,7 @@ def _move_item(
     elif item.washed_on is None:
         item.washed_on, item.washed_by_id = today(), actor.id
     if reached < 2:
-        item.ready_on = item.packed_by_id = item.fold = None
+        item.ready_on = item.packed_by_id = None  # the fold stays: it was chosen with the order
     elif packing:
         item.ready_on, item.packed_by_id, item.fold = today(), actor.id, fold
 
@@ -844,12 +853,7 @@ def _update_item(db: Session, item: OrderItem, data: OrderItemIn, actor: Owner) 
     if service is None:
         raise NotFoundError(f"Service {data.service_id} not found")
     quantity, length, width = _quantity(service, data)
-    if data.unit_price is not None:
-        _owner_only(actor, "set a price")
-        item.unit_price = data.unit_price
-    elif service.id != item.service_id:
-        # Another service: its price from the price list (a range waits for the owner).
-        item.unit_price = service.unit_price if service.unit_price_max is None else None
+    item.unit_price, item.fold = _price_and_fold(service, data, actor, before=item)
     item.service = service
     item.length_ft, item.width_ft, item.quantity = length, width, quantity
     item.notes = data.notes
@@ -934,12 +938,7 @@ def _build_items(
         if service is None:
             raise NotFoundError(f"Service {data.service_id} not found")
         quantity, length, width = _quantity(service, data)
-        if data.unit_price is not None:
-            _owner_only(actor, "set a price")
-            unit_price = data.unit_price
-        else:
-            # A fixed price comes from the price list; a range (handmade) waits for the owner.
-            unit_price = service.unit_price if service.unit_price_max is None else None
+        unit_price, fold = _price_and_fold(service, data, actor)
         built.append(
             OrderItem(
                 position=position,
@@ -949,12 +948,39 @@ def _build_items(
                 quantity=quantity,
                 unit_price=unit_price,
                 notes=data.notes,
+                fold=fold,
                 # Set here, not left to the column default: the order's step is worked out
                 # from its items before they're saved.
                 status=ItemStatus.RECEIVED,
             )
         )
     return built
+
+
+def _price_and_fold(
+    service: Service, data: OrderItemIn, actor: Owner, before: OrderItem | None = None
+) -> tuple[Decimal | None, ItemFold | None]:
+    """An item's price and (velvet) fold, from what was entered.
+
+    Price: one typed in is the owner's call, except for "Lain-lain", which whoever takes the
+    order prices (they're at the customer's house). Otherwise an item keeps its price when
+    edited, or takes the price list's; a range (handmade) or "Lain-lain" waits to be priced.
+    Velvet must say gulung or lipat, and "Lain-lain" what the job is."""
+    if service.needs_fold and data.fold is None:
+        raise BusinessRuleError(f"{service.name}: choose gulung or lipat")
+    if service.custom and not (data.notes and data.notes.strip()):
+        raise BusinessRuleError(f"{service.name}: write what the job is")
+    if data.unit_price is not None:
+        if not service.custom:
+            _owner_only(actor, "set a price")
+        price = data.unit_price
+    elif before is not None and before.service_id == service.id:
+        price = before.unit_price
+    elif service.custom or service.unit_price_max is not None:
+        price = None
+    else:
+        price = service.unit_price
+    return price, data.fold if service.needs_fold else None
 
 
 def _quantity(

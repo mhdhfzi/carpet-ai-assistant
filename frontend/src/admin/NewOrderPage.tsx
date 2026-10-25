@@ -2,8 +2,8 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { ItemsEditor, NumberField } from './ItemsEditor'
-import { type ItemRow, emptyRow, rowPrice, rowsToInput } from './itemRows'
-import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia } from './format'
+import { type ItemRow, emptyRow, rowPrice, rowsToInput, rowProblem } from './itemRows'
+import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia, wholeRinggit } from './format'
 import type { CustomerSummary, Order, OrderKind, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
@@ -65,10 +65,19 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
   // Sofa, mattress and car seat jobs are done at the customer's home: when is the visit?
   const offered = (services ?? []).filter((s) => s.on_site === luar)
   const subtotal = lines.reduce((sum, l) => sum + (l.total ?? 0), 0)
-  const total = Math.max(subtotal - Number(discount || 0), 0)
+  const total = wholeRinggit(subtotal - Number(discount || 0))
+  const rounding = Math.round((Math.max(subtotal - Number(discount || 0), 0) - total) * 100) / 100
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    // Velvet needs gulung or lipat, "Lain-lain" what the job is: say so before saving.
+    const problem = rows
+      .map((row, i) => rowProblem(row, row.serviceId === null ? undefined : byId.get(row.serviceId), `Barang ${i + 1}`))
+      .find(Boolean)
+    if (problem) {
+      setError(problem)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -175,6 +184,12 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
       </section>
 
       <div className="sticky bottom-0 space-y-3 border-t border-line bg-mist py-4">
+        {rounding > 0 && (
+          <p className="flex justify-between text-sm text-ink-soft">
+            <span>Pembundaran (sen dibuang)</span>
+            <span>− {formatMoney(rounding.toFixed(2))}</span>
+          </p>
+        )}
         <p className="flex justify-between text-lg font-semibold">
           <span>Jumlah{pending && ' (belum lengkap)'}</span>
           <span>{formatMoney(String(total))}</span>

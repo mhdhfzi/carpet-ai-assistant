@@ -2,7 +2,7 @@ import { toJpeg } from 'html-to-image'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from './auth'
 import { useBusiness } from './business'
-import { formatMoney, formatShortDate, formatSize, whatsAppUrl } from './format'
+import { formatMoney, formatShortDate, formatSize, roundingOf, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
 import { QrPayButton } from './QrPay'
 import { ReceiptSentLine, lastSend, useReceiptSent } from './ReceiptSent'
@@ -373,8 +373,10 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
         )}
         <div className="space-y-1 text-sm">
           <Total label="Jumlah harga" value={order.subtotal} strong />
-          <Total label="Deposit / dibayar" value={order.paid} />
           {Number(order.discount) > 0 && <Total label="Diskaun" value={order.discount} />}
+          {roundingOf(order) > 0 && <Total label="Pembundaran" value={roundingOf(order).toFixed(2)} />}
+          {(Number(order.discount) > 0 || roundingOf(order) > 0) && <Total label="Jumlah perlu dibayar" value={order.total} strong />}
+          <Total label="Deposit / dibayar" value={order.paid} />
           <Total label="Baki" value={Number(order.balance) > 0 ? order.balance : '0'} strong />
           {order.price_pending && <p className="text-xs text-slate-500">Sebahagian harga belum ditetapkan.</p>}
         </div>
