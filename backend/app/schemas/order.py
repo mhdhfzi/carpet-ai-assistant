@@ -134,6 +134,7 @@ class OrderItemRead(BaseModel):
     id: int
     position: int
     tag: str  # written on the carpet's tag, e.g. "412-2"
+    name: str = ""  # what the bill calls it: the service, or for "Lain-lain" what the job is
     service: OrderServiceRead
     length_ft: Decimal | None
     width_ft: Decimal | None
@@ -184,6 +185,11 @@ class OrderEventRead(BaseModel):
     at: datetime
 
 
+class OrderLinkRead(BaseModel):
+    id: int
+    code: str  # e.g. "L12"
+
+
 class OrderRead(BaseModel):
     id: int
     kind: OrderKind  # the carpet book or the kerja luar book
@@ -214,6 +220,7 @@ class OrderRead(BaseModel):
     # Dropped by the customer: shown crossed out on the order page only.
     cancelled_items: list[OrderItemRead] = []
     receipt_sends: list[ReceiptSendRead] = []  # each confirmed send, oldest first
+    bill_with: OrderLinkRead | None = None  # the other book's order on the same bill
     payments: list[PaymentRead]
     events: list[OrderEventRead]
     created_at: datetime
@@ -280,4 +287,5 @@ class ReceiptRead(BaseModel):
 
     business: ReceiptBusiness
     order: OrderRead
+    linked: OrderRead | None = None  # the other book's order on the same bill
     issued_on: date

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
+import { combinedBill } from './bill'
 import {
   ORDER_ACTION_LABEL,
   ORDER_STATUS_LABEL,
@@ -53,6 +54,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(edit) // opened from the book's "Ubah barang"
+  const [linked, setLinked] = useState<Order | null>(null) // the other book's order on the same bill
 
   useEffect(() => {
     let current = true
@@ -61,6 +63,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
       .then((data) => {
         if (!current) return
         setOrder(data.order)
+        setLinked(data.linked)
         setBusiness(data.business)
       })
       .catch(() => {
@@ -75,7 +78,10 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
     setBusy(true)
     setError(null)
     try {
-      setOrder(await request<Order>(`/api/orders/${id}${path}`, { method, body }))
+      const changed = await request<Order>(`/api/orders/${id}${path}`, { method, body })
+      setOrder(changed)
+      // A shared bill: the other order may have changed too (a payment is split across both).
+      setLinked(changed.bill_with ? (await request<Receipt>(`/api/orders/${id}/receipt`)).linked : null)
       notifyWorkChanged()
       setEditing(false)
     } catch (err) {
@@ -208,14 +214,14 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
                 <div className="min-w-0">
                   <p className="font-semibold">
                     <span className="mr-2 rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-white">{item.tag}</span>
-                    {item.service.name}
+                    {item.name}
                     {item.fold && <span className="ml-1 text-sm font-normal text-purple-800">({FOLD_LABEL[item.fold]})</span>}
                   </p>
                   <p className="text-sm text-ink-soft">
                     {formatSize(item)}
                     {item.service.pricing_unit === 'per_sqft' && item.quantity !== null && ` (${Number(item.quantity)} kaki persegi)`}
                   </p>
-                  {item.notes && <p className="text-sm">Catatan: {item.notes}</p>}
+                  {item.notes && !item.service.custom && <p className="text-sm">Catatan: {item.notes}</p>}
                 </div>
                 <p className="shrink-0 font-semibold">{item.line_total ? formatMoney(item.line_total) : needsMeasuring(item) ? 'Harga selepas diukur' : 'Harga belum ditetapkan'}</p>
                 </div>
@@ -233,7 +239,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
                 <div className="min-w-0">
                   <p className="font-semibold line-through">
                     <span className="mr-2 rounded bg-slate-300 px-1.5 py-0.5 font-mono text-xs text-slate-700">{item.tag}</span>
-                    {item.service.name}
+                    {item.name}
                   </p>
                   <p className="text-xs">
                     Dibatalkan{item.cancelled_on && ` ${formatDay(item.cancelled_on)}`}
@@ -267,8 +273,33 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
         </section>
       )}
 
+      {order.bill_with && (
+        <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-sky-50 p-4 ring-1 ring-sky-200">
+          <p className="text-sm">
+            <span className="font-semibold">Bil bersama</span> dengan{' '}
+            <a href={href({ page: 'order', id: order.bill_with.id })} className="font-semibold underline">
+              {order.kind === 'shop' ? 'kerja luar' : 'pesanan karpet'} {order.bill_with.code}
+            </a>
+            : satu resit, satu jumlah.
+          </p>
+          {isOwner && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Asingkan bil? Setiap pesanan akan ada resit sendiri.')) void send('/unlink-bill', 'POST', {})
+              }}
+              className="text-sm underline"
+            >
+              Asingkan bil
+            </button>
+          )}
+        </section>
+      )}
+
       <Payments
         order={order}
+        bill={combinedBill(order, linked)}
         isOwner={isOwner}
         busy={busy}
         business={business}
@@ -276,7 +307,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
         onVoid={(paymentId, reason) => send(`/payments/${paymentId}/void`, 'POST', { reason })}
       />
 
-      {business && <SendToCustomer order={order} business={business} onRecorded={setOrder} />}
+      {business && <SendToCustomer order={order} bill={combinedBill(order, linked)} business={business} onRecorded={setOrder} />}
 
       {/* Only carpets go back to the customer; a home job is finished at their house. */}
       {order.items.some((i) => !i.service.on_site) && (
@@ -351,28 +382,30 @@ function Payments({
   onPay,
   onVoid,
   business,
+  bill,
 }: {
   order: Order
+  bill: Order // the whole bill: with the other book's order when they share one
   isOwner: boolean
   busy: boolean
   business: Receipt['business'] | null
   onPay: (payment: Record<string, unknown>) => Promise<void>
   onVoid: (paymentId: number, reason: string) => Promise<void>
 }) {
-  const owed = Number(order.balance)
+  const owed = Number(bill.balance)
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
-  const canPay = order.status !== 'cancelled' && (owed > 0 || order.price_pending)
+  const canPay = order.status !== 'cancelled' && (owed > 0 || bill.price_pending)
 
   return (
     <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
       <h2 className="font-semibold">Bayaran</h2>
       <div className="space-y-1">
-        <Row label="Jumlah barang" value={formatMoney(order.subtotal)} />
-        {Number(order.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(order.discount)}`} />}
-        {roundingOf(order) > 0 && <Row label="Pembundaran (sen dibuang)" value={`− ${formatMoney(roundingOf(order).toFixed(2))}`} />}
-        <Row label={order.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(order.total)} strong />
-        <Row label="Sudah dibayar" value={formatMoney(order.paid)} />
+        <Row label="Jumlah barang" value={formatMoney(bill.subtotal)} />
+        {Number(bill.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(bill.discount)}`} />}
+        {roundingOf(bill) > 0 && <Row label="Pembundaran (sen dibuang)" value={`− ${formatMoney(roundingOf(bill).toFixed(2))}`} />}
+        <Row label={bill.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(bill.total)} strong />
+        <Row label="Sudah dibayar" value={formatMoney(bill.paid)} />
         {owed < 0 ? (
           // e.g. an item cancelled after a big deposit: money to give back.
           <p className="flex justify-between rounded-lg bg-rose-50 px-2 py-1 font-semibold text-rose-800">
@@ -380,7 +413,7 @@ function Payments({
             <span>{formatMoney(String(-owed))}</span>
           </p>
         ) : (
-          <Row label="Baki" value={formatMoney(order.balance)} strong />
+          <Row label="Baki" value={formatMoney(bill.balance)} strong />
         )}
       </div>
 
@@ -419,11 +452,11 @@ function Payments({
         </ul>
       )}
 
-      {canPay && business?.duitnow_qr && owed > 0 && !order.price_pending && (
+      {canPay && business?.duitnow_qr && owed > 0 && !bill.price_pending && (
         <QrPayButton
           qr={business.duitnow_qr}
-          amount={order.balance}
-          reference={order.code}
+          amount={bill.balance}
+          reference={bill.code}
           payee={business.name}
           busy={busy}
           onReceived={isOwner ? () => onPay({ amount: owed.toFixed(2), method: 'duitnow', note: 'DuitNow QR' }) : undefined}
@@ -438,7 +471,7 @@ function Payments({
           <NumberField label="Jumlah dibayar (RM)" value={amount} onChange={setAmount} />
           {owed > 0 && (
             <button type="button" onClick={() => setAmount(owed.toFixed(2))} className="text-sm underline">
-              Bayar penuh baki ({formatMoney(order.balance)})
+              Bayar penuh baki ({formatMoney(bill.balance)})
             </button>
           )}
           <div className="flex flex-wrap gap-2" role="group" aria-label="Cara bayaran">
@@ -481,10 +514,12 @@ function eventLabel(order: Order, event: Order['events'][number]): string {
 
 function SendToCustomer({
   order,
+  bill,
   business,
   onRecorded,
 }: {
   order: Order
+  bill: Order // the whole bill (with the other book's order when they share one)
   business: Receipt['business']
   onRecorded: (order: Order) => void
 }) {
@@ -508,7 +543,7 @@ function SendToCustomer({
           </a>
         )}
         <a
-          href={whatsAppUrl(order.customer.phone, receiptMessage(order, business))}
+          href={whatsAppUrl(order.customer.phone, receiptMessage(bill, business))}
           target="_blank"
           rel="noreferrer"
           onClick={() => ask('whatsapp')}

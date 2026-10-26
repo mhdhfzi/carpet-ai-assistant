@@ -1,6 +1,7 @@
 import { toJpeg } from 'html-to-image'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from './auth'
+import { combinedBill } from './bill'
 import { useBusiness } from './business'
 import { formatMoney, formatShortDate, formatSize, roundingOf, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
@@ -115,18 +116,20 @@ export function ReceiptPage({ id }: { id?: number }) {
   if (!receipt || receipt.order.id !== selected) return <p className="text-ink-soft">Memuatkan…</p>
 
   const { business, order } = receipt
+  // Carpets and kerja luar of the same customer: one receipt, one total, one balance.
+  const bill = combinedBill(order, receipt.linked)
   const choices = orders && !orders.some((o) => o.id === order.id) ? [order, ...orders] : (orders ?? [order])
-  const message = receiptMessage(order, business)
+  const message = receiptMessage(bill, business)
   // The "carpets are ready" message is for carpets; home jobs are done at the customer's house.
   const ready = (order.status === 'ready' || order.status === 'completed') && order.items.some((i) => !i.service.on_site)
-  const paid = paidOn(order)
+  const paid = paidOn(bill)
   // Owner only (the server refuses staff too): the DuitNow money is in the bank.
   const recordQrPayment = async () => {
     setPaying(true)
     try {
       await request(`/api/orders/${order.id}/payments`, {
         method: 'POST',
-        body: { amount: Number(order.balance).toFixed(2), method: 'duitnow', note: 'DuitNow QR' },
+        body: { amount: Number(bill.balance).toFixed(2), method: 'duitnow', note: 'DuitNow QR' },
       })
       setReceipt(await request<Receipt>(`/api/orders/${order.id}/receipt`))
       notifyWorkChanged()
@@ -168,7 +171,7 @@ export function ReceiptPage({ id }: { id?: number }) {
             </span>
           ) : (
             <span className="text-right text-xs text-slate-600">
-              {order.price_pending ? 'Harga belum lengkap. ' : `Baki ${formatMoney(order.balance)}. `}
+              {bill.price_pending ? 'Harga belum lengkap. ' : `Baki ${formatMoney(bill.balance)}. `}
               {isOwner && (
                 <a href={href({ page: 'order', id: order.id })} className="font-semibold text-slate-900 underline">
                   Rekod bayaran
@@ -178,11 +181,11 @@ export function ReceiptPage({ id }: { id?: number }) {
           )}
         </div>
 
-        {business.duitnow_qr && !paid && !order.price_pending && Number(order.balance) > 0 && (
+        {business.duitnow_qr && !paid && !bill.price_pending && Number(bill.balance) > 0 && (
           <QrPayButton
             qr={business.duitnow_qr}
-            amount={order.balance}
-            reference={order.code}
+            amount={bill.balance}
+            reference={bill.code}
             payee={business.name}
             busy={paying}
             onReceived={isOwner ? recordQrPayment : undefined}
@@ -250,7 +253,7 @@ export function ReceiptPage({ id }: { id?: number }) {
       </div>
 
       <div className="lg:col-span-7" ref={sheet}>
-        <ReceiptSheet receipt={receipt} />
+        <ReceiptSheet receipt={{ ...receipt, order: bill }} />
       </div>
     </div>
   )
@@ -337,7 +340,7 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
               <tr key={item.id} className="h-12">
                 <td className="border-r border-slate-800 px-3 text-center font-bold">{index + 1}</td>
                 <td className="border-r border-slate-800 px-3 py-1.5 font-bold text-slate-900">
-                  {item.service.name}{' '}
+                  {item.name}{' '}
                   <span className="font-mono font-normal text-slate-600">
                     ({item.tag}
                     {item.length_ft && item.width_ft ? `, ${formatSize(item)}` : ''})

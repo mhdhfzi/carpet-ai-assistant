@@ -90,6 +90,7 @@ function order(overrides: Partial<Order> = {}): Order {
         id: 1,
         position: 1,
         tag: '412-1',
+        name: 'Karpet Biasa',
         service: { id: 1, name: 'Karpet Biasa', pricing_unit: 'per_sqft', needs_fold: false, on_site: false },
         length_ft: '8.00',
         width_ft: '10.00',
@@ -114,6 +115,7 @@ function order(overrides: Partial<Order> = {}): Order {
     ],
     cancelled_items: [],
     receipt_sends: [],
+    bill_with: null,
     created_at: '2026-10-10T02:00:00Z',
     ...overrides,
   }
@@ -135,6 +137,7 @@ function receipt(overrides: Partial<Order> = {}): Receipt {
       duitnow_qr: '',
     },
     order: order(overrides),
+    linked: null,
     issued_on: '2026-10-17',
   }
 }
@@ -454,7 +457,7 @@ describe('back office', () => {
       id: 2,
       position: 2,
       tag: '412-2',
-      service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const, needs_fold: false, on_site: false },
+      name: 'Karpet Shaggy', service: { id: 3, name: 'Karpet Shaggy', pricing_unit: 'per_sqft' as const, needs_fold: false, on_site: false },
     }
     const twoCarpets = order({ items: [order().items[0], second] })
     const firstWashed = order({
@@ -596,7 +599,7 @@ describe('back office', () => {
   it('packs velvet rolled or folded and keeps drying carpets apart', async () => {
     const velvet = workItem({
       id: 1,
-      service: { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', needs_fold: true, on_site: false },
+      name: 'Karpet Velvet', service: { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', needs_fold: true, on_site: false },
       status: 'washed',
       washed_on: '2020-01-01',
       ready_from: '2020-01-06',
@@ -714,7 +717,7 @@ describe("jobs at the customer's home", () => {
     id: 2,
     position: 1,
     tag: '412-1',
-    service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true },
+    name: 'Cucian Sofa', service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true },
     length_ft: null,
     width_ft: null,
     quantity: '3',
@@ -1068,7 +1071,7 @@ describe('order form', () => {
   const VELVET: Service = { id: 4, name: 'Karpet Velvet', pricing_unit: 'per_sqft', unit_price: '0.90', unit_price_max: null, on_site: false, needs_fold: true, custom: false, is_active: true }
   const OTHER: Service = { id: 5, name: 'Lain-lain', pricing_unit: 'per_item', unit_price: '0.00', unit_price_max: null, on_site: true, needs_fold: false, custom: true, is_active: true }
 
-  it('asks gulung or lipat for velvet before saving, and drops the sen from the total', async () => {
+  it('asks gulung or lipat for velvet before saving, and drops the sen from each line', async () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -1084,8 +1087,8 @@ describe('order form', () => {
     await user.type(screen.getByLabelText('Panjang (kaki)'), '6')
     await user.type(screen.getByLabelText('Lebar (kaki)'), '7')
 
-    expect(screen.getByText('42 kaki persegi · RM37.80')).toBeInTheDocument()
-    expect(screen.getByText('Pembundaran (sen dibuang)').nextSibling).toHaveTextContent('RM0.80')
+    expect(screen.getByText('42 kaki persegi · RM37.00')).toBeInTheDocument() // 37.80 -> 37
+    expect(screen.queryByText('Pembundaran (sen dibuang)')).toBeNull() // nothing left to round
     expect(screen.getByText(/^Jumlah/).nextSibling).toHaveTextContent('RM37.00')
     await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
     expect(screen.getByRole('alert')).toHaveTextContent('pilih Gulung atau Lipat untuk Karpet Velvet')
@@ -1099,7 +1102,7 @@ describe('order form', () => {
     expect(posted.items[0]).toMatchObject({ service_id: 4, fold: 'rolled' })
   })
 
-  it('lets staff describe and price "Lain-lain"', async () => {
+  it('lets staff describe "Lain-lain" and leaves its price to the owner', async () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -1113,7 +1116,8 @@ describe('order form', () => {
     await user.type(screen.getByLabelText('Nama'), 'Ali')
     await user.selectOptions(screen.getByLabelText('Jenis'), 'Lain-lain')
     await user.type(screen.getByLabelText('Kuantiti'), '3')
-    await user.type(screen.getByLabelText('Harga seunit (RM)'), '25') // staff may, for Lain-lain
+    expect(screen.queryByLabelText('Harga seunit (RM)')).toBeNull() // the owner prices it
+    expect(screen.getByText('Harga ditetapkan oleh pemilik')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
     expect(screen.getByRole('alert')).toHaveTextContent('tulis kerja apa untuk Lain-lain')
 
@@ -1122,11 +1126,12 @@ describe('order form', () => {
 
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
     const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
-    expect(posted.items[0]).toMatchObject({ service_id: 5, quantity: '3', unit_price: '25', notes: 'Cuci langsir' })
+    expect(posted.items[0]).toMatchObject({ service_id: 5, quantity: '3', notes: 'Cuci langsir' })
+    expect(posted.items[0]).not.toHaveProperty('unit_price')
   })
 
   it('edits a kerja luar order with only kerja luar services, and the owner gives a discount', async () => {
-    const sofa = { ...order().items[0], service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3.00', unit_price: '60.00', line_total: '180.00', tag: 'L412-1', notes: null }
+    const sofa = { ...order().items[0], name: 'Cucian Sofa', service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3.00', unit_price: '60.00', line_total: '180.00', tag: 'L412-1', notes: null }
     const calls = mockBackend({
       'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -1159,6 +1164,96 @@ describe('order form', () => {
   })
 })
 
+describe('one bill for carpets and kerja luar', () => {
+  const sofa = {
+    ...order().items[0],
+    id: 9,
+    name: 'Cucian Sofa',
+    tag: 'L5-1',
+    service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item' as const, needs_fold: false, on_site: true },
+    length_ft: null,
+    width_ft: null,
+    quantity: '3.00',
+    unit_price: '60.00',
+    line_total: '180.00',
+    notes: null,
+  }
+  const luar = order({
+    id: 9,
+    kind: 'on_site',
+    number: 5,
+    code: 'L5',
+    items: [sofa],
+    subtotal: '180.00',
+    total: '180.00',
+    paid: '0.00',
+    balance: '180.00',
+    payments: [],
+    bill_with: { id: 7, code: '412' },
+  })
+  const carpets = order({ bill_with: { id: 9, code: 'L5' } }) // RM144, RM50 paid
+
+  it('shows one receipt with both orders, one total and one balance', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [carpets] }),
+      'GET /api/orders/7/receipt': () => ({ body: { ...receipt(), order: carpets, linked: luar } }),
+    })
+    renderSignedIn('#/orders/7/resit')
+
+    const sheet = await screen.findByRole('article', { name: 'Resit 412 / L5' })
+    expect(sheet).toHaveTextContent('Karpet Biasa (412-1')
+    expect(sheet).toHaveTextContent('Cucian Sofa (L5-1')
+    expect(sheet).toHaveTextContent('Jumlah hargaRM324.00')
+    expect(sheet).toHaveTextContent('BakiRM274.00') // 324 - 50
+    expect(screen.getByText(/No\. siri resit:\* 412 \/ L5/)).toBeInTheDocument() // the WhatsApp text
+  })
+
+  it('takes a payment for the whole bill and lets the owner split it', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: { ...receipt(), order: carpets, linked: luar } }),
+      'POST /api/orders/7/unlink-bill': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText(/satu resit, satu jumlah/)).toHaveTextContent('kerja luar L5')
+    expect(screen.getByRole('button', { name: /Bayar penuh baki \(RM274\.00\)/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Asingkan bil' }))
+
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/orders/7/unlink-bill')).toBe(true)
+    await waitFor(() => expect(screen.queryByText(/satu resit, satu jumlah/)).toBeNull())
+  })
+
+  it('shows the other order\'s number in the book', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [carpets] }),
+    })
+    renderSignedIn()
+
+    const row = await screen.findByRole('row', { name: /Pesanan 412/ })
+    expect(within(row).getByRole('link', { name: 'Bil luar: L5' })).toHaveAttribute('href', '#/orders/9')
+  })
+
+  it('calls a Lain-lain item by what the job is', async () => {
+    const curtains = { ...sofa, name: 'Cuci langsir 3 helai', notes: 'Cuci langsir 3 helai', service: { ...sofa.service, id: 5, name: 'Lain-lain', custom: true } }
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/9/receipt': () => ({ body: { ...receipt(), order: { ...luar, bill_with: null, items: [curtains] } } }),
+    })
+    renderSignedIn('#/orders/9')
+
+    expect(await screen.findByText('Cuci langsir 3 helai')).toBeInTheDocument()
+    expect(screen.queryByText(/Catatan: Cuci langsir/)).toBeNull() // not repeated as a note
+  })
+})
+
 describe('two books', () => {
   it('keeps Buku Utama to carpets and offers only carpets for a new order there', async () => {
     const calls = mockBackend({
@@ -1184,7 +1279,7 @@ describe('two books', () => {
       code: 'L3',
       number: 3,
       status: 'ready',
-      items: [{ ...order().items[0], tag: 'L3-1', service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3', status: 'ready' }],
+      items: [{ ...order().items[0], tag: 'L3-1', name: 'Cucian Sofa', service: { id: 3, name: 'Cucian Sofa', pricing_unit: 'per_item', needs_fold: false, on_site: true }, length_ft: null, width_ft: null, quantity: '3', status: 'ready' }],
     })
     const calls = mockBackend({
       'GET /api/auth/me': me('staff'),

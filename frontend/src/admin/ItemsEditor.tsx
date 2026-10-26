@@ -115,8 +115,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }:
               </div>
             )}
 
-            {/* "Lain-lain" is priced by whoever takes the order; list prices are the owner's. */}
-            {(isOwner || service?.custom) && service && (
+            {isOwner && service && (
               <NumberField
                 label={
                   service.custom
@@ -147,7 +146,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem }:
                 {isCarpet && units > 0 && `${Math.round(units * 100) / 100} kaki persegi · `}
                 {total === null
                   ? service.custom
-                    ? 'Masukkan harga'
+                    ? 'Harga ditetapkan oleh pemilik'
                     : service.unit_price_max
                     ? 'Harga ditetapkan oleh pemilik selepas diperiksa'
                     : isCarpet
@@ -184,11 +183,10 @@ export function NumberField({
   return (
     <label className="block space-y-1">
       <span className="text-sm font-semibold">{label}</span>
+      {/* Text with a number keypad: no up/down arrows, and scrolling the page can't change it. */}
       <input
-        type="number"
-        inputMode="decimal"
-        min="0"
-        step={step}
+        type="text"
+        inputMode={step === '1' ? 'numeric' : 'decimal'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-xl bg-foam px-3 py-3"

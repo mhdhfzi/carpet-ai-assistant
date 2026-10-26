@@ -232,7 +232,7 @@ function VisitCard({
           <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
             <p className="text-sm">
               <span className="mr-2 rounded bg-slate-900 px-1.5 py-0.5 font-mono text-xs font-semibold text-white">{item.tag}</span>
-              <span className="font-semibold">{item.service.name}</span>
+              <span className="font-semibold">{item.name}</span>
               <span className="text-slate-500"> × {formatSize(item)}</span>
               {item.notes && <span className="block text-xs text-rose-700">Catatan: {item.notes}</span>}
             </p>

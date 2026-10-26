@@ -244,6 +244,11 @@ function BookRow({
         <p className="mt-1.5 text-xs text-slate-500">
           Masuk: <strong>{formatShortDate(order.received_on)}</strong>
         </p>
+        {order.bill_with && (
+          <a href={href({ page: 'order', id: order.bill_with.id })} className="mt-1 block text-xs font-semibold text-sky-800 underline">
+            Bil {order.kind === 'shop' ? 'luar' : 'karpet'}: {order.bill_with.code}
+          </a>
+        )}
         {order.visit_at && homePending && (
           <p className="mt-1 text-xs font-semibold text-emerald-800">Lawatan: {formatVisit(order.visit_at)}</p>
         )}
@@ -268,7 +273,7 @@ function BookRow({
               <span>
                 <span className="font-mono font-bold text-slate-700">{item.tag}:</span>{' '}
                 <span className={`font-semibold ${item.service.needs_fold ? 'text-purple-700' : 'text-slate-800'}`}>
-                  {item.service.name}
+                  {item.name}
                   {item.fold && ` (${FOLD_LABEL[item.fold]})`}
                 </span>{' '}
                 <span className="text-slate-500">({formatSize(item)})</span>
@@ -447,7 +452,7 @@ function PaidBadge({ order }: { order: Order }) {
 
 /** One order as a card: used on a customer's page. */
 export function OrderCard({ order }: { order: Order }) {
-  const items = order.items.map((i) => `${i.service.name} ${formatSize(i)}`).join(', ')
+  const items = order.items.map((i) => `${i.name} ${formatSize(i)}`).join(', ')
   return (
     <a
       href={href({ page: 'order', id: order.id })}
