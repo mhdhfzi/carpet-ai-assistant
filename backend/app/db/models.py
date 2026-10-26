@@ -446,8 +446,15 @@ class Order(TimestampMixin, Base):
     ready_on: Mapped[date | None] = mapped_column(Date)
     completed_on: Mapped[date | None] = mapped_column(Date)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    # The order in the other book this one shares a bill with (the same customer's carpets
+    # and kerja luar): set on both, so either side finds the other.
+    bill_with_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
 
     customer: Mapped[Customer] = relationship(back_populates="orders")
+    # post_update: the two orders point at each other, so the link is written after both rows.
+    bill_with: Mapped["Order | None"] = relationship(
+        remote_side="Order.id", foreign_keys=[bill_with_id], post_update=True
+    )
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order",
         cascade="all, delete-orphan",

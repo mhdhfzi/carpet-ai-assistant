@@ -117,7 +117,8 @@ SERVICES: list[dict] = [
         "100.00",
     ),
     car("Cucian Karpet Kaki Kereta", "Car foot mat cleaning, priced per car.", "30.00", "80.00"),
-    # Anything else done at a customer's home: described and priced when the order is taken.
+    # Anything else, at the customer's home or brought to the shop (washed and packed like a
+    # carpet, counted by the piece): described on the order and priced by the owner.
     {
         "name": "Lain-lain",
         "description": "Other work at the customer's home, described and priced on the order.",
@@ -125,6 +126,14 @@ SERVICES: list[dict] = [
         "unit_price": D("0.00"),
         "visit_minutes": 120,
         "on_site": True,
+        "custom": True,
+    },
+    {
+        "name": "Lain-lain (kedai)",
+        "description": "Other items brought to the shop, described and priced on the order.",
+        "pricing_unit": PricingUnit.PER_ITEM,
+        "unit_price": D("0.00"),
+        "visit_minutes": 30,
         "custom": True,
     },
     # Mosque/surau/office carpets are quoted after a site visit, so they have no catalogue

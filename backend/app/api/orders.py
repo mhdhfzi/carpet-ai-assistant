@@ -28,6 +28,7 @@ from app.schemas.order import (
     OrderCustomerRead,
     OrderEventRead,
     OrderItemRead,
+    OrderLinkRead,
     OrderRead,
     OrderServiceRead,
     OrderUpdate,
@@ -139,6 +140,13 @@ def void_payment(
     return to_read(orders.void_payment(db, order, payment_id, data.reason, actor))
 
 
+@router.post("/{order_id}/unlink-bill", response_model=OrderRead)
+def unlink_bill(order_id: int, db: DbSession, actor: CurrentOwner) -> OrderRead:
+    """Owner only: a shared bill (carpets + kerja luar) becomes one bill per order again."""
+    order = orders.get_order(db, order_id)
+    return to_read(orders.unlink_bill(db, order, actor))
+
+
 @router.post(
     "/{order_id}/receipt-sent", response_model=OrderRead, status_code=status.HTTP_201_CREATED
 )
@@ -152,7 +160,9 @@ def record_receipt_sent(
 
 @router.get("/{order_id}/receipt", response_model=ReceiptRead)
 def receipt(order_id: int, db: DbSession) -> ReceiptRead:
-    """What a printed receipt shows: the business's details and the order."""
+    """What a printed receipt shows: the business's details and the order (with the other
+    book's order when they share a bill)."""
+    order = orders.get_order(db, order_id)
     settings = get_settings()
     name = settings.receipt_name or settings.business_name
     return ReceiptRead(
@@ -169,7 +179,8 @@ def receipt(order_id: int, db: DbSession) -> ReceiptRead:
             terms=settings.receipt_terms,
             duitnow_qr=settings.duitnow_qr,
         ),
-        order=to_read(orders.get_order(db, order_id)),
+        order=to_read(order),
+        linked=to_read(order.bill_with) if order.bill_with is not None else None,
         issued_on=orders.today(),
     )
 
@@ -337,6 +348,11 @@ def to_read(order: Order) -> OrderRead:
             for p in order.payments
         ],
         items=[_item_read(order, item) for item in orders.live_items(order)],
+        bill_with=(
+            OrderLinkRead(id=order.bill_with.id, code=orders.code(order.bill_with))
+            if order.bill_with is not None
+            else None
+        ),
         receipt_sends=[
             ReceiptSendRead(
                 sent_at=r.sent_at,
@@ -368,6 +384,7 @@ def _item_read(order: Order, item: OrderItem) -> OrderItemRead:
         id=item.id,
         position=item.position,
         tag=orders.tag(order, item),
+        name=orders.item_name(item),
         service=OrderServiceRead.model_validate(item.service),
         length_ft=item.length_ft,
         width_ft=item.width_ft,

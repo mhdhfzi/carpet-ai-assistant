@@ -72,5 +72,6 @@ export function rowPrice(row: ItemRow, service: Service | undefined): { units: n
     : service.unit_price_max || service.custom
       ? null
       : Number(service.unit_price)
-  return { units, total: unit === null || !units ? null : Math.round(units * unit * 100) / 100 }
+  // Whole ringgit per line, like the server (RM37.80 -> RM37).
+  return { units, total: unit === null || !units ? null : Math.floor(Math.round(units * unit * 100) / 100) }
 }

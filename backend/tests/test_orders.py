@@ -1155,61 +1155,139 @@ def test_a_worker_confirms_the_receipt_was_sent(
 # --- Whole ringgit ---------------------------------------------------------------------------
 
 
-def test_the_total_drops_the_sen(client: TestClient, services: dict[str, int]) -> None:
+def test_each_line_and_the_total_drop_the_sen(client: TestClient, services: dict[str, int]) -> None:
+    velvet = carpet(services, "Karpet Velvet", "6", "7", fold="rolled")  # 42 x 0.90 = 37.80
     order = client.post(
-        "/api/orders",
-        json={
-            "customer": ALI,
-            "items": [carpet(services, "Karpet Velvet", "6", "7", fold="rolled")],  # 42 x 0.90
-        },
+        "/api/orders", json={"customer": ALI, "items": [velvet, velvet], "discount": "0.50"}
     ).json()
 
-    assert order["items"][0]["line_total"] == "37.80"  # each line keeps its real price
-    assert (order["subtotal"], order["total"], order["balance"]) == ("37.80", "37.00", "37.00")
+    assert [i["line_total"] for i in order["items"]] == ["37.00", "37.00"]
+    assert (order["subtotal"], order["total"]) == ("74.00", "73.00")  # 73.50 -> 73
     paid = client.post(
-        f"/api/orders/{order['id']}/payments", json={"amount": "37.00", "method": "cash"}
+        f"/api/orders/{order['id']}/payments", json={"amount": "73.00", "method": "cash"}
     ).json()
     assert paid["balance"] == "0.00"
+    customers = client.get("/api/customers").json()
+    assert customers[0]["total_value"] == "73.00"  # the database agrees
 
 
 # --- Lain-lain -------------------------------------------------------------------------------
 
 
-def test_lain_lain_is_described_and_priced_by_whoever_takes_the_order(
-    staff_client: TestClient, services: dict[str, int]
+def test_lain_lain_is_described_by_staff_and_priced_by_the_owner(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
 ) -> None:
-    other = services["Lain-lain"]
+    home, shop = services["Lain-lain"], services["Lain-lain (kedai)"]
     unsaid = staff_client.post(
         "/api/orders",
-        json={"customer": ALI, "items": [{"service_id": other, "quantity": "1"}]},
+        json={"customer": ALI, "items": [{"service_id": home, "quantity": "1"}]},
+    )
+    staff_priced = staff_client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [
+                {"service_id": home, "quantity": "3", "notes": "Cuci langsir", "unit_price": "25"}
+            ],
+        },
     )
     pending = staff_client.post(
         "/api/orders",
         json={
             "customer": ALI,
-            "items": [{"service_id": other, "quantity": "3", "notes": "Cuci langsir"}],
+            "items": [{"service_id": home, "quantity": "3", "notes": "Cuci langsir"}],
         },
     ).json()
-    priced = staff_client.post(
-        "/api/orders",
+    priced = client.patch(
+        f"/api/orders/{pending['id']}",
         json={
-            "customer": ALI,
             "items": [
-                {"service_id": other, "quantity": "3", "notes": "Cuci langsir", "unit_price": "25"}
-            ],
+                same(
+                    pending,
+                    0,
+                    {
+                        "service_id": home,
+                        "quantity": "3",
+                        "notes": "Cuci langsir",
+                        "unit_price": "25",
+                    },
+                )
+            ]
         },
     ).json()
-    sofa_priced = staff_client.post(
-        "/api/orders",
-        json={
-            "customer": ALI,
-            "items": [{**counted(services, "Cucian Sofa", 2), "unit_price": "50"}],
-        },
-    )
 
     assert unsaid.status_code == 422
     assert "what the job is" in unsaid.json()["detail"]
+    assert staff_priced.status_code == 403  # prices are the owner's call
     assert (pending["kind"], pending["price_pending"]) == ("on_site", True)
-    assert (priced["total"], priced["items"][0]["notes"]) == ("75.00", "Cuci langsir")
-    assert priced["items"][0]["service"]["custom"] is True
-    assert sofa_priced.status_code == 403  # list prices stay the owner's call
+    assert (priced["total"], priced["items"][0]["name"]) == ("75.00", "Cuci langsir")
+    # At the shop: washed and packed like a carpet, counted by the piece.
+    bag = staff_client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [{"service_id": shop, "quantity": "1", "notes": "Beg tangan"}],
+        },
+    ).json()
+    assert (bag["kind"], bag["items"][0]["name"]) == ("shop", "Beg tangan")
+    assert move(staff_client, bag, 1, "washed").json()["items"][0]["status"] == "washed"
+
+
+# --- One bill for carpets and kerja luar -----------------------------------------------------
+
+
+def test_the_same_customer_s_carpets_and_kerja_luar_share_one_bill(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    carpets = new_order(staff_client, services)  # RM324
+    luar = home_job(staff_client, services)  # 3 sofa seats, RM180
+
+    assert luar["bill_with"] == {"id": carpets["id"], "code": carpets["code"]}
+    assert client.get(f"/api/orders/{carpets['id']}").json()["bill_with"]["code"] == luar["code"]
+    receipt = client.get(f"/api/orders/{carpets['id']}/receipt").json()
+    assert receipt["linked"]["code"] == luar["code"]
+
+    # One payment pays the older order first, then the other.
+    paid = client.post(
+        f"/api/orders/{luar['id']}/payments", json={"amount": "400.00", "method": "cash"}
+    ).json()
+    first = client.get(f"/api/orders/{carpets['id']}").json()
+    assert (first["balance"], paid["balance"]) == ("0.00", "104.00")
+    assert paid["payments"][0]["note"] == f"Bil {carpets['code']} / {luar['code']}"
+    too_much = client.post(
+        f"/api/orders/{luar['id']}/payments", json={"amount": "105.00", "method": "cash"}
+    )
+    assert too_much.status_code == 422
+
+    # The receipt went out once, for both.
+    staff_client.post(f"/api/orders/{luar['id']}/receipt-sent", json={"channel": "whatsapp"})
+    assert len(client.get(f"/api/orders/{carpets['id']}").json()["receipt_sends"]) == 1
+
+
+def test_a_finished_order_is_not_joined_to_a_new_one(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    carpets = new_order(client, services)
+    client.patch(f"/api/orders/{carpets['id']}", json={"status": "completed"})
+
+    assert home_job(client, services)["bill_with"] is None
+
+
+def test_the_owner_splits_a_shared_bill_and_a_cancelled_order_leaves_it(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    carpets = new_order(client, services)
+    luar = home_job(client, services)
+
+    refused = staff_client.post(f"/api/orders/{luar['id']}/unlink-bill")
+    split = client.post(f"/api/orders/{luar['id']}/unlink-bill").json()
+
+    assert refused.status_code == 403
+    assert split["bill_with"] is None
+    assert client.get(f"/api/orders/{carpets['id']}").json()["bill_with"] is None
+
+    # A new carpet order joins the kerja luar order that is open and on its own again.
+    again = new_order(client, services)
+    assert again["bill_with"]["id"] == luar["id"]
+    client.patch(f"/api/orders/{luar['id']}", json={"status": "cancelled"})
+    assert client.get(f"/api/orders/{again['id']}").json()["bill_with"] is None

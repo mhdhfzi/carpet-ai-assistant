@@ -18,7 +18,7 @@ export function paymentLines(details: string): string[] {
 function itemLines(order: Order): string[] {
   return order.items.map(
     (item, index) =>
-      `${index + 1}. ${item.service.name} (${item.tag}, ${formatSize(item)}) - ${item.line_total ? rm(item.line_total) : 'harga akan dimaklumkan'}`,
+      `${index + 1}. ${item.name} (${item.tag}, ${formatSize(item)}) - ${item.line_total ? rm(item.line_total) : 'harga akan dimaklumkan'}`,
   )
 }
 

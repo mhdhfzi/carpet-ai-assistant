@@ -121,6 +121,7 @@ export type OrderItem = {
   id: number
   position: number
   tag: string
+  name: string // what the bill calls it: the service, or for "Lain-lain" what the job is
   service: { id: number; name: string; pricing_unit: PricingUnit; needs_fold: boolean; on_site: boolean; custom?: boolean }
   length_ft: string | null
   width_ft: string | null
@@ -189,6 +190,7 @@ export type Order = {
   items: OrderItem[] // what the customer still wants
   cancelled_items: OrderItem[] // dropped by the customer: kept, crossed out, tags unchanged
   receipt_sends: ReceiptSend[] // each time a worker confirmed the receipt went out, oldest first
+  bill_with: { id: number; code: string } | null // the other book's order on the same bill
   payments: Payment[]
   events: { status: OrderStatus; item_tag: string | null; note: string | null; by: string | null; at: string }[]
   created_at: string
@@ -216,6 +218,7 @@ export type Receipt = {
     duitnow_qr: string // the shop's DuitNow QR (its text); '' = none
   }
   order: Order
+  linked: Order | null // the other book's order on the same bill
   issued_on: string
 }
 export type CustomerDetail = CustomerSummary & { order_history: Order[] }

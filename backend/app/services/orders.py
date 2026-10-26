@@ -294,7 +294,7 @@ def _order_value_and_owed():
     """Per order, as SQL expressions over Order: its value (priced items less discount; an
     item without a price yet counts as 0) and what is still owed on it."""
     items = (
-        select(func.coalesce(func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0))
+        select(func.coalesce(func.sum(func.floor(OrderItem.unit_price * OrderItem.quantity)), 0))
         .where(OrderItem.order_id == Order.id, OrderItem.cancelled_on.is_(None))
         .scalar_subquery()
     )
@@ -386,10 +386,18 @@ def whole_ringgit(amount: Decimal) -> Decimal:
 
 
 def line_total(item: OrderItem) -> Decimal | None:
-    """None while the price isn't known: no price set yet, or a carpet not measured yet."""
+    """In whole ringgit, like the total (RM37.80 -> RM37). None while the price isn't known:
+    no price set yet, or a carpet not measured yet."""
     if item.unit_price is None or item.quantity is None:
         return None
-    return (item.unit_price * item.quantity).quantize(CENT, ROUND_HALF_UP)
+    return whole_ringgit(item.unit_price * item.quantity)
+
+
+def item_name(item: OrderItem) -> str:
+    """What the bill calls the item: "Lain-lain" shows what the job is, e.g. "Cuci langsir"."""
+    if item.service.custom and item.notes:
+        return item.notes
+    return item.service.name
 
 
 def ready_window(order: Order) -> tuple[date, date] | None:
@@ -459,9 +467,9 @@ def list_customers(
     lines = (
         select(
             OrderItem.order_id,
-            func.coalesce(
-                func.sum(func.round(OrderItem.unit_price * OrderItem.quantity, 2)), 0
-            ).label("items"),
+            func.coalesce(func.sum(func.floor(OrderItem.unit_price * OrderItem.quantity)), 0).label(
+                "items"
+            ),
         )
         .where(OrderItem.cancelled_on.is_(None))
         .group_by(OrderItem.order_id)
@@ -561,8 +569,51 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
             )
         )
     db.add(order)
+    db.flush()
+    _bill_with_open_order(db, order)
     db.commit()
     return get_order(db, order.id)
+
+
+def _bill_with_open_order(db: Session, order: Order) -> None:
+    """The same customer's carpets and kerja luar share one bill: link a new order with
+    their latest open order in the other book (not finished, not already on a bill), so
+    they get one receipt. An order from last month that's done stays on its own."""
+    other = db.scalar(
+        select(Order)
+        .where(
+            Order.customer_id == order.customer_id,
+            Order.kind != order.kind,
+            Order.status.not_in(CLOSED),
+            Order.bill_with_id.is_(None),
+        )
+        .order_by(Order.id.desc())
+        .limit(1)
+    )
+    if other is not None:
+        order.bill_with, other.bill_with = other, order
+
+
+def bill_orders(order: Order) -> list[Order]:
+    """The orders on this order's bill, oldest first: itself, and the one it's billed with."""
+    orders = [order, order.bill_with] if order.bill_with is not None else [order]
+    return sorted(orders, key=lambda o: (o.received_on, o.id))
+
+
+def unlink_bill(db: Session, order: Order, actor: Owner) -> Order:
+    """Owner only: give the two orders a bill each again (e.g. two people sharing a phone)."""
+    _owner_only(actor, "split a bill")
+    if order.bill_with is None:
+        raise BusinessRuleError("This order has a bill of its own")
+    _unlink(order)
+    db.commit()
+    return get_order(db, order.id)
+
+
+def _unlink(order: Order) -> None:
+    if order.bill_with is not None:
+        order.bill_with.bill_with = None
+        order.bill_with = None
 
 
 def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> Order:
@@ -596,18 +647,31 @@ def record_payment(db: Session, order: Order, data: PaymentIn, actor: Owner) -> 
     _owner_only(actor, "record a payment")
     if order.status is OrderStatus.CANCELLED:
         raise BusinessRuleError("A cancelled order can't take payments")
-    owed = totals(order)
-    if not owed.price_pending and data.amount > owed.balance:
-        raise BusinessRuleError(f"That is more than the balance of RM{owed.balance:.2f}")
-    order.payments.append(
-        Payment(
-            amount=data.amount,
-            method=data.method,
-            paid_on=data.paid_on or today(),
-            note=data.note,
-            received_by_id=actor.id,
+    # On a shared bill (carpets + kerja luar) one payment covers both: it pays the older
+    # order's balance first, then the other's.
+    bill = bill_orders(order)
+    owed = [max(totals(o).balance, Decimal("0")) for o in bill]
+    pending = any(totals(o).price_pending for o in bill)
+    if not pending and data.amount > sum(owed):
+        raise BusinessRuleError(f"That is more than the balance of RM{sum(owed):.2f}")
+    note = data.note
+    if len(bill) > 1:
+        note = " · ".join(filter(None, [data.note, f"Bil {' / '.join(code(o) for o in bill)}"]))
+    left = data.amount
+    for index, (each, balance) in enumerate(zip(bill, owed, strict=True)):
+        share = left if index == len(bill) - 1 else min(left, balance)
+        if share <= 0:
+            continue
+        each.payments.append(
+            Payment(
+                amount=share,
+                method=data.method,
+                paid_on=data.paid_on or today(),
+                note=note,
+                received_by_id=actor.id,
+            )
         )
-    )
+        left -= share
     db.commit()
     return get_order(db, order.id)
 
@@ -616,7 +680,8 @@ def record_receipt_sent(db: Session, order: Order, channel: ReceiptChannel, acto
     """The worker says the receipt reached the customer. Staff may: they send receipts."""
     if order.status is OrderStatus.CANCELLED:
         raise BusinessRuleError("A cancelled order has no receipt to send")
-    order.receipt_sends.append(ReceiptSend(channel=channel, sent_at=clock.now(), sent_by=actor))
+    for each in bill_orders(order):  # a shared bill went out once, for both orders
+        each.receipt_sends.append(ReceiptSend(channel=channel, sent_at=clock.now(), sent_by=actor))
     db.commit()
     return get_order(db, order.id)
 
@@ -692,6 +757,7 @@ def _change_status(order: Order, new: OrderStatus, note: str | None, actor: Owne
     following = next_status(order)
     if new is OrderStatus.CANCELLED:
         _owner_only(actor, "cancel an order")
+        _unlink(order)  # the other order keeps a bill of its own
     elif following is not new and not is_owner(actor):
         # Skipping a step or going back is a correction: the owner's call.
         raise InvalidStatusTransitionError(
@@ -962,17 +1028,15 @@ def _price_and_fold(
 ) -> tuple[Decimal | None, ItemFold | None]:
     """An item's price and (velvet) fold, from what was entered.
 
-    Price: one typed in is the owner's call, except for "Lain-lain", which whoever takes the
-    order prices (they're at the customer's house). Otherwise an item keeps its price when
-    edited, or takes the price list's; a range (handmade) or "Lain-lain" waits to be priced.
-    Velvet must say gulung or lipat, and "Lain-lain" what the job is."""
+    Price: one typed in is the owner's call. Otherwise an item keeps its price when edited,
+    or takes the price list's; a range (handmade) or "Lain-lain" waits for the owner to
+    price it. Velvet must say gulung or lipat, and "Lain-lain" what the job is."""
     if service.needs_fold and data.fold is None:
         raise BusinessRuleError(f"{service.name}: choose gulung or lipat")
     if service.custom and not (data.notes and data.notes.strip()):
         raise BusinessRuleError(f"{service.name}: write what the job is")
     if data.unit_price is not None:
-        if not service.custom:
-            _owner_only(actor, "set a price")
+        _owner_only(actor, "set a price")
         price = data.unit_price
     elif before is not None and before.service_id == service.id:
         price = before.unit_price

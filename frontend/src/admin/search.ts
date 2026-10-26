@@ -27,7 +27,7 @@ export function carpetMatches(item: WorkItem, query: string): boolean {
   if (!q) return true
   const byNumber = numberMatch(q, String(item.order_number), [item.tag])
   if (byNumber !== null) return byNumber
-  return includes([item.customer_name, item.service.name, item.notes, item.wash_note], q)
+  return includes([item.customer_name, item.service.name, item.name, item.notes, item.wash_note], q)
 }
 
 /** An order on Kerja Luar: by order or tag number, phone, name, address or job type. */
@@ -40,7 +40,7 @@ export function orderMatches(order: Order, query: string): boolean {
   const byNumber = numberMatch(q, order.code, order.items.map((i) => i.tag))
   if (byNumber !== null) return byNumber
   return includes(
-    [order.customer.name, order.customer.address, order.customer.area, ...order.items.map((i) => i.service.name)],
+    [order.customer.name, order.customer.address, order.customer.area, ...order.items.flatMap((i) => [i.name, i.service.name])],
     q,
   )
 }
