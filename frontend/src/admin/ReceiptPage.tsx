@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from './auth'
 import { combinedBill } from './bill'
 import { useBusiness } from './business'
-import { formatMoney, formatShortDate, formatSize, roundingOf, whatsAppUrl } from './format'
+import { bySquareFoot, formatMoney, formatShortDate, formatSize, roundingOf, whatsAppUrl } from './format'
 import { ChatIcon, CheckIcon, ImageIcon, PrintIcon } from './icons'
 import { QrPayButton } from './QrPay'
 import { ReceiptSentLine, lastSend, useReceiptSent } from './ReceiptSent'
@@ -347,7 +347,7 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
                   </span>
                 </td>
                 <td className="border-r border-slate-800 px-3 text-center font-bold whitespace-nowrap">
-                  {item.quantity === null ? '—' : item.service.pricing_unit === 'per_sqft' ? `${Number(item.quantity)} kp²` : Number(item.quantity)}
+                  {item.quantity === null ? '—' : bySquareFoot(item) ? `${Number(item.quantity)} kp²` : Number(item.quantity)}
                 </td>
                 <td className="border-r border-slate-800 px-3 text-right font-mono whitespace-nowrap">
                   {item.unit_price ? Number(item.unit_price).toFixed(2) : '—'}

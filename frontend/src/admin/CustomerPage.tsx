@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth'
 import { formatDay, whatsAppUrl } from './format'
+import { AgentTag } from './ItemsEditor'
 import { OrderCard } from './OrdersPage'
 import type { CustomerDetail } from './types'
 import { href } from './useHashRoute'
@@ -33,7 +34,10 @@ export function CustomerPage({ id }: { id: number }) {
         ← Semua pelanggan
       </a>
       <header className="space-y-1">
-        <h1 className="font-display text-2xl font-bold">{customer.name}</h1>
+        <h1 className="font-display text-2xl font-bold">
+          {customer.name}
+          {customer.is_agent && <AgentTag className="ml-2 align-middle" />}
+        </h1>
         <p className="text-sm">
           <a className="underline" href={`tel:${customer.phone}`}>
             {customer.phone}

@@ -14,7 +14,9 @@ import {
   readyToPack,
   todayInMalaysia,
   FOLD_LABEL,
+  agentPriceMissing,
 } from './format'
+import { AgentTag } from './ItemsEditor'
 import { ArrowIcon, BellIcon, CheckIcon, PhoneIcon, PlusIcon, ReceiptIcon, SearchIcon } from './icons'
 import { notifyWorkChanged } from './summary'
 import type { Order, OrderItem, OrderKind, OrderStatus } from './types'
@@ -263,7 +265,10 @@ function BookRow({
       </td>
 
       <td className={`${cell} max-w-xs`}>
-        <p className="font-bold text-slate-900">{order.customer.name}</p>
+        <p className="font-bold text-slate-900">
+          {order.customer.name}
+          {order.agent && <AgentTag className="ml-1.5" />}
+        </p>
         <p className="mt-0.5 flex items-center gap-1 font-mono text-xs text-slate-600">
           <PhoneIcon className="size-3" /> {order.customer.phone}
         </p>
@@ -297,6 +302,7 @@ function BookRow({
             </li>
           ))}
         </ul>
+        {agentPriceMissing(order) && <p className="mt-1.5 text-xs font-semibold text-amber-800">Harga ejen belum diisi</p>}
         {order.cancelled_items.length > 0 && (
           <p className="mt-1.5 text-xs text-slate-500">
             {order.cancelled_items.map((i) => i.tag).join(', ')} dibatalkan

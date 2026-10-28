@@ -174,6 +174,9 @@ class Customer(TimestampMixin, Base):
     phone: Mapped[str] = mapped_column(String(20), unique=True)
     area: Mapped[str | None] = mapped_column(String(100))
     address: Mapped[str | None] = mapped_column(Text)
+    # An agent (ejen) brings carpets to the shop at agent prices, which the owner types in.
+    # Remembered from their latest carpet order, so the order form picks "Ejen" by itself.
+    is_agent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     bookings: Mapped[list["Booking"]] = relationship(back_populates="customer")
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="customer")
@@ -454,6 +457,9 @@ class Order(TimestampMixin, Base):
         str_enum(ReturnMethod, "return_method")
     )
     discount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Taken at agent prices (Buku Utama only): carpets aren't priced from the price list; the
+    # owner types each agent price per square foot.
+    agent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text)
     # When the team visits the customer's home for the on-site jobs (sofa, mattress, car).
     visit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

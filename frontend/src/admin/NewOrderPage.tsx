@@ -1,8 +1,8 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
-import { ItemsEditor, NumberField } from './ItemsEditor'
-import { type ItemRow, emptyRow, rowPrice, rowsToInput, rowProblem } from './itemRows'
+import { AgentChoice, ItemsEditor, NumberField } from './ItemsEditor'
+import { type AgentPrices, type ItemRow, emptyRow, loadAgentPrices, rowPrice, rowsToInput, rowProblem, suggestPrices } from './itemRows'
 import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia, wholeRinggit } from './format'
 import type { CustomerSummary, Order, OrderKind, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
@@ -31,6 +31,14 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Buku Utama: an agent's carpets are priced by the owner, from the agent's last prices.
+  const [agent, setAgent] = useState(false)
+  const [prices, setPrices] = useState<AgentPrices | null>(null)
+
+  const chooseAgent = (value: boolean) => {
+    setAgent(value)
+    setRows((current) => suggestPrices(current, value ? prices : null))
+  }
 
   // A returning customer: once a phone number is typed, fill in what we know about them.
   useEffect(() => {
@@ -48,6 +56,24 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
             setArea((v) => v || (match.area ?? ''))
             setAddress((v) => v || (match.address ?? ''))
           }
+          if (luar || !match) return
+          // A known customer: "Ejen" or not picks itself, and for an agent the owner's price
+          // boxes start from their last prices.
+          const isAgent = !!match.is_agent
+          setAgent(isAgent)
+          setPrices(null)
+          if (!isAgent) setRows((rows) => suggestPrices(rows, null))
+          if (isAgent && isOwner) {
+            void loadAgentPrices(request, match.id)
+              .then((last) => {
+                if (!current) return
+                setPrices(last)
+                setRows((rows) => suggestPrices(rows, last))
+              })
+              .catch(() => {
+                /* a convenience: the owner can type the prices */
+              })
+          }
         })
         .catch(() => {
           /* the lookup is a convenience; the form works without it */
@@ -57,10 +83,10 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
       current = false
       clearTimeout(timer)
     }
-  }, [phone, request])
+  }, [phone, request, luar, isOwner])
 
   const byId = new Map((services ?? []).map((s) => [s.id, s]))
-  const lines = rows.map((row) => rowPrice(row, row.serviceId === null ? undefined : byId.get(row.serviceId)))
+  const lines = rows.map((row) => rowPrice(row, row.serviceId === null ? undefined : byId.get(row.serviceId), agent))
   const pending = lines.some((l) => l.total === null)
   // Sofa, mattress and car seat jobs are done at the customer's home: when is the visit?
   const offered = (services ?? []).filter((s) => s.on_site === luar)
@@ -91,6 +117,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
           deposit: deposit || '0',
           deposit_method: depositMethod,
           ...(isOwner && discount ? { discount } : {}),
+          ...(luar ? {} : { agent }),
           return_method: returnMethod || null,
           notes: notes.trim() || null,
         },
@@ -118,7 +145,13 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
         <TextField label="No. telefon" value={phone} onChange={setPhone} type="tel" required placeholder="012-345 6789" />
         {known && (
           <p role="status" className="rounded-xl bg-brand/20 px-3 py-2 text-sm">
-            Pelanggan lama: {known.name} ({known.orders} pesanan)
+            Pelanggan lama: {known.name} ({known.orders} pesanan){known.is_agent && ' · Ejen'}
+          </p>
+        )}
+        {!luar && <AgentChoice agent={agent} onChange={chooseAgent} />}
+        {agent && (
+          <p className="text-xs text-ink-soft">
+            {isOwner ? 'Harga karpet ejen: isi harga sekaki persegi untuk setiap barang.' : 'Harga karpet ejen akan diisi oleh pemilik.'}
           </p>
         )}
         <TextField label="Nama" value={name} onChange={setName} required />
@@ -129,7 +162,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
 
       <section className="space-y-3">
         <h2 className="font-semibold">Barang</h2>
-        <ItemsEditor services={offered} rows={rows} onChange={setRows} isOwner={isOwner} />
+        <ItemsEditor services={offered} rows={rows} onChange={setRows} isOwner={isOwner} agent={agent} prices={prices} />
       </section>
 
       {luar && (

@@ -7,6 +7,8 @@ import {
   ORDER_STATUS_LABEL,
   ALL_ITEMS_ACTION_LABEL,
   FOLD_LABEL,
+  agentPriceMissing,
+  bySquareFoot,
   ITEM_ACTION_LABEL,
   ITEM_STATUS_LABEL,
   ITEM_STATUS_STYLE,
@@ -23,8 +25,17 @@ import {
   whatsAppUrl,
   roundingOf,
 } from './format'
-import { ItemsEditor, NumberField } from './ItemsEditor'
-import { type ItemRow, rowProblem, rowsFromItems, rowsToInput } from './itemRows'
+import { AgentChoice, AgentTag, ItemsEditor, NumberField } from './ItemsEditor'
+import {
+  type AgentPrices,
+  type ItemRow,
+  fixedPrice,
+  loadAgentPrices,
+  rowProblem,
+  rowsFromItems,
+  rowsToInput,
+  suggestPrices,
+} from './itemRows'
 import {
   type ItemFold,
   type ItemStatus,
@@ -118,8 +129,14 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
 
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold">{order.kind === 'on_site' ? 'Kerja luar' : 'Pesanan'} {order.code}</h1>
+          <h1 className="font-display text-2xl font-bold">
+            {order.kind === 'on_site' ? 'Kerja luar' : 'Pesanan'} {order.code}
+            {order.agent && <AgentTag className="ml-2 align-middle" />}
+          </h1>
           <p className="text-sm text-ink-soft">Diterima {formatDay(order.received_on)}</p>
+          {order.agent && agentPriceMissing(order) && (
+            <p className="text-sm font-semibold text-amber-800">Harga ejen belum diisi: pemilik isi di "Ubah barang".</p>
+          )}
         </div>
         <span className={`rounded-full px-3 py-1 text-sm font-bold ${ORDER_STATUS_STYLE[order.status]}`}>
           {ORDER_STATUS_LABEL[order.status]}
@@ -219,11 +236,19 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
                   </p>
                   <p className="text-sm text-ink-soft">
                     {formatSize(item)}
-                    {item.service.pricing_unit === 'per_sqft' && item.quantity !== null && ` (${Number(item.quantity)} kaki persegi)`}
+                    {bySquareFoot(item) && item.quantity !== null && ` (${Number(item.quantity)} kaki persegi)`}
                   </p>
                   {item.notes && !item.service.custom && <p className="text-sm">Catatan: {item.notes}</p>}
                 </div>
-                <p className="shrink-0 font-semibold">{item.line_total ? formatMoney(item.line_total) : needsMeasuring(item) ? 'Harga selepas diukur' : 'Harga belum ditetapkan'}</p>
+                <p className="shrink-0 font-semibold">
+                  {item.line_total
+                    ? formatMoney(item.line_total)
+                    : needsMeasuring(item)
+                      ? 'Harga selepas diukur'
+                      : order.agent && item.unit_price === null && !item.service.custom
+                        ? 'Harga ejen belum diisi'
+                        : 'Harga belum ditetapkan'}
+                </p>
                 </div>
                 <ItemProgress
                   item={item}
@@ -682,13 +707,52 @@ function EditItems({
   onSave: (changes: Record<string, unknown>) => Promise<void>
   onCancelItem: (itemId: number, reason: string) => Promise<void>
 }) {
+  const { request } = useAuth()
   const all = useServices()
   const [rows, setRows] = useState<ItemRow[]>(() => rowsFromItems(order.items))
   const [discount, setDiscount] = useState(Number(order.discount) > 0 ? String(Number(order.discount)) : '')
   const [problem, setProblem] = useState<string | null>(null)
+  const [agent, setAgent] = useState(!!order.agent)
+  const [prices, setPrices] = useState<AgentPrices | null>(null)
+  const shop = order.kind === 'shop'
+
+  // The owner prices an agent's carpets: the boxes of items without a price yet start from
+  // this agent's last prices.
+  useEffect(() => {
+    if (!isOwner || !shop) return
+    let current = true
+    loadAgentPrices(request, order.customer.id)
+      .then((last) => {
+        if (!current) return
+        setPrices(last)
+        if (order.agent) setRows((r) => suggestPrices(r, last, (row) => !row.saved || row.saved.price === null))
+      })
+      .catch(() => {
+        /* a convenience: the owner can type the prices */
+      })
+    return () => {
+      current = false
+    }
+  }, [isOwner, shop, request, order.customer.id, order.agent])
+
   if (all === null) return <p className="text-ink-soft">Memuatkan…</p>
   // Only this book's services: carpets in Buku Utama, kerja luar in Buku Kerja Luar.
   const services = all.filter((s) => s.on_site === (order.kind === 'on_site'))
+  const byId = new Map(services.map((s) => [s.id, s]))
+  // Switching: items priced from the price list lose that price (to agent) or get it back.
+  const chooseAgent = (value: boolean) => {
+    setAgent(value)
+    setRows((current) =>
+      suggestPrices(
+        current.map((row) => {
+          const service = row.saved && byId.get(row.saved.serviceId)
+          if (!row.saved || !service || !fixedPrice(service)) return row
+          return { ...row, saved: { ...row.saved, price: value ? null : service.unit_price } }
+        }),
+        value ? prices : null,
+      ),
+    )
+  }
   const saveItems = () => {
     const missing = rows
       .map((row) => rowProblem(row, services.find((s) => s.id === row.serviceId), row.tag ? `Barang ${row.tag}` : 'Barang baru'))
@@ -696,6 +760,7 @@ function EditItems({
     setProblem(missing ?? null)
     if (missing) return
     void onSave({
+      ...(agent !== !!order.agent ? { agent } : {}),
       items: rowsToInput(rows),
       ...(isOwner && discount !== (Number(order.discount) > 0 ? String(Number(order.discount)) : '') ? { discount: discount || '0' } : {}),
     })
@@ -709,7 +774,16 @@ function EditItems({
     <section className="space-y-3">
       <h2 className="font-semibold">Ubah barang</h2>
       <p className="text-sm text-ink-soft">Pelanggan tak mahu satu barang? Tekan "Batal barang": nombor tag yang lain kekal.</p>
-      <ItemsEditor services={services} rows={rows} onChange={setRows} isOwner={isOwner} onCancelItem={cancelItem} />
+      {shop && <AgentChoice agent={agent} onChange={chooseAgent} />}
+      <ItemsEditor
+        services={services}
+        rows={rows}
+        onChange={setRows}
+        isOwner={isOwner}
+        onCancelItem={cancelItem}
+        agent={agent}
+        prices={prices}
+      />
       {isOwner && (
         <div className="rounded-2xl bg-white p-4 ring-1 ring-line">
           <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />
