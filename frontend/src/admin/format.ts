@@ -153,6 +153,19 @@ export function formatSize(item: { length_ft: string | null; width_ft: string | 
   return item.quantity === null ? 'Belum diukur' : String(Number(item.quantity))
 }
 
+/** Priced per square foot: a carpet, or a "Lain-lain" with a size (a shaggy rug). */
+export function bySquareFoot(item: { service: { pricing_unit: string }; length_ft: string | null }): boolean {
+  return item.service.pricing_unit === 'per_sqft' || item.length_ft !== null
+}
+
+/** An agent's order with a carpet the owner hasn't priced yet ("Lain-lain" has its own note). */
+export function agentPriceMissing(order: {
+  agent?: boolean
+  items: { unit_price: string | null; service: { custom?: boolean; on_site: boolean } }[]
+}): boolean {
+  return !!order.agent && order.items.some((i) => i.unit_price === null && !i.service.custom && !i.service.on_site)
+}
+
 /** A carpet that came in without its size: it's measured when it's washed. */
 export function needsMeasuring(item: { service: { pricing_unit: string }; quantity: string | null }): boolean {
   return item.service.pricing_unit === 'per_sqft' && item.quantity === null

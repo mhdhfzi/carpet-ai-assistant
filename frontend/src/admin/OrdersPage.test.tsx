@@ -1162,6 +1162,134 @@ describe('order form', () => {
     expect(await screen.findByRole('button', { name: 'Simpan barang' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Diskaun (RM)')).toBeNull()
   })
+
+  it('measures a shop "Lain-lain" if it has a size, and the owner prices it per square foot', async () => {
+    const SHOP_OTHER: Service = { ...OTHER, id: 6, name: 'Lain-lain (kedai)', on_site: false }
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: [...SERVICES, SHOP_OTHER] }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Lain-lain (kedai)')
+    // No size (curtains): counted, priced per piece.
+    expect(screen.getByLabelText('Kuantiti')).toBeInTheDocument()
+    expect(screen.getByLabelText('Harga seunit (RM)')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Panjang kaki (pilihan)'), '5')
+    await user.type(screen.getByLabelText('Lebar kaki (pilihan)'), '8')
+    expect(screen.queryByLabelText('Kuantiti')).toBeNull()
+    await user.type(screen.getByLabelText('Harga sekaki persegi (RM)'), '2.5')
+    await user.type(screen.getByLabelText('Kerja apa (wajib)'), 'Shaggy lembut')
+    expect(screen.getByText('40 kaki persegi · RM100.00')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
+    expect(posted.items[0]).toEqual({ service_id: 6, length_ft: '5', width_ft: '8', unit_price: '2.5', notes: 'Shaggy lembut' })
+  })
+})
+
+describe('agent orders', () => {
+  const agentCustomer = { ...order().customer, is_agent: true, orders: 4, last_order_on: '2026-10-01', total_value: '500.00', unpaid: '0.00' }
+
+  it('lets staff take an agent order and leaves the carpet prices to the owner', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.click(within(screen.getByRole('radiogroup', { name: 'Jenis pelanggan' })).getByRole('radio', { name: 'Ejen' }))
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Biasa')
+    await user.type(screen.getByLabelText('Panjang (kaki)'), '8')
+    await user.type(screen.getByLabelText('Lebar (kaki)'), '10')
+
+    expect(screen.getByText('80 kaki persegi · Harga ejen ditetapkan oleh pemilik')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { agent: boolean; items: Record<string, unknown>[] }
+    expect(posted.agent).toBe(true)
+    expect(posted.items[0]).not.toHaveProperty('unit_price')
+  })
+
+  it("picks Ejen for a known agent and starts the owner's price from their last one", async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/customers': () => ({ body: [agentCustomer] }),
+      'GET /api/customers/3/agent-prices': () => ({ body: [{ service_id: 1, unit_price: '1.30' }] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    const choice = screen.getByRole('radiogroup', { name: 'Jenis pelanggan' })
+    await waitFor(() => expect(within(choice).getByRole('radio', { name: 'Ejen' })).toHaveAttribute('aria-checked', 'true'))
+    await waitFor(() => expect(calls.some((c) => c.path === '/api/customers/3/agent-prices')).toBe(true))
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Biasa')
+
+    expect(screen.getByLabelText('Harga ejen sekaki persegi (biasa RM1.80)')).toHaveValue('1.3')
+    expect(screen.getByText('Harga terakhir ejen ini. Semak sebelum simpan.')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Panjang (kaki)'), '8')
+    await user.type(screen.getByLabelText('Lebar (kaki)'), '10')
+    expect(screen.getByText('80 kaki persegi · RM104.00')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { agent: boolean; items: Record<string, unknown>[] }
+    expect(posted.agent).toBe(true)
+    expect(posted.items[0]).toMatchObject({ service_id: 1, unit_price: '1.3' })
+  })
+
+  it('marks an agent order whose carpets the owner has not priced yet', async () => {
+    const unpriced = { ...order().items[0], unit_price: null, line_total: null }
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ agent: true, items: [unpriced], price_pending: true }) }),
+    })
+    renderSignedIn('#/orders/7')
+
+    expect(await screen.findByRole('heading', { name: /Pesanan 412/ })).toHaveTextContent('Ejen')
+    expect(screen.getByText('Harga ejen belum diisi: pemilik isi di "Ubah barang".')).toBeInTheDocument()
+    expect(screen.getByText('Harga ejen belum diisi')).toBeInTheDocument()
+  })
+
+  it('switches an order to agent prices in "Ubah barang"', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }),
+      'GET /api/customers/3/agent-prices': () => ({ body: [{ service_id: 1, unit_price: '1.30' }] }),
+      'PATCH /api/orders/7': () => ({ body: order({ agent: true }) }),
+    })
+    const user = renderSignedIn('#/orders/7?ubah')
+
+    const choice = await screen.findByRole('radiogroup', { name: 'Jenis pelanggan' })
+    await waitFor(() => expect(calls.some((c) => c.path === '/api/customers/3/agent-prices')).toBe(true))
+    await user.click(within(choice).getByRole('radio', { name: 'Ejen' }))
+
+    expect(screen.getByLabelText('Harga ejen sekaki persegi (biasa RM1.80)')).toHaveValue('1.3')
+    await user.click(screen.getByRole('button', { name: 'Simpan barang' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true))
+    const patched = calls.find((c) => c.method === 'PATCH')?.body as { agent: boolean; items: Record<string, unknown>[] }
+    expect(patched.agent).toBe(true)
+    expect(patched.items[0]).toMatchObject({ id: 1, unit_price: '1.3' })
+  })
 })
 
 describe('one bill for carpets and kerja luar', () => {

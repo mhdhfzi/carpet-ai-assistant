@@ -26,6 +26,7 @@ class OrderItemIn(BaseModel):
     id: int | None = None
     service_id: int
     # Carpets: the measured size in feet (the book's "Size Karpet"); square feet follow.
+    # "Lain-lain (kedai)" may have one too (a shaggy rug): it's then priced per square foot.
     length_ft: Feet | None = None
     width_ft: Feet | None = None
     # Sofa seats, mattresses, cars; or square feet when the size isn't known as L x W.
@@ -47,6 +48,8 @@ class OrderCreate(BaseModel):
     deposit: Amount = Decimal("0")
     deposit_method: PaymentMethod = PaymentMethod.CASH
     discount: Amount = Decimal("0")  # owner only
+    # An agent's order (Buku Utama): the owner types the carpets' agent prices.
+    agent: bool = False
     notes: str | None = Field(default=None, max_length=1000)
 
 
@@ -110,6 +113,7 @@ class OrderUpdate(BaseModel):
     visit_at: datetime | None = None
     return_method: ReturnMethod | None = None
     discount: Amount | None = None
+    agent: bool | None = None  # switch between agent and normal prices
     notes: str | None = Field(default=None, max_length=1000)
 
 
@@ -121,6 +125,14 @@ class OrderCustomerRead(BaseModel):
     phone: str
     area: str | None
     address: str | None
+    is_agent: bool = False
+
+
+class AgentPriceRead(BaseModel):
+    """The price the owner gave this agent last time for a service, to start from."""
+
+    service_id: int
+    unit_price: Decimal
 
 
 class OrderServiceRead(BaseModel):
@@ -206,6 +218,7 @@ class OrderRead(BaseModel):
     next_status: OrderStatus | None  # the button's step (home jobs only: straight to ready)
     return_method: ReturnMethod | None
     discount: Decimal
+    agent: bool = False  # taken at agent prices
     notes: str | None
     washed_on: date | None
     ready_on: date | None
@@ -240,6 +253,7 @@ class CustomerSummary(BaseModel):
     phone: str
     area: str | None
     address: str | None
+    is_agent: bool = False
     orders: int
     last_order_on: date | None
     total_value: Decimal  # all their orders except cancelled ones

@@ -115,7 +115,14 @@ export type Service = {
   is_active: boolean
 }
 
-export type OrderCustomer = { id: number; name: string; phone: string; area: string | null; address: string | null }
+export type OrderCustomer = {
+  id: number
+  name: string
+  phone: string
+  area: string | null
+  address: string | null
+  is_agent?: boolean // an agent (ejen): their carpet orders are at agent prices
+}
 
 export type OrderItem = {
   id: number
@@ -174,6 +181,7 @@ export type Order = {
   next_status: OrderStatus | null // what the order's big button moves it to
   return_method: ReturnMethod | null
   discount: string
+  agent?: boolean // taken at agent prices: the owner types each carpet's price
   notes: string | null
   washed_on: string | null
   ready_on: string | null

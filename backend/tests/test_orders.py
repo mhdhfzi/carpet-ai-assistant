@@ -1233,6 +1233,132 @@ def test_lain_lain_is_described_by_staff_and_priced_by_the_owner(
     assert move(staff_client, bag, 1, "washed").json()["items"][0]["status"] == "washed"
 
 
+def test_lain_lain_at_the_shop_may_be_measured_and_is_then_priced_per_square_foot(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    shop, home = services["Lain-lain (kedai)"], services["Lain-lain"]
+    shaggy = {"service_id": shop, "length_ft": "5", "width_ft": "8", "notes": "Shaggy lembut"}
+    curtains = {"service_id": shop, "quantity": "3", "notes": "Langsir"}
+    order = staff_client.post("/api/orders", json={"customer": ALI, "items": [shaggy, curtains]})
+    assert order.status_code == 201, order.text
+    order = order.json()
+
+    rug, drapes = order["items"]
+    assert (rug["length_ft"], rug["width_ft"], rug["quantity"]) == ("5.00", "8.00", "40.00")
+    assert (drapes["length_ft"], drapes["quantity"]) == (None, "3.00")  # no size: counted
+    assert order["price_pending"] is True  # the owner prices both
+    priced = client.patch(
+        f"/api/orders/{order['id']}",
+        json={
+            "items": [
+                same(order, 0, shaggy | {"unit_price": "2.50"}),  # per square foot
+                same(order, 1, curtains | {"unit_price": "15"}),  # per piece
+            ]
+        },
+    ).json()
+    assert [i["line_total"] for i in priced["items"]] == ["100.00", "45.00"]
+    # Measured now, counted when it was priced: the price per piece no longer fits.
+    remeasured = client.patch(
+        f"/api/orders/{order['id']}",
+        json={
+            "items": [
+                same(priced, 0, shaggy),
+                same(priced, 1, curtains | {"length_ft": "4", "width_ft": "6"}),
+            ]
+        },
+    ).json()
+    assert [i["unit_price"] for i in remeasured["items"]] == ["2.50", None]
+    # Home jobs aren't measured.
+    sofa = client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [{"service_id": home, "length_ft": "5", "width_ft": "8", "notes": "Tilam"}],
+        },
+    )
+    assert sofa.status_code == 422
+
+
+# --- Agents (ejen) ---------------------------------------------------------------------------
+
+
+def agent_order(client: TestClient, services: dict[str, int], **extra) -> dict:
+    """An agent's two carpets: 8 x 10 ft and 10 x 10 ft, at prices the owner types."""
+    return new_order(client, services, agent=True, **extra)
+
+
+def test_an_agent_s_carpets_wait_for_the_owner_to_type_the_agent_price(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = agent_order(staff_client, services)
+
+    assert order["agent"] is True
+    assert [i["unit_price"] for i in order["items"]] == [None, None]
+    assert (order["price_pending"], order["total"]) == (True, "0.00")
+    body = {
+        "items": [
+            same(order, 0, carpet(services, "Karpet Biasa", "8", "10", unit_price="1.30")),
+            same(order, 1, carpet(services, "Karpet Biasa", "10", "10", unit_price="1.30")),
+        ]
+    }
+    assert staff_client.patch(f"/api/orders/{order['id']}", json=body).status_code == 403
+    priced = client.patch(f"/api/orders/{order['id']}", json=body).json()
+    assert (priced["price_pending"], priced["total"]) == (False, "234.00")  # 180 sq ft x 1.30
+
+
+def test_the_form_remembers_an_agent_and_their_last_prices(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    first = agent_order(client, services)
+    client.patch(
+        f"/api/orders/{first['id']}",
+        json={
+            "items": [
+                same(first, 0, carpet(services, "Karpet Biasa", "8", "10", unit_price="1.20")),
+                same(first, 1, carpet(services, "Karpet Biasa", "10", "10", unit_price="1.30")),
+            ]
+        },
+    )
+
+    found = client.get("/api/customers", params={"q": "3456789"}).json()
+    assert found[0]["is_agent"] is True
+    prices = client.get(f"/api/customers/{found[0]['id']}/agent-prices").json()
+    # The latest item priced for Karpet Biasa: RM1.30.
+    assert prices == [{"service_id": services["Karpet Biasa"], "unit_price": "1.30"}]
+    assert staff_client.get(f"/api/customers/{found[0]['id']}/agent-prices").status_code == 403
+    # Taken as a normal customer next time: no longer remembered as an agent.
+    new_order(client, services)
+    assert client.get("/api/customers", params={"q": "3456789"}).json()[0]["is_agent"] is False
+
+
+def test_switching_an_order_to_agent_prices_and_back(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)  # RM324 at normal prices
+
+    to_agent = staff_client.patch(f"/api/orders/{order['id']}", json={"agent": True}).json()
+    assert (to_agent["agent"], to_agent["customer"]["is_agent"]) == (True, True)
+    assert [i["unit_price"] for i in to_agent["items"]] == [None, None]
+    back = staff_client.patch(f"/api/orders/{order['id']}", json={"agent": False}).json()
+    assert (back["agent"], back["total"]) == (False, "324.00")
+
+
+def test_agent_prices_are_for_the_carpet_book_only(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    luar = home_job(client, services)
+
+    refused = client.post(
+        "/api/orders",
+        json={"customer": ALI, "agent": True, "items": [counted(services, "Cucian Sofa", 3)]},
+    )
+    switched = client.patch(f"/api/orders/{luar['id']}", json={"agent": True})
+
+    assert refused.status_code == 422
+    assert switched.status_code == 422
+    assert "Buku Utama" in switched.json()["detail"]
+
+
 # --- One bill for carpets and kerja luar -----------------------------------------------------
 
 

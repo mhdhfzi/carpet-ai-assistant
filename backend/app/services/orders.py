@@ -2,7 +2,8 @@
 
 Rules live here, not in the dashboard, so they hold whoever calls the API:
 - order numbers run 1, 2, 3, ... with no repeats, even when two people save at once
-- prices come from the price list and are copied onto each item when recorded
+- prices come from the price list and are copied onto each item when recorded; an agent's
+  carpets (agent prices differ by carpet type) wait for the owner to type their price
 - staff record orders and move them one step along; the owner can set prices and
   discounts, cancel, and correct a status
 - payments are never edited or deleted: the owner voids a wrong one, with a reason
@@ -571,6 +572,28 @@ def list_customers(
     ]
 
 
+def last_agent_prices(db: Session, customer_id: int, actor: Owner) -> dict[int, Decimal]:
+    """Owner only: per service, the price this agent was given on their latest priced item,
+    so the owner's price box starts from it. "Lain-lain" is left out: each one differs."""
+    _owner_only(actor, "see agent prices")
+    query = (
+        select(OrderItem.service_id, OrderItem.unit_price)
+        .join(OrderItem.order)
+        .join(OrderItem.service)
+        .where(
+            Order.customer_id == customer_id,
+            Order.agent.is_(True),
+            OrderItem.unit_price.is_not(None),
+            Service.custom.is_(False),
+        )
+        .order_by(Order.id.desc(), OrderItem.id.desc())
+    )
+    prices: dict[int, Decimal] = {}
+    for service_id, price in db.execute(query):
+        prices.setdefault(service_id, price)
+    return prices
+
+
 def _save_customer(db: Session, data: CustomerIn) -> Customer:
     """Find the customer by phone, or add them. Staff and owner are trusted, so details they
     type (a new address, a corrected name) update the record."""
@@ -594,8 +617,12 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
     if data.discount > 0:
         _owner_only(actor, "give a discount")
     customer = _save_customer(db, data.customer)
-    items = _build_items(db, data.items, actor)
+    items = _build_items(db, data.items, actor, agent=data.agent)
     kind = _kind_of(items)
+    if data.agent:
+        _agent_book_only(kind)
+    if kind is OrderKind.SHOP:
+        customer.is_agent = data.agent  # next time the form picks the same by itself
     # One order number at a time: concurrent saves wait here for a few milliseconds.
     db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _NUMBER_LOCK})
     number = _next_number(db, kind)
@@ -607,6 +634,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         visit_at=data.visit_at,
         return_method=data.return_method,
         discount=data.discount,
+        agent=data.agent,
         notes=data.notes,
         created_by_id=actor.id,
         items=items,
@@ -679,9 +707,12 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
     if "discount" in sent and data.discount != order.discount:
         _owner_only(actor, "give a discount")
         order.discount = data.discount or Decimal("0")
+    if order.status in CLOSED and not is_owner(actor) and {"items", "agent"} & sent:
+        raise ForbiddenError("Only the owner can change a finished order")
+    # Before the items: switching re-prices the items already on the order.
+    if "agent" in sent and data.agent is not None and data.agent != order.agent:
+        _switch_agent(order, data.agent)
     if "items" in sent and data.items is not None:
-        if order.status in CLOSED and not is_owner(actor):
-            raise ForbiddenError("Only the owner can change a finished order")
         _replace_items(db, order, data.items, actor)
         _follow_items(order)
     if "visit_at" in sent:
@@ -694,6 +725,23 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
         _change_status(order, data.status, data.status_note, actor)
     db.commit()
     return get_order(db, order.id)
+
+
+def _switch_agent(order: Order, agent: bool) -> None:
+    """Agent or normal prices. Items priced from the price list follow: to agent, they wait
+    for the owner's agent price; back to normal, they take the price list's again. Prices the
+    owner set by hand ("Lain-lain", handmade) stay."""
+    if agent:
+        _agent_book_only(order.kind)
+    order.agent = order.customer.is_agent = agent
+    for item in live_items(order):
+        if _fixed_price(item.service):
+            item.unit_price = _list_price(item.service, agent)
+
+
+def _agent_book_only(kind: OrderKind) -> None:
+    if kind is not OrderKind.SHOP:
+        raise BusinessRuleError("Agent prices are for carpet orders (Buku Utama) only")
 
 
 def record_payment(db: Session, order: Order, data: PaymentIn, actor: Owner) -> Order:
@@ -951,7 +999,7 @@ def _replace_items(db: Session, order: Order, items: list[OrderItemIn], actor: O
         raise BusinessRuleError(
             "To remove an item, cancel it (Batal barang) so the other tags keep their numbers"
         )
-    built = _build_items(db, [d for d in items if d.id is None], actor)
+    built = _build_items(db, [d for d in items if d.id is None], actor, agent=order.agent)
     services = [db.get(Service, d.service_id) for d in items]
     if any(s is None for s in services):
         raise NotFoundError("Service not found")
@@ -975,7 +1023,13 @@ def _update_item(db: Session, item: OrderItem, data: OrderItemIn, actor: Owner) 
     if service is None:
         raise NotFoundError(f"Service {data.service_id} not found")
     quantity, length, width = _quantity(service, data)
-    item.unit_price, item.fold = _price_and_fold(service, data, actor, before=item)
+    item.unit_price, item.fold = _price_and_fold(
+        service, data, actor, agent=item.order.agent, before=item
+    )
+    if service.custom and data.unit_price is None and (item.length_ft is None) != (length is None):
+        # Measured now and counted before (or the other way): a price per piece isn't a price
+        # per square foot. The owner prices it again.
+        item.unit_price = None
     item.service = service
     item.length_ft, item.width_ft, item.quantity = length, width, quantity
     item.notes = data.notes
@@ -1053,6 +1107,8 @@ def _build_items(
     db: Session,
     items: list[OrderItemIn],
     actor: Owner,
+    *,
+    agent: bool,
 ) -> list[OrderItem]:
     built = []
     for position, data in enumerate(items, start=1):
@@ -1060,7 +1116,7 @@ def _build_items(
         if service is None:
             raise NotFoundError(f"Service {data.service_id} not found")
         quantity, length, width = _quantity(service, data)
-        unit_price, fold = _price_and_fold(service, data, actor)
+        unit_price, fold = _price_and_fold(service, data, actor, agent=agent)
         built.append(
             OrderItem(
                 position=position,
@@ -1080,13 +1136,19 @@ def _build_items(
 
 
 def _price_and_fold(
-    service: Service, data: OrderItemIn, actor: Owner, before: OrderItem | None = None
+    service: Service,
+    data: OrderItemIn,
+    actor: Owner,
+    *,
+    agent: bool,
+    before: OrderItem | None = None,
 ) -> tuple[Decimal | None, ItemFold | None]:
     """An item's price and (velvet) fold, from what was entered.
 
     Price: one typed in is the owner's call. Otherwise an item keeps its price when edited,
-    or takes the price list's; a range (handmade) or "Lain-lain" waits for the owner to
-    price it. Velvet must say gulung or lipat, and "Lain-lain" what the job is."""
+    or takes the price list's; a range (handmade), "Lain-lain" or an agent's carpet waits
+    for the owner to price it. Velvet must say gulung or lipat, and "Lain-lain" what the
+    job is."""
     if service.needs_fold and data.fold is None:
         raise BusinessRuleError(f"{service.name}: choose gulung or lipat")
     if service.custom and not (data.notes and data.notes.strip()):
@@ -1096,23 +1158,39 @@ def _price_and_fold(
         price = data.unit_price
     elif before is not None and before.service_id == service.id:
         price = before.unit_price
-    elif service.custom or service.unit_price_max is not None:
-        price = None
     else:
-        price = service.unit_price
+        price = _list_price(service, agent)
     return price, data.fold if service.needs_fold else None
+
+
+def _fixed_price(service: Service) -> bool:
+    """Priced from the price list (not a range, not "Lain-lain")."""
+    return not service.custom and service.unit_price_max is None
+
+
+def _list_price(service: Service, agent: bool) -> Decimal | None:
+    """The price an item takes when nobody types one: the price list's, or None (the owner
+    prices it) for a range, "Lain-lain", or an agent's order in the shop."""
+    if not _fixed_price(service) or (agent and not service.on_site):
+        return None
+    return service.unit_price
 
 
 def _quantity(
     service: Service, data: OrderItemIn
 ) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
     """Square feet from length x width for carpets; a count for everything else. A carpet
-    may come in unmeasured (it's measured when washed): its size is then None."""
-    if service.pricing_unit is PricingUnit.PER_SQFT:
+    may come in unmeasured (it's measured when washed): its size is then None. "Lain-lain"
+    brought to the shop may be measured (a shaggy rug: square feet) or counted (curtains)."""
+    measured = service.pricing_unit is PricingUnit.PER_SQFT or (
+        service.custom and not service.on_site
+    )
+    if measured:
         if (data.length_ft is None) != (data.width_ft is None):
             raise BusinessRuleError(f"{service.name}: enter both the length and the width")
         if data.length_ft is not None and data.width_ft is not None:
             return _sqft(data.length_ft, data.width_ft), data.length_ft, data.width_ft
+    if service.pricing_unit is PricingUnit.PER_SQFT:
         return data.quantity, None, None
     if data.quantity is None:
         raise BusinessRuleError(f"{service.name}: enter how many")

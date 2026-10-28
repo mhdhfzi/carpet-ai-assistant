@@ -20,6 +20,7 @@ from app.db.models import (
     UntaggedItem,
 )
 from app.schemas.order import (
+    AgentPriceRead,
     CustomerDetail,
     CustomerSummary,
     ItemCancel,
@@ -309,6 +310,14 @@ def get_customer(customer_id: int, db: DbSession) -> CustomerDetail:
     return CustomerDetail(**summary.model_dump(), order_history=history)
 
 
+@customers_router.get("/{customer_id}/agent-prices", response_model=list[AgentPriceRead])
+def agent_prices(customer_id: int, db: DbSession, actor: CurrentOwner) -> list[AgentPriceRead]:
+    """Owner only: the price this agent was given last time for each service, so the price
+    box starts from it."""
+    prices = orders.last_agent_prices(db, customer_id, actor)
+    return [AgentPriceRead(service_id=s, unit_price=p) for s, p in prices.items()]
+
+
 def _summary(
     customer: Customer, count: int, last: date | None, total_value: Decimal, unpaid: Decimal
 ) -> CustomerSummary:
@@ -318,6 +327,7 @@ def _summary(
         phone=customer.phone,
         area=customer.area,
         address=customer.address,
+        is_agent=customer.is_agent,
         orders=count,
         last_order_on=last,
         total_value=total_value,
@@ -341,6 +351,7 @@ def to_read(order: Order) -> OrderRead:
         next_status=orders.next_status(order),
         return_method=order.return_method,
         discount=order.discount,
+        agent=order.agent,
         notes=order.notes,
         washed_on=order.washed_on,
         ready_on=order.ready_on,
