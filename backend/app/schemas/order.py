@@ -76,6 +76,10 @@ class ItemCancel(BaseModel):
     reason: str = Field(min_length=3, max_length=200)  # e.g. "harga mahal"
 
 
+class OrderDelete(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)  # e.g. "Pesanan berulang"
+
+
 class ReceiptSendIn(BaseModel):
     channel: ReceiptChannel = ReceiptChannel.WHATSAPP
 
@@ -221,6 +225,10 @@ class OrderRead(BaseModel):
     cancelled_items: list[OrderItemRead] = []
     receipt_sends: list[ReceiptSendRead] = []  # each confirmed send, oldest first
     bill_with: OrderLinkRead | None = None  # the other book's order on the same bill
+    # Only on the owner's "Dipadam" list:
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
     payments: list[PaymentRead]
     events: list[OrderEventRead]
     created_at: datetime

@@ -8,6 +8,7 @@ import { CustomersPage } from './CustomersPage'
 import { LoginPage } from './LoginPage'
 import { NewOrderPage } from './NewOrderPage'
 import { OrderPage } from './OrderPage'
+import { DeletedOrdersPage } from './DeletedOrdersPage'
 import { OrdersPage } from './OrdersPage'
 import { ReceiptPage } from './ReceiptPage'
 import { LogPage, PackPage, WashPage } from './WorkPages'
@@ -135,6 +136,8 @@ function Page({ route }: { route: Route }) {
       )
     case 'log':
       return <LogPage />
+    case 'deleted':
+      return <DeletedOrdersPage />
     case 'receipt':
       return <ReceiptPage key={route.id} id={route.id} />
     case 'receipts':
@@ -153,7 +156,7 @@ function Page({ route }: { route: Route }) {
 /** Which menu item a page belongs to: a single order under Pesanan, a customer under Pelanggan. */
 function section(route: Route): Route['page'] {
   if (route.page === 'new-order') return route.kind === 'on_site' ? 'visits' : 'orders'
-  if (route.page === 'order') return 'orders'
+  if (route.page === 'order' || route.page === 'deleted') return 'orders'
   if (route.page === 'receipt') return 'receipts'
   if (route.page === 'customer') return 'customers'
   return route.page

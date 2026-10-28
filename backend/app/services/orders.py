@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core import clock
 from app.core.security import ForbiddenError
 from app.db.models import (
+    INCLUDE_DELETED,
     Customer,
     ItemFold,
     ItemStatus,
@@ -122,6 +123,61 @@ def get_order(db: Session, order_id: int) -> Order:
     if order is None:
         raise NotFoundError(f"Order {order_id} not found")
     return order
+
+
+def delete_order(db: Session, order: Order, reason: str, actor: Owner) -> None:
+    """Owner only: an order made by mistake or twice disappears from everything. It is kept
+    (with who, when and why) so the owner can restore it. Never with money on it: the
+    payments are voided first, so no ringgit vanishes. If it was the newest in its book,
+    the next order takes its number, so the book has no gap."""
+    _owner_only(actor, "delete an order")
+    if any(p.voided_at is None for p in order.payments):
+        raise BusinessRuleError("Void its payments first (Batalkan bayaran), then delete it")
+    _unlink(order)
+    order.deleted_at, order.deleted_by_id, order.delete_reason = clock.now(), actor.id, reason
+    db.commit()
+
+
+def list_deleted_orders(db: Session, actor: Owner) -> list[Order]:
+    """Owner only: the deleted orders, newest deletion first."""
+    _owner_only(actor, "see deleted orders")
+    query = (
+        select(Order)
+        .where(Order.deleted_at.is_not(None))
+        .options(*_with_details(), selectinload(Order.deleted_by))
+        .order_by(Order.deleted_at.desc())
+        .limit(100)
+        .execution_options(**{INCLUDE_DELETED: True})
+    )
+    return list(db.scalars(query))
+
+
+def restore_order(db: Session, order_id: int, actor: Owner) -> Order:
+    """Owner only: bring back an order deleted by mistake. If its number went to another
+    order meanwhile, it takes the next number in its book."""
+    _owner_only(actor, "restore an order")
+    order = db.scalar(
+        select(Order)
+        .where(Order.id == order_id, Order.deleted_at.is_not(None))
+        .execution_options(**{INCLUDE_DELETED: True})
+    )
+    if order is None:
+        raise NotFoundError(f"Deleted order {order_id} not found")
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _NUMBER_LOCK})
+    taken = db.scalar(
+        select(Order.id).where(Order.kind == order.kind, Order.number == order.number)
+    )
+    if taken is not None:
+        order.number = _next_number(db, order.kind)
+    order.deleted_at = order.deleted_by_id = order.delete_reason = None
+    db.commit()
+    return get_order(db, order.id)
+
+
+def _next_number(db: Session, kind: OrderKind) -> int:
+    """The next number in a book. Deleted orders don't count, so a deleted newest order's
+    number is used again."""
+    return (db.scalar(select(func.max(Order.number)).where(Order.kind == kind)) or 0) + 1
 
 
 def list_orders(
@@ -542,7 +598,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
     kind = _kind_of(items)
     # One order number at a time: concurrent saves wait here for a few milliseconds.
     db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _NUMBER_LOCK})
-    number = (db.scalar(select(func.max(Order.number)).where(Order.kind == kind)) or 0) + 1
+    number = _next_number(db, kind)
     order = Order(
         kind=kind,
         number=number,

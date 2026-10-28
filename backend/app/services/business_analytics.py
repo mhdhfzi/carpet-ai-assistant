@@ -196,7 +196,10 @@ def _services(orders: list[Order]) -> list[ServiceStat]:
             many = item.service.pricing_unit is not PricingUnit.PER_SQFT
             counts[item.service.name] += int(item.quantity or 0) if many else 1
             values[item.service.name] += order_service.line_total(item) or Decimal("0")
-    return [ServiceStat(name, n, values[name]) for name, n in counts.most_common()]
+    # Most items first; a tie goes to the one worth more, then by name, so it never depends
+    # on the order the database returns rows in.
+    ranked = sorted(counts, key=lambda name: (-counts[name], -values[name], name))
+    return [ServiceStat(name, counts[name], values[name]) for name in ranked]
 
 
 def _busy_days(orders: list[Order]) -> list[tuple[str, int]]:

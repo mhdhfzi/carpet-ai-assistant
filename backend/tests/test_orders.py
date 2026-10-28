@@ -1291,3 +1291,87 @@ def test_the_owner_splits_a_shared_bill_and_a_cancelled_order_leaves_it(
     assert again["bill_with"]["id"] == luar["id"]
     client.patch(f"/api/orders/{luar['id']}", json={"status": "cancelled"})
     assert client.get(f"/api/orders/{again['id']}").json()["bill_with"] is None
+
+
+# --- Deleting an order made by mistake -------------------------------------------------------
+
+
+def delete(client: TestClient, order: dict, reason: str = "Pesanan berulang"):
+    return client.post(f"/api/orders/{order['id']}/delete", json={"reason": reason})
+
+
+def test_a_deleted_order_disappears_everywhere_and_its_number_is_reused(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    first = new_order(client, services)
+    duplicate = new_order(client, services)
+
+    assert delete(client, duplicate).status_code == 204
+
+    assert client.get(f"/api/orders/{duplicate['id']}").status_code == 404
+    assert [o["id"] for o in client.get("/api/orders").json()] == [first["id"]]
+    to_wash = client.get("/api/work/items", params={"status": "received"}).json()
+    assert {i["order_id"] for i in to_wash} == {first["id"]}
+    assert client.get("/api/customers").json()[0]["orders"] == 1
+    # The newest order was deleted: the next one takes its number, so the book has no gap.
+    assert new_order(client, services)["number"] == duplicate["number"]
+    # The owner still sees it, with who, when and why.
+    [gone] = client.get("/api/orders/deleted").json()
+    assert (gone["id"], gone["delete_reason"], gone["deleted_by"]) == (
+        duplicate["id"],
+        "Pesanan berulang",
+        "Test Owner",
+    )
+
+
+def test_an_order_with_money_on_it_is_not_deleted(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services, deposit="50.00")
+
+    refused = delete(client, order)
+    payment = order["payments"][0]["id"]
+    client.post(
+        f"/api/orders/{order['id']}/payments/{payment}/void", json={"reason": "silap masuk"}
+    )
+
+    assert refused.status_code == 422
+    assert "Void its payments first" in refused.json()["detail"]
+    assert delete(client, order).status_code == 204
+
+
+def test_only_the_owner_deletes_or_restores(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)
+
+    assert delete(staff_client, order).status_code == 403
+    delete(client, order)
+    assert staff_client.get("/api/orders/deleted").status_code == 403
+    assert staff_client.post(f"/api/orders/{order['id']}/restore").status_code == 403
+
+
+def test_a_restored_order_takes_the_next_number_if_its_own_was_reused(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(client, services)
+    delete(client, order, "Silap masuk")
+    replacement = new_order(client, services)  # takes the deleted order's number
+
+    restored = client.post(f"/api/orders/{order['id']}/restore").json()
+
+    assert replacement["number"] == order["number"]
+    assert restored["number"] == order["number"] + 1
+    assert restored["deleted_at"] is None
+    assert client.get("/api/orders/deleted").json() == []
+
+
+def test_deleting_one_order_of_a_shared_bill_leaves_the_other_on_its_own(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    carpets = new_order(client, services)
+    luar = home_job(client, services)
+
+    delete(client, luar)
+
+    assert client.get(f"/api/orders/{carpets['id']}").json()["bill_with"] is None

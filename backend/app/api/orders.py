@@ -26,6 +26,7 @@ from app.schemas.order import (
     ItemStatusUpdate,
     OrderCreate,
     OrderCustomerRead,
+    OrderDelete,
     OrderEventRead,
     OrderItemRead,
     OrderLinkRead,
@@ -80,9 +81,28 @@ def create_order(data: OrderCreate, db: DbSession, actor: CurrentOwner) -> Order
     return to_read(orders.create_order(db, data, actor))
 
 
+@router.get("/deleted", response_model=list[OrderRead])
+def list_deleted_orders(db: DbSession, actor: CurrentOwner) -> list[OrderRead]:
+    """Owner only: orders deleted by mistake or as duplicates, with who, when and why."""
+    return [to_read(order) for order in orders.list_deleted_orders(db, actor)]
+
+
 @router.get("/{order_id}", response_model=OrderRead)
 def get_order(order_id: int, db: DbSession) -> OrderRead:
     return to_read(orders.get_order(db, order_id))
+
+
+@router.post("/{order_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
+def delete_order(order_id: int, data: OrderDelete, db: DbSession, actor: CurrentOwner) -> None:
+    """Owner only: delete an order made by mistake or twice (never with money on it)."""
+    order = orders.get_order(db, order_id)
+    orders.delete_order(db, order, data.reason, actor)
+
+
+@router.post("/{order_id}/restore", response_model=OrderRead)
+def restore_order(order_id: int, db: DbSession, actor: CurrentOwner) -> OrderRead:
+    """Owner only: bring back a deleted order."""
+    return to_read(orders.restore_order(db, order_id, actor))
 
 
 @router.patch("/{order_id}", response_model=OrderRead)
@@ -348,6 +368,9 @@ def to_read(order: Order) -> OrderRead:
             for p in order.payments
         ],
         items=[_item_read(order, item) for item in orders.live_items(order)],
+        deleted_at=order.deleted_at,
+        deleted_by=order.deleted_by.name if order.deleted_by else None,
+        delete_reason=order.delete_reason,
         bill_with=(
             OrderLinkRead(id=order.bill_with.id, code=orders.code(order.bill_with))
             if order.bill_with is not None

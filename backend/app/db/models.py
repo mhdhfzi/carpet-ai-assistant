@@ -18,10 +18,19 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    Mapped,
+    ORMExecuteState,
+    Session,
+    mapped_column,
+    relationship,
+    with_loader_criteria,
+)
 
 from app.db.base import Base, TimestampMixin, str_enum
 
@@ -412,7 +421,14 @@ class Order(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("number > 0", name="number_positive"),
         CheckConstraint("discount >= 0", name="discount_non_negative"),
-        UniqueConstraint("kind", "number", name="uq_orders_kind_number"),
+        # Unique among orders that aren't deleted: a deleted duplicate's number is reused.
+        Index(
+            "uq_orders_kind_number",
+            "kind",
+            "number",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -449,12 +465,18 @@ class Order(TimestampMixin, Base):
     # The order in the other book this one shares a bill with (the same customer's carpets
     # and kerja luar): set on both, so either side finds the other.
     bill_with_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    # Deleted by the owner (made by mistake, or a duplicate): hidden from every query (see
+    # hide_deleted_orders below), kept so the owner can see why and restore it.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by_id: Mapped[int | None] = mapped_column(ForeignKey("owners.id", ondelete="SET NULL"))
+    delete_reason: Mapped[str | None] = mapped_column(Text)
 
     customer: Mapped[Customer] = relationship(back_populates="orders")
     # post_update: the two orders point at each other, so the link is written after both rows.
     bill_with: Mapped["Order | None"] = relationship(
         remote_side="Order.id", foreign_keys=[bill_with_id], post_update=True
     )
+    deleted_by: Mapped["Owner | None"] = relationship(foreign_keys=[deleted_by_id])
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order",
         cascade="all, delete-orphan",
@@ -610,3 +632,20 @@ class Payment(Base):
 
     order: Mapped[Order] = relationship(back_populates="payments")
     received_by: Mapped["Owner | None"] = relationship(foreign_keys=[received_by_id])
+
+
+# --- Deleted orders --------------------------------------------------------------------------
+
+# Execution option that lets a query see deleted orders (only the owner's "Dipadam" list).
+INCLUDE_DELETED = "include_deleted"
+
+
+@event.listens_for(Session, "do_orm_execute")
+def hide_deleted_orders(state: ORMExecuteState) -> None:
+    """Every query leaves out deleted orders: the books, the forms, receipts, customers and
+    analytics, and joins through an order (its items on the washing list) too. One rule here
+    instead of a condition repeated in every query, where one could be forgotten."""
+    if state.is_select and not state.execution_options.get(INCLUDE_DELETED, False):
+        state.statement = state.statement.options(
+            with_loader_criteria(Order, lambda cls: cls.deleted_at.is_(None), include_aliases=True)
+        )
