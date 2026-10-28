@@ -13,6 +13,7 @@ export type Route =
   | { page: 'pack' }
   | { page: 'visits'; book?: boolean; filter?: string } // Kerja Luar: the visit schedule, or its book
   | { page: 'log' }
+  | { page: 'deleted' } // the owner's "Pesanan dipadam" list
   | { page: 'new-order'; kind?: OrderKind }
   | { page: 'order'; id: number; edit?: boolean } // edit: open with "Ubah barang" showing
   | { page: 'receipt'; id: number }
@@ -46,6 +47,8 @@ export function parseRoute(hash: string): Route | null {
         : { page: 'visits' }
     case 'rekod':
       return { page: 'log' }
+    case 'dipadam':
+      return { page: 'deleted' }
     case 'customers':
       return id && Number.isInteger(number) && number > 0 ? { page: 'customer', id: number } : { page: 'customers' }
     default:
@@ -76,6 +79,8 @@ export function href(route: Route): string {
       return route.filter ? `#/kerja-luar/buku?tapis=${route.filter}` : '#/kerja-luar/buku'
     case 'log':
       return '#/rekod'
+    case 'deleted':
+      return '#/dipadam'
     default:
       return `#/${route.page}`
   }

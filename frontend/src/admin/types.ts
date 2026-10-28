@@ -191,6 +191,10 @@ export type Order = {
   cancelled_items: OrderItem[] // dropped by the customer: kept, crossed out, tags unchanged
   receipt_sends: ReceiptSend[] // each time a worker confirmed the receipt went out, oldest first
   bill_with: { id: number; code: string } | null // the other book's order on the same bill
+  // Only on the owner's "Pesanan dipadam" list:
+  deleted_at?: string | null
+  deleted_by?: string | null
+  delete_reason?: string | null
   payments: Payment[]
   events: { status: OrderStatus; item_tag: string | null; note: string | null; by: string | null; at: string }[]
   created_at: string

@@ -352,6 +352,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
               ))}
             </select>
           </label>
+          <DeleteOrder order={order} />
         </section>
       )}
 
@@ -728,5 +729,90 @@ function EditItems({
         </button>
       </div>
     </section>
+  )
+}
+
+const DELETE_REASONS = ['Silap masuk', 'Pesanan berulang']
+
+/** Owner only: delete an order made by mistake or twice. It disappears from the books and
+ * the forms; the owner can bring it back from "Pesanan dipadam". Never with money on it. */
+function DeleteOrder({ order }: { order: Order }) {
+  const { request } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState(DELETE_REASONS[0])
+  const [other, setOther] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const money = order.payments.some((p) => !p.voided)
+  const why = reason === 'Lain-lain' ? other.trim() : reason
+
+  const remove = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await request(`/api/orders/${order.id}/delete`, { method: 'POST', body: { reason: why } })
+      notifyWorkChanged()
+      window.location.hash = order.kind === 'on_site' ? href({ page: 'visits', book: true }) : href({ page: 'orders' })
+    } catch (err) {
+      setError(errorMessage(err, 'Tak dapat padam. Cuba lagi.'))
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-danger underline">
+        Padam pesanan
+      </button>
+    )
+  }
+  return (
+    <div role="group" aria-label="Padam pesanan" className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-3">
+      <p className="text-sm font-semibold text-red-900">Padam pesanan {order.code}? Ia hilang dari buku dan borang.</p>
+      {money ? (
+        <p className="text-sm text-red-900">Pesanan ini ada bayaran. Batalkan bayaran dulu (di bahagian Bayaran), kemudian padam.</p>
+      ) : (
+        <>
+          <fieldset className="space-y-1 text-sm">
+            <legend className="font-semibold">Sebab</legend>
+            {[...DELETE_REASONS, 'Lain-lain'].map((r) => (
+              <label key={r} className="flex items-center gap-2 py-0.5">
+                <input type="radio" name="delete-reason" checked={reason === r} onChange={() => setReason(r)} className="size-4" />
+                {r}
+              </label>
+            ))}
+          </fieldset>
+          {reason === 'Lain-lain' && (
+            <input
+              aria-label="Sebab lain"
+              value={other}
+              onChange={(e) => setOther(e.target.value)}
+              placeholder="Tulis sebab"
+              className="w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-red-200"
+            />
+          )}
+        </>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        {!money && (
+          <button
+            type="button"
+            disabled={busy || why.length < 3}
+            onClick={remove}
+            className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            Padam pesanan {order.code}
+          </button>
+        )}
+        <button type="button" onClick={() => setOpen(false)} className="rounded-full bg-white px-4 py-2 text-sm font-semibold ring-1 ring-red-200">
+          Tutup
+        </button>
+      </div>
+    </div>
   )
 }

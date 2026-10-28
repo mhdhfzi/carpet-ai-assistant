@@ -47,7 +47,8 @@ const FILTERS: Record<OrderKind, Filter[]> = {
 }
 
 export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?: string }) {
-  const { request } = useAuth()
+  const { request, state } = useAuth()
+  const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const today = todayInMalaysia()
   const filters = FILTERS[kind]
   const luar = kind === 'on_site'
@@ -205,6 +206,13 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
             </table>
           </div>
         </div>
+      )}
+      {isOwner && (
+        <p className="text-right text-xs">
+          <a href={href({ page: 'deleted' })} className="text-slate-500 underline">
+            Pesanan dipadam
+          </a>
+        </p>
       )}
     </section>
   )

@@ -1254,6 +1254,73 @@ describe('one bill for carpets and kerja luar', () => {
   })
 })
 
+describe('deleting an order', () => {
+  const unpaid = order({ paid: '0.00', balance: '144.00', payments: [] })
+
+  it('lets the owner delete an order made by mistake, with a reason', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt(unpaid) }),
+      'POST /api/orders/7/delete': () => ({ status: 204 }),
+      'GET /api/orders': () => ({ body: [] }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    await user.click(await screen.findByRole('button', { name: 'Padam pesanan' }))
+    const box = screen.getByRole('group', { name: 'Padam pesanan' })
+    await user.click(within(box).getByRole('radio', { name: 'Pesanan berulang' }))
+    await user.click(within(box).getByRole('button', { name: 'Padam pesanan 412' }))
+
+    await waitFor(() => expect(window.location.hash).toBe('#/orders'))
+    expect(calls.find((c) => c.path === '/api/orders/7/delete')?.body).toEqual({ reason: 'Pesanan berulang' })
+  })
+
+  it('asks to void the payments before deleting an order with money on it', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt() }), // RM50 deposit
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    await user.click(await screen.findByRole('button', { name: 'Padam pesanan' }))
+
+    expect(screen.getByRole('group', { name: 'Padam pesanan' })).toHaveTextContent('Batalkan bayaran dulu')
+    expect(screen.queryByRole('button', { name: 'Padam pesanan 412' })).toBeNull()
+  })
+
+  it('never offers staff the delete button', async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt(unpaid) }),
+    })
+    renderSignedIn('#/orders/7')
+
+    expect(await screen.findByRole('heading', { name: /Pesanan 412/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Padam pesanan' })).toBeNull()
+  })
+
+  it('lists deleted orders for the owner and restores one', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const gone = order({ deleted_at: '2026-10-28T03:00:00Z', deleted_by: 'Boss', delete_reason: 'Pesanan berulang' })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/deleted': () => ({ body: [gone] }),
+      'POST /api/orders/7/restore': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/dipadam')
+
+    const row = await screen.findByRole('listitem', { name: 'Pesanan dipadam 412' })
+    expect(row).toHaveTextContent('oleh Boss · Pesanan berulang')
+    await user.click(within(row).getByRole('button', { name: 'Pulihkan' }))
+
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/orders/7/restore')).toBe(true)
+  })
+})
+
 describe('two books', () => {
   it('keeps Buku Utama to carpets and offers only carpets for a new order there', async () => {
     const calls = mockBackend({
