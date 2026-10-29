@@ -1176,6 +1176,8 @@ describe('order form', () => {
 
     await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
     await user.type(screen.getByLabelText('Nama'), 'Ali')
+    // A shop item, not a home job.
+    expect(screen.getByRole('option', { name: 'Lain-lain (kedai)' }).closest('optgroup')?.label).toBe('Lain-lain (di kedai)')
     await user.selectOptions(screen.getByLabelText('Jenis'), 'Lain-lain (kedai)')
     // No size (curtains): counted, priced per piece.
     expect(screen.getByLabelText('Kuantiti')).toBeInTheDocument()

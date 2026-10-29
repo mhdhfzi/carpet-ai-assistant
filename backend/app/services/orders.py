@@ -296,7 +296,7 @@ class WorkSummary:
 
 def work_summary(db: Session) -> WorkSummary:
     open_items = (
-        select(OrderItem.status, OrderItem.washed_on, Service.pricing_unit, Service.on_site)
+        select(OrderItem.status, OrderItem.washed_on, Service.on_site)
         .join(OrderItem.order)
         .join(OrderItem.service)
         .where(
@@ -308,14 +308,14 @@ def work_summary(db: Session) -> WorkSummary:
     everything = db.execute(open_items).all()
     house_jobs = sum(1 for *_, home in everything if home)
     # The forms' numbers are about the shop's work: carpets.
-    rows = [(status, washed_on, unit) for status, washed_on, unit, home in everything if not home]
-    to_wash = sum(1 for status, _, _ in rows if status is ItemStatus.RECEIVED)
+    rows = [(status, washed_on) for status, washed_on, home in everything if not home]
+    to_wash = sum(1 for status, _ in rows if status is ItemStatus.RECEIVED)
     due = today() - timedelta(days=DRYING_DAYS[0])
+    # Everything washed at the shop dries 5-7 days, "Lain-lain (kedai)" too.
     to_pack = sum(
         1
-        for status, washed_on, unit in rows
-        if status is ItemStatus.WASHED
-        and (unit is not PricingUnit.PER_SQFT or washed_on is None or washed_on <= due)
+        for status, washed_on in rows
+        if status is ItemStatus.WASHED and (washed_on is None or washed_on <= due)
     )
     # Carpet orders packed and waiting: the kerja luar book keeps its own.
     ready = (
@@ -339,7 +339,7 @@ def work_summary(db: Session) -> WorkSummary:
     return WorkSummary(
         to_wash=to_wash,
         to_pack=to_pack,
-        drying=sum(1 for status, _, _ in rows if status is ItemStatus.WASHED) - to_pack,
+        drying=sum(1 for status, _ in rows if status is ItemStatus.WASHED) - to_pack,
         ready_orders=ready,
         unpaid=Decimal(unpaid),
         unpaid_orders=unpaid_orders,
@@ -459,7 +459,7 @@ def item_name(item: OrderItem) -> str:
 
 def ready_window(order: Order) -> tuple[date, date] | None:
     """When the carpets should all be dry enough to pack: 5-7 days after the last wash."""
-    carpets = [i for i in live_items(order) if i.service.pricing_unit is PricingUnit.PER_SQFT]
+    carpets = _shop_items(order)
     if not carpets or any(i.washed_on is None for i in carpets):
         return None
     if all(i.status is ItemStatus.READY for i in carpets):  # all packed
@@ -471,7 +471,7 @@ def item_ready_window(item: OrderItem) -> tuple[date, date] | None:
     """When one washed carpet should be dry enough to pack."""
     if item.washed_on is None or item.status is not ItemStatus.WASHED:
         return None
-    if item.service.pricing_unit is not PricingUnit.PER_SQFT:
+    if item.service.on_site:  # done at the customer's home: nothing to dry
         return None
     return item.washed_on + timedelta(days=DRYING_DAYS[0]), item.washed_on + timedelta(
         days=DRYING_DAYS[1]

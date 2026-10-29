@@ -213,7 +213,7 @@ def _days_to_ready(orders: list[Order]) -> float | None:
         (item.ready_on - order.received_on).days
         for order in orders
         for item in order_service.live_items(order)
-        if item.service.pricing_unit is PricingUnit.PER_SQFT
+        if not item.service.on_site
         and item.status is ItemStatus.READY
         and item.ready_on is not None
     ]
