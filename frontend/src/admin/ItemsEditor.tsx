@@ -18,6 +18,8 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
   const byId = new Map(services.map((s) => [s.id, s]))
   const carpets = services.filter((s) => s.pricing_unit === 'per_sqft')
   const others = services.filter((s) => s.pricing_unit !== 'per_sqft')
+  // Buku Utama only offers shop services, so its "Lain-lain (kedai)" isn't a home job.
+  const othersLabel = others.every((s) => s.on_site) ? 'Kerja luar (di rumah pelanggan)' : 'Lain-lain (di kedai)'
   const update = (key: number, patch: Partial<ItemRow>) =>
     onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)))
   // A new type: an agent's price box starts from their last price for it.
@@ -79,7 +81,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
                   </optgroup>
                 )}
                 {others.length > 0 && (
-                  <optgroup label="Kerja luar (di rumah pelanggan)">
+                  <optgroup label={othersLabel}>
                     {others.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}

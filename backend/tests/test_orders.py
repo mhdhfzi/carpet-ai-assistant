@@ -1279,6 +1279,21 @@ def test_lain_lain_at_the_shop_may_be_measured_and_is_then_priced_per_square_foo
     assert sofa.status_code == 422
 
 
+def test_lain_lain_at_the_shop_dries_5_to_7_days_like_a_carpet(
+    staff_client: TestClient, services: dict[str, int]
+) -> None:
+    premium = {"service_id": services["Lain-lain (kedai)"], "quantity": "1", "notes": "Premium"}
+    order = staff_client.post("/api/orders", json={"customer": ALI, "items": [premium]}).json()
+
+    washed = move(staff_client, order, 1, "washed").json()["items"][0]
+    to_pack = staff_client.get("/api/work/items", params={"status": "washed"}).json()
+    summary = staff_client.get("/api/work/summary").json()
+
+    assert (washed["ready_from"], washed["ready_by"]) == ("2026-10-15", "2026-10-17")
+    assert to_pack[0]["ready_from"] == "2026-10-15"  # not ready to pack the day it's washed
+    assert (summary["to_pack"], summary["drying"]) == (0, 1)
+
+
 # --- Agents (ejen) ---------------------------------------------------------------------------
 
 
