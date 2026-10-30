@@ -82,7 +82,7 @@ def get_business(
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
         busy_days=_days(s.busy_days),
         average_days_to_ready=s.average_days_to_ready,
-        previous=PeriodStatRead(**vars(s.previous) | {"busy_days": _days(s.previous.busy_days)}),
+        previous=PeriodStatRead(**vars(s.previous)),
     )
 
 
@@ -92,8 +92,6 @@ def _month(m: business_analytics.MonthStat) -> MonthStatRead:
         revenue=m.revenue,
         orders=m.orders,
         top_service=m.top_service,
-        items_by_service=m.items_by_service,
-        revenue_by_method=m.revenue_by_method,
     )
 
 

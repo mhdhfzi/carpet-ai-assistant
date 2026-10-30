@@ -41,8 +41,6 @@ class MonthStat:
     revenue: Decimal  # money received that month
     orders: int  # orders received that month, not cancelled
     top_service: str | None  # the service with the most items that month
-    items_by_service: dict[str, int]  # each service's items that month
-    revenue_by_method: dict[PaymentMethod, Decimal]  # that month's money, by how it was paid
 
 
 @dataclass(frozen=True)
@@ -56,7 +54,6 @@ class PeriodStat:
     average_days_to_ready: float | None
     revenue_by_method: dict[PaymentMethod, Decimal]
     items_by_service: dict[str, int]
-    busy_days: list[tuple[str, int]]
 
 
 @dataclass(frozen=True)
@@ -154,7 +151,6 @@ def _previous(db: Session, start: date, whole_year: bool) -> PeriodStat:
         average_days_to_ready=_days_to_ready(kept),
         revenue_by_method=by_method,
         items_by_service={s.name: s.items for s in _services(kept)},
-        busy_days=_busy_days(kept),
     )
 
 
@@ -194,11 +190,9 @@ def _months_of(db: Session, year: int) -> list[MonthStat]:
     firsts = [date(year, m, 1) for m in range(1, last + 1)]
     end = _next_month(firsts[-1]) - timedelta(days=1)
 
-    by_method: dict[date, dict[PaymentMethod, Decimal]] = {
-        first: {method: Decimal("0") for method in PaymentMethod} for first in firsts
-    }
+    revenue: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
     for payment in _payments(db, firsts[0], end):
-        by_method[first_of_month(payment.paid_on)][payment.method] += payment.amount
+        revenue[first_of_month(payment.paid_on)] += payment.amount
     received: dict[date, list[Order]] = defaultdict(list)
     for order in _orders(db, Order.received_on.between(firsts[0], end)):
         if order.status is not OrderStatus.CANCELLED:
@@ -209,12 +203,7 @@ def _months_of(db: Session, year: int) -> list[MonthStat]:
         popular = _services(received[first])
         stats.append(
             MonthStat(
-                month=first,
-                revenue=sum(by_method[first].values(), Decimal("0")),
-                orders=len(received[first]),
-                top_service=popular[0].name if popular else None,
-                items_by_service={s.name: s.items for s in popular},
-                revenue_by_method=by_method[first],
+                first, revenue[first], len(received[first]), popular[0].name if popular else None
             )
         )
     return stats
