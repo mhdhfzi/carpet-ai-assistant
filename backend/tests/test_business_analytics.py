@@ -73,6 +73,7 @@ def test_business_numbers_for_the_year(client: TestClient, services: dict[str, i
         "orders": 1,
         "order_value": "144.00",
         "customers": 1,
+        "new_customers": 0,  # Ali first came last December
         "top_service": "Karpet Biasa",
         "items_by_service": {"Karpet Biasa": 1},
     }
@@ -82,6 +83,7 @@ def test_business_numbers_for_the_year(client: TestClient, services: dict[str, i
         "orders": 3,
         "order_value": "468.00",
         "customers": 2,  # the cancelled order doesn't count
+        "new_customers": 1,  # Badrul
         "top_service": "Cucian Sofa",  # 3 seats beat 2 carpets
         "items_by_service": {"Cucian Sofa": 3, "Karpet Biasa": 2},
     }
@@ -96,7 +98,7 @@ def test_business_numbers_for_the_year(client: TestClient, services: dict[str, i
     # The whole year in detail.
     assert (body["month"], body["start"], body["end"]) == (None, "2026-01-01", "2026-12-31")
     assert (body["revenue"], body["orders"], body["order_value"]) == ("388.00", 4, "612.00")
-    assert body["customers"] == 2
+    assert body["new_customers"] == 1  # Badrul; Ali was already a customer
     assert body["revenue_by_method"] == {"cash": "288.00", "transfer": "100.00", "duitnow": "0"}
     assert body["cancelled"] == 1
     assert body["services"][0] == {"name": "Karpet Biasa", "items": 3, "value": "432.00"}
@@ -123,7 +125,7 @@ def test_one_month_in_detail(client: TestClient, services: dict[str, int]) -> No
     bad = client.get("/api/analytics/business", params={"month": 13})
 
     assert (body["month"], body["start"], body["end"]) == (9, "2026-09-01", "2026-09-30")
-    assert (body["revenue"], body["orders"], body["customers"]) == ("50.00", 1, 1)
+    assert (body["revenue"], body["orders"], body["new_customers"]) == ("50.00", 1, 1)
     assert body["revenue_by_method"]["duitnow"] == "50.00"
     assert body["revenue_total"] == "50.00"  # the year's totals stay the year's
     assert bad.status_code == 422

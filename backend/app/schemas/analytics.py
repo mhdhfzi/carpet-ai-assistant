@@ -55,6 +55,7 @@ class MonthStatRead(BaseModel):
     orders: int
     order_value: Decimal
     customers: int  # different customers that month
+    new_customers: int  # customers whose first order was that month
     top_service: str | None
     items_by_service: dict[str, int]  # most items first
 
@@ -78,7 +79,7 @@ class BusinessAnalytics(BaseModel):
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int
     order_value: Decimal
-    customers: int
+    new_customers: int  # first order in the detail period
     cancelled: int
     services: list[ServiceStatRead]
     busy_days: list[BusinessDayCount]

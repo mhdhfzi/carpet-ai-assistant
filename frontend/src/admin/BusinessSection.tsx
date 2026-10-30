@@ -54,7 +54,8 @@ function monthLabel(month: string): string {
 const MEASURES = {
   revenue: { label: 'Hasil', of: (m: MonthStat) => Number(m.revenue), format: (v: number) => formatMoney(v.toFixed(2)) },
   orders: { label: 'Pesanan', of: (m: MonthStat) => m.orders, format: (v: number) => `${v} pesanan` },
-  customers: { label: 'Pelanggan', of: (m: MonthStat) => m.customers, format: (v: number) => `${v} pelanggan` },
+  // A month's new customers: whether the shop is still finding new people, not just regulars.
+  customers: { label: 'Pelanggan baru', of: (m: MonthStat) => m.new_customers, format: (v: number) => `${v} pelanggan baru` },
 }
 type Measure = keyof typeof MEASURES
 
@@ -212,7 +213,7 @@ export function BusinessSection() {
           )}
         />
         <DataTable
-          columns={['Bulan', 'Hasil diterima', 'Pesanan', 'Pelanggan', 'Servis paling popular']}
+          columns={['Bulan', 'Hasil diterima', 'Pesanan', 'Pelanggan baru', 'Servis paling popular']}
           rows={newestFirst.map((m) => {
             const i = data.months.indexOf(m)
             const withChange = (text: string, of: (s: MonthStat) => number) => (
@@ -225,7 +226,7 @@ export function BusinessSection() {
               monthName(m.month),
               withChange(formatMoney(m.revenue), MEASURES.revenue.of),
               withChange(String(m.orders), MEASURES.orders.of),
-              withChange(String(m.customers), MEASURES.customers.of),
+              withChange(String(m.new_customers), MEASURES.customers.of),
               m.top_service ?? '–',
             ]
           })}
@@ -265,10 +266,10 @@ export function BusinessSection() {
           hint={`Nilai ${formatMoney(data.order_value)}${data.cancelled ? ` · ${data.cancelled} dibatalkan` : ''}`}
         />
         <StatTile
-          label="Jumlah pelanggan"
-          value={String(data.customers)}
+          label="Pelanggan baru"
+          value={String(data.new_customers)}
           change={chosenChange(MEASURES.customers.of)}
-          hint={chosen >= 0 ? `Pelanggan berlainan · berbanding ${versus(chosen)}` : 'Pelanggan berlainan tahun ini'}
+          hint={`Pesanan pertama mereka ${period}`}
         />
       </div>
 

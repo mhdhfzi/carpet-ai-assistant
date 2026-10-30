@@ -78,7 +78,7 @@ def get_business(
         revenue_by_method=s.revenue_by_method,
         orders=s.orders,
         order_value=s.order_value,
-        customers=s.customers,
+        new_customers=s.new_customers,
         cancelled=s.cancelled,
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
         busy_days=[BusinessDayCount(weekday=d, orders=n) for d, n in s.busy_days],
@@ -92,6 +92,7 @@ def _month(m: business_analytics.MonthStat) -> MonthStatRead:
         orders=m.orders,
         order_value=m.order_value,
         customers=m.customers,
+        new_customers=m.new_customers,
         top_service=m.top_service,
         items_by_service=m.items_by_service,
     )

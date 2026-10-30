@@ -41,6 +41,7 @@ class MonthStat:
     orders: int  # orders received that month, not cancelled
     order_value: Decimal  # their total value
     customers: int  # different customers among those orders
+    new_customers: int  # customers whose very first order was that month
     top_service: str | None  # the service with the most items that month
     items_by_service: dict[str, int]  # items per service that month
 
@@ -63,7 +64,7 @@ class BusinessSummary:
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int  # received that month, not cancelled
     order_value: Decimal  # their total value
-    customers: int  # different customers among them
+    new_customers: int  # customers whose very first order was in the period
     cancelled: int
     services: list[ServiceStat]  # most items first
     busy_days: list[tuple[str, int]]  # orders received per weekday
@@ -117,7 +118,7 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         revenue_by_method=by_method,
         orders=len(kept),
         order_value=_value(kept),
-        customers=_customers(kept),
+        new_customers=_new_customers(_first_orders(db), start, end),
         cancelled=len(period_orders) - len(kept),
         services=_services(kept),
         busy_days=_busy_days(kept),
@@ -151,6 +152,7 @@ def _months_of(db: Session, year: int) -> list[MonthStat]:
 
 def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
     """Money, orders, customers and services for each of these back-to-back months."""
+    first_orders = _first_orders(db)
     end = _next_month(firsts[-1]) - timedelta(days=1)
 
     revenue: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -172,6 +174,9 @@ def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
                 orders=len(orders),
                 order_value=_value(orders),
                 customers=_customers(orders),
+                new_customers=_new_customers(
+                    first_orders, first, _next_month(first) - timedelta(days=1)
+                ),
                 top_service=popular[0].name if popular else None,
                 items_by_service={s.name: s.items for s in popular},
             )
@@ -181,6 +186,20 @@ def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
 
 def _value(orders: list[Order]) -> Decimal:
     return sum((order_service.totals(o).total for o in orders), Decimal("0"))
+
+
+def _first_orders(db: Session) -> dict[int, date]:
+    """The day each customer first sent an order (cancelled ones don't count)."""
+    rows = db.execute(
+        select(Order.customer_id, func.min(Order.received_on))
+        .where(Order.status != OrderStatus.CANCELLED)
+        .group_by(Order.customer_id)
+    )
+    return {customer: day for customer, day in rows}
+
+
+def _new_customers(first_orders: dict[int, date], start: date, end: date) -> int:
+    return sum(1 for day in first_orders.values() if start <= day <= end)
 
 
 def _customers(orders: list[Order]) -> int:

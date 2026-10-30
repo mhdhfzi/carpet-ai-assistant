@@ -274,19 +274,20 @@ export type BusinessAnalytics = {
   revenue_by_method: Record<PaymentMethod, string>
   orders: number
   order_value: string
-  customers: number
+  new_customers: number // first ever order in the detail period
   cancelled: number
   services: { name: string; items: number; value: string }[]
   busy_days: { weekday: string; orders: number }[]
 }
 
-/** One month of the business: money, orders, different customers and items per service. */
+/** One month of the business: money, orders, customers (and new ones) and items per service. */
 export type MonthStat = {
   month: string // "2026-10"
   revenue: string
   orders: number
   order_value: string
-  customers: number
+  customers: number // different customers that month
+  new_customers: number // customers whose first ever order was that month
   top_service: string | null
   items_by_service: Record<string, number>
 }
