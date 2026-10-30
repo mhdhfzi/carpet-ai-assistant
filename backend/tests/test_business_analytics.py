@@ -114,6 +114,38 @@ def test_one_month_in_detail(client: TestClient, services: dict[str, int]) -> No
     assert bad.status_code == 422
 
 
+def test_the_period_before_and_last_year_s_months_to_compare(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    carpet = {"service_id": services["Karpet Biasa"], "length_ft": "8", "width_ft": "10"}
+    place(client, [carpet], received_on="2025-12-20", deposit="40.00")
+    september = place(client, [carpet], received_on="2026-09-15", deposit="144.00")
+    place(client, [carpet], received_on="2026-09-16")
+    place(client, [carpet], deposit="100.00")  # October
+    assert september["paid"] == "144.00"
+
+    october = client.get("/api/analytics/business", params={"month": 10}).json()
+    january = client.get("/api/analytics/business", params={"month": 1}).json()
+    year = client.get("/api/analytics/business").json()
+
+    # The month before.
+    assert october["previous"] == {
+        "start": "2026-09-01",
+        "end": "2026-09-30",
+        "revenue": "144.00",
+        "orders": 2,
+        "average_days_to_ready": None,
+    }
+    # January looks back to December last year.
+    assert (january["previous"]["start"], january["previous"]["orders"]) == ("2025-12-01", 1)
+    # The whole year looks back to the whole year before.
+    assert (year["previous"]["end"], year["previous"]["revenue"]) == ("2025-12-31", "40.00")
+    # Last year's months, all twelve, for the grey line.
+    last = year["last_year_months"]
+    assert [m["month"] for m in last][0::11] == ["2025-01", "2025-12"]
+    assert (last[11]["revenue"], last[11]["orders"]) == ("40.00", 1)
+
+
 def test_business_analytics_is_owner_only_and_needs_the_back_office(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

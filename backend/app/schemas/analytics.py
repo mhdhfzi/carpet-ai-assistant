@@ -56,6 +56,14 @@ class MonthStatRead(BaseModel):
     top_service: str | None
 
 
+class PeriodStatRead(BaseModel):
+    start: date
+    end: date
+    revenue: Decimal
+    orders: int
+    average_days_to_ready: float | None
+
+
 class BusinessAnalytics(BaseModel):
     """Money and orders from the back office (for a real business), for one year: its
     totals, its months side by side, and the whole year or one month in detail."""
@@ -69,6 +77,7 @@ class BusinessAnalytics(BaseModel):
     unpaid: Decimal  # owed now on the year's orders
     unpaid_orders: int
     months: list[MonthStatRead]  # January onwards (up to this month for this year)
+    last_year_months: list[MonthStatRead]  # all 12 months of the year before
     revenue: Decimal  # the detail period's
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int
@@ -77,3 +86,4 @@ class BusinessAnalytics(BaseModel):
     services: list[ServiceStatRead]
     busy_days: list[BusinessDayCount]
     average_days_to_ready: float | None
+    previous: PeriodStatRead  # the month (or year) before, to show the change

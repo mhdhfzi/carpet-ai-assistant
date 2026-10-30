@@ -1,6 +1,6 @@
 """Business numbers from the back office for one year: money received and owed, each
-month side by side (money, orders, most popular service), and the whole year or one of its
-months in detail.
+month side by side (money, orders, most popular service) next to last year's, and the whole
+year or one of its months in detail, compared with the period before it.
 
 Computed in Python from the period's orders and payments: a small business has a few
 thousand orders a year, so clarity beats squeezing it into one SQL query.
@@ -44,6 +44,17 @@ class MonthStat:
 
 
 @dataclass(frozen=True)
+class PeriodStat:
+    """The headline numbers of the period before, to show how the detail period changed."""
+
+    start: date
+    end: date
+    revenue: Decimal
+    orders: int
+    average_days_to_ready: float | None
+
+
+@dataclass(frozen=True)
 class BusinessSummary:
     year: int
     years: list[int]  # years that can be picked: this one back to the first with data
@@ -54,6 +65,7 @@ class BusinessSummary:
     unpaid: Decimal  # owed now on the year's orders that aren't cancelled
     unpaid_orders: int
     months: list[MonthStat]  # January onwards: all 12, or up to this month for this year
+    last_year_months: list[MonthStat]  # all 12 months of the year before, to compare
     # The detail period (the whole year, or the chosen month):
     revenue: Decimal
     revenue_by_method: dict[PaymentMethod, Decimal]
@@ -63,6 +75,7 @@ class BusinessSummary:
     services: list[ServiceStat]  # most items first
     busy_days: list[tuple[str, int]]  # orders received per weekday
     average_days_to_ready: float | None  # carpets: received -> packed
+    previous: PeriodStat  # the month before the chosen month, or the year before the year
 
 
 def today() -> date:
@@ -84,10 +97,8 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         end = _next_month(start) - timedelta(days=1)
 
     period_orders = _orders(db, Order.received_on.between(start, end))
-    kept = [o for o in period_orders if o.status is not OrderStatus.CANCELLED]
-    by_method = {method: Decimal("0") for method in PaymentMethod}
-    for payment in _payments(db, start, end):
-        by_method[payment.method] += payment.amount
+    kept = _kept(period_orders)
+    by_method = _by_method(db, start, end)
 
     # What's still owed on the orders received this year.
     owing = _orders(
@@ -115,7 +126,38 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         services=_services(kept),
         busy_days=_busy_days(kept),
         average_days_to_ready=_days_to_ready(kept),
+        last_year_months=_months_of(db, year - 1),
+        previous=_previous(db, start, month is None),
     )
+
+
+def _previous(db: Session, start: date, whole_year: bool) -> PeriodStat:
+    """The period just before: the month before (September for October, December last year
+    for January), or the whole year before."""
+    if whole_year:
+        before_start, before_end = date(start.year - 1, 1, 1), date(start.year - 1, 12, 31)
+    else:
+        before_end = start - timedelta(days=1)
+        before_start = first_of_month(before_end)
+    kept = _kept(_orders(db, Order.received_on.between(before_start, before_end)))
+    return PeriodStat(
+        start=before_start,
+        end=before_end,
+        revenue=sum(_by_method(db, before_start, before_end).values(), Decimal("0")),
+        orders=len(kept),
+        average_days_to_ready=_days_to_ready(kept),
+    )
+
+
+def _kept(orders: list[Order]) -> list[Order]:
+    return [o for o in orders if o.status is not OrderStatus.CANCELLED]
+
+
+def _by_method(db: Session, start: date, end: date) -> dict[PaymentMethod, Decimal]:
+    by_method = {method: Decimal("0") for method in PaymentMethod}
+    for payment in _payments(db, start, end):
+        by_method[payment.method] += payment.amount
+    return by_method
 
 
 def _years(db: Session) -> list[int]:

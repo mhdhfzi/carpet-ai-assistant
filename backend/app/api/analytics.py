@@ -9,6 +9,7 @@ from app.schemas.analytics import (
     BusinessDayCount,
     ChannelConversionRead,
     MonthStatRead,
+    PeriodStatRead,
     ServiceStatRead,
     TopicRead,
     WeekdayCount,
@@ -71,15 +72,8 @@ def get_business(
         revenue_total=s.revenue_total,
         unpaid=s.unpaid,
         unpaid_orders=s.unpaid_orders,
-        months=[
-            MonthStatRead(
-                month=f"{m.month:%Y-%m}",
-                revenue=m.revenue,
-                orders=m.orders,
-                top_service=m.top_service,
-            )
-            for m in s.months
-        ],
+        months=[_month(m) for m in s.months],
+        last_year_months=[_month(m) for m in s.last_year_months],
         revenue=s.revenue,
         revenue_by_method=s.revenue_by_method,
         orders=s.orders,
@@ -88,4 +82,11 @@ def get_business(
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
         busy_days=[BusinessDayCount(weekday=d, orders=n) for d, n in s.busy_days],
         average_days_to_ready=s.average_days_to_ready,
+        previous=PeriodStatRead(**vars(s.previous)),
+    )
+
+
+def _month(m: business_analytics.MonthStat) -> MonthStatRead:
+    return MonthStatRead(
+        month=f"{m.month:%Y-%m}", revenue=m.revenue, orders=m.orders, top_service=m.top_service
     )

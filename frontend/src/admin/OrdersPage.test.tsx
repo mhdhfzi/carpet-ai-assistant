@@ -499,7 +499,7 @@ describe('back office', () => {
     expect(row).toHaveTextContent('Belum selesai')
   })
 
-  it('shows the business year by year and hides AI booking sections for an answers-only business', async () => {
+  it('shows the business by period against the one before, and hides AI booking sections for an answers-only business', async () => {
     const calls = mockBackend({
       'GET /api/auth/me': me('owner'),
       'GET /api/business': () => ({ body: REAL_BUSINESS }),
@@ -511,10 +511,14 @@ describe('back office', () => {
         },
       }),
       'GET /api/unanswered-questions': () => ({ body: [] }),
+      'GET /api/work/summary': () => ({
+        body: { to_wash: 4, to_pack: 2, drying: 3, ready_orders: 1, unpaid: '350.00', unpaid_orders: 2, house_jobs: 1 },
+      }),
       'GET /api/analytics/business': (call) => {
         const year = Number(call.query.get('year') ?? 2026)
         const month = call.query.get('month') ? Number(call.query.get('month')) : null
         const thisYear = year === 2026
+        const none = { revenue: '0', orders: 0, average_days_to_ready: null }
         return {
           body: {
             year, years: [2026, 2025], month, start: `${year}-01-01`, end: `${year}-12-31`,
@@ -525,11 +529,15 @@ describe('back office', () => {
                   { month: '2026-10', revenue: '1244.00', orders: 9, top_service: 'Karpet Biasa' },
                 ]
               : [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa' }],
+            last_year_months: thisYear ? [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa' }] : [],
             revenue: month === 9 ? '3956.00' : '5200.00',
             revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
             orders: month === 9 ? 30 : 39, order_value: '1500.00', cancelled: 1,
             services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
             busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
+            previous: month === 9
+              ? { start: '2026-08-01', end: '2026-08-31', ...none }
+              : { start: `${year - 1}-01-01`, end: `${year - 1}-12-31`, ...(thisYear ? { revenue: '900.00', orders: 6, average_days_to_ready: 7 } : none) },
           },
         }
       },
@@ -537,31 +545,43 @@ describe('back office', () => {
     const user = renderSignedIn('#/analytics')
 
     const business = await screen.findByRole('region', { name: 'Perniagaan' })
-    expect(business).toHaveTextContent('Jumlah hasil keseluruhanRM5456.00') // 5200 received + 256 owed
-    expect(business).toHaveTextContent('Jumlah hasil diterimaRM5200.00')
-    expect(business).toHaveTextContent('Baki belum dibayarRM256.002 pesanan')
-    const monthly = within(business).getByRole('region', { name: 'Setiap bulan' })
-    const rows = within(monthly).getAllByRole('row').map((r) => r.textContent)
-    expect(rows[1]).toBe('OktoberRM1244.009Karpet Biasa') // newest first, no year on each month
-    expect(rows[2]).toBe('SeptemberRM3956.0030Cucian Sofa')
-    expect(within(business).getByRole('heading', { name: 'Sepanjang tahun' })).toBeInTheDocument()
-    expect(business).toHaveTextContent('Hasil diterimaRM5200.00Bayaran tahun ini')
-    expect(business).toHaveTextContent('Purata masa siap6.4 hari')
-    expect(business).not.toHaveTextContent('Sedang kering')
-    expect(business).not.toHaveTextContent('Belum dicuci')
+    const performance = within(business).getByRole('region', { name: 'Prestasi' })
+    // The whole year against last year: 5200 vs 900, 39 vs 6 orders, 6.4 vs 7 days (faster).
+    expect(performance).toHaveTextContent('Sepanjang 2026')
+    expect(performance).toHaveTextContent('RM5200.00+478%Hasil diterima')
+    expect(performance).toHaveTextContent('39+550%Pesanan1 dibatalkan')
+    expect(performance).toHaveTextContent('RM256.00Baki belum dibayar2 pesanan 2026')
+    expect(performance).toHaveTextContent('6.4 hari-0.6 hariPurata masa siap')
+    expect(within(performance).getByText('-0.6 hari')).toHaveClass('text-emerald-700')
+    expect(performance).toHaveTextContent('Perubahan berbanding 2025.')
+    expect(performance).toHaveTextContent('Jumlah keseluruhan (termasuk baki): RM5456.00') // 5200 + 256 owed
+    // Month by month, with last year's to compare.
+    const chart = within(performance).getByRole('list', { name: 'Hasil setiap bulan' })
+    expect(within(chart).getByLabelText('Oktober 2026: RM1,244, 9 pesanan')).toBeInTheDocument()
+    expect(within(chart).getByLabelText('Disember 2026: belum ada · 2025: RM900')).toBeInTheDocument()
+    await user.click(within(performance).getByRole('button', { name: 'Show as table' }))
+    const rows = within(performance).getAllByRole('row').map((r) => r.textContent)
+    expect(rows[1]).toBe('OktoberRM1244.009Karpet Biasa–') // newest first
+    expect(rows[2]).toBe('SeptemberRM3956.0030Cucian Sofa–')
 
-    // One month of the year in detail.
-    await user.selectOptions(within(business).getByLabelText('Lihat'), '9')
-    expect(await within(business).findByRole('heading', { name: 'September' })).toBeInTheDocument()
+    // What's in the shop now, whatever the period.
+    const now = within(business).getByRole('region', { name: 'Di kedai sekarang' })
+    expect(now).toHaveTextContent('9karpet belum dipack') // 4 to wash + 3 drying + 2 to pack
+    expect(now).toHaveTextContent('Siap, tunggu diambil1 tempahan')
+
+    // One month: against the month before, which had nothing.
+    await user.selectOptions(within(business).getByLabelText('Tempoh'), '2026-9')
+    expect(await within(performance).findByText('September 2026')).toBeInTheDocument()
     expect(calls.findLast((c) => c.path === '/api/analytics/business')?.query.get('month')).toBe('9')
+    expect(performance).toHaveTextContent('RM3956.00baruHasil diterima')
+    expect(performance).toHaveTextContent('Perubahan berbanding Ogos.')
 
-    // Another year: everything switches to it, back to the whole year.
-    await user.click(within(business).getByRole('button', { name: '2025' }))
-    expect(await within(business).findByRole('button', { name: '2025', pressed: true })).toBeInTheDocument()
+    // Another year: everything switches to it.
+    await user.selectOptions(within(business).getByLabelText('Tempoh'), '2025')
+    expect(await within(performance).findByText('Sepanjang 2025')).toBeInTheDocument()
     const last = calls.findLast((c) => c.path === '/api/analytics/business')
     expect([last?.query.get('year'), last?.query.get('month')]).toEqual(['2025', null])
-    expect(business).toHaveTextContent('Jumlah hasil diterimaRM900.00')
-    expect(within(business).getByRole('heading', { name: 'Sepanjang tahun' })).toBeInTheDocument()
+    expect(business).toHaveTextContent('Diterima sepanjang 2025: RM900.00')
     expect(await screen.findByText('Chats')).toBeInTheDocument()
     expect(screen.queryByText('Bookings made')).toBeNull()
     expect(screen.queryByText('Chat to booking, by channel')).toBeNull()
