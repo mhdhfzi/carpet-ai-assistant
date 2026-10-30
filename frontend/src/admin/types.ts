@@ -267,15 +267,28 @@ export type BusinessAnalytics = {
   revenue_total: string // received in the year
   unpaid: string // owed now on the year's orders
   unpaid_orders: number
-  months: { month: string; revenue: string; orders: number; top_service: string | null }[] // January first
+  customers_total: number // different customers in the year
+  months: MonthStat[] // January first
+  month_before: MonthStat // the December before: what January is compared with
   revenue: string // the detail period's
   revenue_by_method: Record<PaymentMethod, string>
   orders: number
   order_value: string
+  customers: number
   cancelled: number
   services: { name: string; items: number; value: string }[]
   busy_days: { weekday: string; orders: number }[]
-  average_days_to_ready: number | null
+}
+
+/** One month of the business: money, orders, different customers and items per service. */
+export type MonthStat = {
+  month: string // "2026-10"
+  revenue: string
+  orders: number
+  order_value: string
+  customers: number
+  top_service: string | null
+  items_by_service: Record<string, number>
 }
 
 /** The cards at the top of the work pages (GET /api/work/summary). */

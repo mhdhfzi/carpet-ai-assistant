@@ -59,7 +59,7 @@ def get_business(
     month: Annotated[int | None, Query(ge=1, le=12)] = None,
 ) -> BusinessAnalytics:
     """One year (?year=2026, default this year): money received and still owed, each month
-    side by side (money, orders, most popular service), and the whole year or one month in
+    side by side (money, orders, customers, services), and the whole year or one month in
     detail (&month=10). Owner only; where the back office is switched on."""
     s = business_analytics.summary(db, year or business_analytics.today().year, month)
     return BusinessAnalytics(
@@ -71,21 +71,27 @@ def get_business(
         revenue_total=s.revenue_total,
         unpaid=s.unpaid,
         unpaid_orders=s.unpaid_orders,
-        months=[
-            MonthStatRead(
-                month=f"{m.month:%Y-%m}",
-                revenue=m.revenue,
-                orders=m.orders,
-                top_service=m.top_service,
-            )
-            for m in s.months
-        ],
+        customers_total=s.customers_total,
+        months=[_month(m) for m in s.months],
+        month_before=_month(s.month_before),
         revenue=s.revenue,
         revenue_by_method=s.revenue_by_method,
         orders=s.orders,
         order_value=s.order_value,
+        customers=s.customers,
         cancelled=s.cancelled,
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
         busy_days=[BusinessDayCount(weekday=d, orders=n) for d, n in s.busy_days],
-        average_days_to_ready=s.average_days_to_ready,
+    )
+
+
+def _month(m: business_analytics.MonthStat) -> MonthStatRead:
+    return MonthStatRead(
+        month=f"{m.month:%Y-%m}",
+        revenue=m.revenue,
+        orders=m.orders,
+        order_value=m.order_value,
+        customers=m.customers,
+        top_service=m.top_service,
+        items_by_service=m.items_by_service,
     )

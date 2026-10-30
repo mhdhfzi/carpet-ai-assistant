@@ -1,5 +1,5 @@
 """Business numbers from the back office for one year: money received and owed, each
-month side by side (money, orders, most popular service), and the whole year or one of its
+month side by side (money, orders, customers, services), and the whole year or one of its
 months in detail.
 
 Computed in Python from the period's orders and payments: a small business has a few
@@ -15,7 +15,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import (
-    ItemStatus,
     Order,
     OrderItem,
     OrderStatus,
@@ -40,7 +39,10 @@ class MonthStat:
     month: date  # the first day of the month
     revenue: Decimal  # money received that month
     orders: int  # orders received that month, not cancelled
+    order_value: Decimal  # their total value
+    customers: int  # different customers among those orders
     top_service: str | None  # the service with the most items that month
+    items_by_service: dict[str, int]  # items per service that month
 
 
 @dataclass(frozen=True)
@@ -53,16 +55,18 @@ class BusinessSummary:
     revenue_total: Decimal  # every payment received in the year (not voided)
     unpaid: Decimal  # owed now on the year's orders that aren't cancelled
     unpaid_orders: int
+    customers_total: int  # different customers with an order in the year
     months: list[MonthStat]  # January onwards: all 12, or up to this month for this year
+    month_before: MonthStat  # the December before, so January has a month to compare with
     # The detail period (the whole year, or the chosen month):
     revenue: Decimal
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int  # received that month, not cancelled
     order_value: Decimal  # their total value
+    customers: int  # different customers among them
     cancelled: int
     services: list[ServiceStat]  # most items first
     busy_days: list[tuple[str, int]]  # orders received per weekday
-    average_days_to_ready: float | None  # carpets: received -> packed
 
 
 def today() -> date:
@@ -106,15 +110,17 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         revenue_total=received,
         unpaid=sum((b for b in balances if b > 0), Decimal("0")),
         unpaid_orders=sum(1 for b in balances if b > 0),
+        customers_total=_customers(owing),
         months=_months_of(db, year),
+        month_before=_month_stats(db, [date(year - 1, 12, 1)])[0],
         revenue=sum(by_method.values(), Decimal("0")),
         revenue_by_method=by_method,
         orders=len(kept),
-        order_value=sum((order_service.totals(o).total for o in kept), Decimal("0")),
+        order_value=_value(kept),
+        customers=_customers(kept),
         cancelled=len(period_orders) - len(kept),
         services=_services(kept),
         busy_days=_busy_days(kept),
-        average_days_to_ready=_days_to_ready(kept),
     )
 
 
@@ -134,13 +140,17 @@ def _years(db: Session) -> list[int]:
 
 
 def _months_of(db: Session, year: int) -> list[MonthStat]:
-    """Money, orders and the favourite service for each month of the year, so the owner
-    can compare months at a glance. This year stops at this month (no empty future months)."""
+    """Each month of the year, so the owner can compare months at a glance. This year stops
+    at this month (no empty future months)."""
     today = order_service.today()
     last = 12 if year < today.year else today.month if year == today.year else 0
     if not last:
         return []
-    firsts = [date(year, m, 1) for m in range(1, last + 1)]
+    return _month_stats(db, [date(year, m, 1) for m in range(1, last + 1)])
+
+
+def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
+    """Money, orders, customers and services for each of these back-to-back months."""
     end = _next_month(firsts[-1]) - timedelta(days=1)
 
     revenue: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -153,13 +163,29 @@ def _months_of(db: Session, year: int) -> list[MonthStat]:
 
     stats = []
     for first in firsts:
-        popular = _services(received[first])
+        orders = received[first]
+        popular = _services(orders)
         stats.append(
             MonthStat(
-                first, revenue[first], len(received[first]), popular[0].name if popular else None
+                month=first,
+                revenue=revenue[first],
+                orders=len(orders),
+                order_value=_value(orders),
+                customers=_customers(orders),
+                top_service=popular[0].name if popular else None,
+                items_by_service={s.name: s.items for s in popular},
             )
         )
     return stats
+
+
+def _value(orders: list[Order]) -> Decimal:
+    return sum((order_service.totals(o).total for o in orders), Decimal("0"))
+
+
+def _customers(orders: list[Order]) -> int:
+    """A customer who came back three times is still one customer."""
+    return len({o.customer_id for o in orders})
 
 
 def _next_month(first: date) -> date:
@@ -192,8 +218,9 @@ def _services(orders: list[Order]) -> list[ServiceStat]:
     values: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for order in orders:
         for item in order_service.live_items(order):
-            # A sofa line of 3 seats counts as 3; a carpet counts as 1 whatever its size.
-            many = item.service.pricing_unit is not PricingUnit.PER_SQFT
+            # A sofa line of 3 seats counts as 3; a carpet (or a measured "Lain-lain") counts
+            # as 1 whatever its size.
+            many = item.service.pricing_unit is not PricingUnit.PER_SQFT and item.length_ft is None
             counts[item.service.name] += int(item.quantity or 0) if many else 1
             values[item.service.name] += order_service.line_total(item) or Decimal("0")
     # Most items first; a tie goes to the one worth more, then by name, so it never depends
@@ -205,16 +232,3 @@ def _services(orders: list[Order]) -> list[ServiceStat]:
 def _busy_days(orders: list[Order]) -> list[tuple[str, int]]:
     per_day = Counter(WEEKDAYS[o.received_on.weekday()] for o in orders)
     return [(day, per_day.get(day, 0)) for day in WEEKDAYS]
-
-
-def _days_to_ready(orders: list[Order]) -> float | None:
-    """Average days from received to packed, over carpets that are packed."""
-    waits = [
-        (item.ready_on - order.received_on).days
-        for order in orders
-        for item in order_service.live_items(order)
-        if not item.service.on_site
-        and item.status is ItemStatus.READY
-        and item.ready_on is not None
-    ]
-    return round(sum(waits) / len(waits), 1) if waits else None
