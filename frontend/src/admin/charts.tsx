@@ -285,6 +285,68 @@ export function TrendChart({
   )
 }
 
+const SPARK_WIDTH = 120
+const SPARK_HEIGHT = 32
+
+/**
+ * A small line of one thing over time (a service's items each month), with no axis: the row
+ * beside it gives the numbers. Each point is a hover/focus target; `describe` says it in words.
+ */
+export function Sparkline({
+  values,
+  label,
+  highlight = null,
+  describe,
+}: {
+  values: number[]
+  label: string
+  highlight?: number | null // the point to mark, e.g. the month shown in detail
+  describe: (index: number) => string
+}) {
+  const [active, setActive] = useState<number | null>(null)
+  const top = Math.max(1, ...values)
+  // A 3px margin top and bottom so the 2px line and its dots aren't clipped.
+  const x = (i: number) => (values.length < 2 ? SPARK_WIDTH / 2 : (i / (values.length - 1)) * SPARK_WIDTH)
+  const y = (value: number) => 3 + (1 - value / top) * (SPARK_HEIGHT - 6)
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ')
+  const marked = active ?? highlight ?? values.length - 1
+
+  return (
+    <div className="relative h-8 max-w-48 min-w-16 flex-1" role="list" aria-label={label} onMouseLeave={() => setActive(null)}>
+      <svg viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`} preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible" aria-hidden="true">
+        <path d={`${line} L${x(values.length - 1)},${SPARK_HEIGHT} L${x(0)},${SPARK_HEIGHT} Z`} className="fill-chart" fillOpacity={0.1} />
+        <path d={line} fill="none" className="stroke-chart" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {values.length > 0 && (
+        <span
+          aria-hidden="true"
+          className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-chart ring-2 ring-white"
+          style={{ left: `${(x(marked) / SPARK_WIDTH) * 100}%`, top: `${(y(values[marked]) / SPARK_HEIGHT) * 100}%` }}
+        />
+      )}
+      <div className="absolute inset-0 flex">
+        {values.map((_, i) => (
+          <div
+            key={i}
+            role="listitem"
+            tabIndex={0}
+            aria-label={describe(i)}
+            onMouseEnter={() => setActive(i)}
+            onFocus={() => setActive(i)}
+            onBlur={() => setActive(null)}
+            className="h-full flex-1 outline-none focus-visible:bg-slate-100/60"
+          />
+        ))}
+      </div>
+      {active !== null && (
+        <p className="pointer-events-none absolute right-0 bottom-full z-10 mb-1 rounded-lg bg-ink px-2 py-1 text-xs whitespace-nowrap text-white shadow">
+          {describe(active)}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** A plain table. Words never wrap or run into each other: on a narrow phone the table
  * slides sideways instead of squeezing its columns. */
 export function DataTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {

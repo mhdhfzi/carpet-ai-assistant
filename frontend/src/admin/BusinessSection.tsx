@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useId, useState } from 'react'
 import { useAuth } from './auth'
-import { BarList, ChartCard, ColumnChart, ColumnLabels, DataTable, Meter, TrendChart } from './charts'
+import { ChartCard, DataTable, Sparkline, TrendChart } from './charts'
 import { PAYMENT_LABEL, formatMoney, todayInMalaysia } from './format'
 import type { BusinessAnalytics, PaymentMethod, WorkSummary } from './types'
 import { href } from './useHashRoute'
@@ -123,6 +123,8 @@ export function BusinessSection() {
   // the sum has no rounding error).
   const expected = ((Math.round(Number(data.revenue_total) * 100) + Math.round(Number(data.unpaid) * 100)) / 100).toFixed(2)
   const period = data.month ? 'bulan ini' : 'tahun ini'
+  // The month shown in detail, marked on each small line (the whole year: the latest month).
+  const highlight = data.month ? data.months.findIndex((m) => Number(m.month.slice(5, 7)) === data.month) : null
   const title = data.month ? `${MONTHS[data.month - 1]} ${data.year}` : `Sepanjang ${data.year}`
   const before = data.previous
   const beforeYear = Number(before.start.slice(0, 4))
@@ -271,13 +273,16 @@ export function BusinessSection() {
           subtitle={`Barang dalam pesanan ${period} (sofa dikira ikut tempat duduk)`}
           chart={
             data.services.length ? (
-              <BarList
-                data={data.services.map((s) => ({
-                  label: s.name,
-                  sublabel: formatMoney(s.value),
-                  value: s.items,
-                  description: `${s.name}: ${s.items} barang, ${formatMoney(s.value)}`,
+              <TrendList
+                rows={data.services.map((s) => ({
+                  name: s.name,
+                  detail: formatMoney(s.value),
+                  value: `${s.items} barang`,
+                  change: <Change now={s.items} before={before.items_by_service[s.name] ?? 0} />,
+                  line: data.months.map((m) => m.items_by_service[s.name] ?? 0),
+                  describe: (i: number) => `${monthName(data.months[i].month)}: ${data.months[i].items_by_service[s.name] ?? 0} barang`,
                 }))}
+                highlight={highlight}
               />
             ) : (
               <p className="text-sm text-ink-soft">Tiada pesanan {period}.</p>
@@ -285,56 +290,60 @@ export function BusinessSection() {
           }
           table={
             <DataTable
-              columns={['Servis', 'Barang', 'Nilai']}
-              rows={data.services.map((s) => [s.name, s.items, formatMoney(s.value)])}
+              columns={['Servis', 'Barang', beforeName, 'Nilai']}
+              rows={data.services.map((s) => [s.name, s.items, before.items_by_service[s.name] ?? 0, formatMoney(s.value)])}
             />
           }
         />
 
         <ChartCard
           title="Cara bayaran"
-          subtitle={`Bahagian hasil ${period}`}
+          subtitle={`Hasil diterima ${period} mengikut cara bayaran`}
           chart={
-            <div className="space-y-4">
-              {methods.map((m) => (
-                <Meter
-                  key={m}
-                  label={PAYMENT_LABEL[m]}
-                  value={Number(data.revenue_by_method[m])}
-                  max={revenue}
-                  detail={`${formatMoney(data.revenue_by_method[m])}${revenue ? ` · ${Math.round((Number(data.revenue_by_method[m]) / revenue) * 100)}%` : ''}`}
-                />
-              ))}
-            </div>
+            <TrendList
+              rows={methods.map((m) => {
+                const amount = Number(data.revenue_by_method[m])
+                return {
+                  name: PAYMENT_LABEL[m],
+                  detail: revenue ? `${Math.round((amount / revenue) * 100)}% daripada hasil` : '–',
+                  value: formatMoney(data.revenue_by_method[m]),
+                  change: <Change now={amount} before={Number(before.revenue_by_method[m])} />,
+                  line: data.months.map((month) => Number(month.revenue_by_method[m])),
+                  describe: (i: number) => `${monthName(data.months[i].month)}: ${ringgit(Number(data.months[i].revenue_by_method[m]))}`,
+                }
+              })}
+              highlight={highlight}
+            />
           }
           table={
             <DataTable
-              columns={['Cara', 'Jumlah']}
-              rows={methods.map((m) => [PAYMENT_LABEL[m], formatMoney(data.revenue_by_method[m])])}
+              columns={['Cara', 'Jumlah', beforeName]}
+              rows={methods.map((m) => [PAYMENT_LABEL[m], formatMoney(data.revenue_by_method[m]), formatMoney(before.revenue_by_method[m])])}
             />
           }
         />
 
         <ChartCard
           title="Hari sibuk"
-          subtitle={`Pesanan diterima mengikut hari, ${period}`}
+          subtitle={`Pesanan diterima mengikut hari, ${period} berbanding ${beforeName}`}
           chart={
-            <>
-              <ColumnChart
-                valueLabel="Pesanan mengikut hari"
-                data={data.busy_days.map((d) => ({
-                  label: d.weekday,
-                  value: d.orders,
-                  description: `${WEEKDAY[d.weekday]}: ${d.orders} pesanan`,
-                }))}
-              />
-              <ColumnLabels labels={data.busy_days.map((d) => WEEKDAY_SHORT[d.weekday] ?? d.weekday)} />
-            </>
+            <TrendChart
+              label="Pesanan mengikut hari"
+              slots={data.busy_days.map((d) => WEEKDAY_SHORT[d.weekday] ?? d.weekday)}
+              current={data.busy_days.map((d) => ({ label: d.weekday, value: d.orders }))}
+              compare={before.busy_days.map((d) => ({ label: d.weekday, value: d.orders }))}
+              currentName={data.month ? MONTHS[data.month - 1] : String(data.year)}
+              compareName={beforeName}
+              describe={(i) => {
+                const day = data.busy_days[i]
+                return `${WEEKDAY[day.weekday]}: ${day.orders} pesanan · ${beforeName}: ${before.busy_days[i]?.orders ?? 0}`
+              }}
+            />
           }
           table={
             <DataTable
-              columns={['Hari', 'Pesanan']}
-              rows={data.busy_days.map((d) => [WEEKDAY[d.weekday] ?? d.weekday, d.orders])}
+              columns={['Hari', 'Pesanan', beforeName]}
+              rows={data.busy_days.map((d, i) => [WEEKDAY[d.weekday] ?? d.weekday, d.orders, before.busy_days[i]?.orders ?? 0])}
             />
           }
         />
@@ -417,5 +426,40 @@ function ShopNow() {
         <p className="mt-3 text-sm text-ink-soft">Memuatkan…</p>
       )}
     </section>
+  )
+}
+
+type TrendRow = {
+  name: string
+  detail: string
+  value: string
+  change: ReactNode
+  line: number[] // January onwards
+  describe: (month: number) => string
+}
+
+/** A ranked list where each row has its own small line through the year and its change
+ * against the period before. */
+function TrendList({ rows, highlight }: { rows: TrendRow[]; highlight: number | null }) {
+  return (
+    <ul className="divide-y divide-line">
+      {rows.map((row) => (
+        // The name gets the full width; its line and numbers sit underneath, so nothing is cut
+        // off in a narrow column.
+        <li key={row.name} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
+          <p className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="text-sm font-semibold">{row.name}</span>
+            <span className="text-xs text-ink-soft">{row.detail}</span>
+          </p>
+          <div className="flex items-center gap-3">
+            <Sparkline values={row.line} label={`${row.name} setiap bulan`} highlight={highlight} describe={row.describe} />
+            <p className="ml-auto flex shrink-0 items-baseline gap-2 tabular-nums">
+              <span className="text-sm font-semibold">{row.value}</span>
+              {row.change}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }

@@ -70,12 +70,16 @@ def test_business_numbers_for_the_year(client: TestClient, services: dict[str, i
         "revenue": "144.00",
         "orders": 1,
         "top_service": "Karpet Biasa",
+        "items_by_service": {"Karpet Biasa": 1},
+        "revenue_by_method": {"cash": "144.00", "transfer": "0", "duitnow": "0"},
     }
     assert months["2026-10"] == {
         "month": "2026-10",
         "revenue": "244.00",
         "orders": 3,
         "top_service": "Cucian Sofa",  # 3 seats beat 2 carpets
+        "items_by_service": {"Cucian Sofa": 3, "Karpet Biasa": 2},
+        "revenue_by_method": {"cash": "144.00", "transfer": "100.00", "duitnow": "0"},
     }
     assert months["2026-08"]["top_service"] is None
     # The whole year in detail.
@@ -135,6 +139,12 @@ def test_the_period_before_and_last_year_s_months_to_compare(
         "revenue": "144.00",
         "orders": 2,
         "average_days_to_ready": None,
+        "revenue_by_method": {"cash": "144.00", "transfer": "0", "duitnow": "0"},
+        "items_by_service": {"Karpet Biasa": 2},
+        "busy_days": [
+            {"weekday": day, "orders": {"Tue": 1, "Wed": 1}.get(day, 0)}
+            for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        ],
     }
     # January looks back to December last year.
     assert (january["previous"]["start"], january["previous"]["orders"]) == ("2025-12-01", 1)

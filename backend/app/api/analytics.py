@@ -80,13 +80,22 @@ def get_business(
         order_value=s.order_value,
         cancelled=s.cancelled,
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
-        busy_days=[BusinessDayCount(weekday=d, orders=n) for d, n in s.busy_days],
+        busy_days=_days(s.busy_days),
         average_days_to_ready=s.average_days_to_ready,
-        previous=PeriodStatRead(**vars(s.previous)),
+        previous=PeriodStatRead(**vars(s.previous) | {"busy_days": _days(s.previous.busy_days)}),
     )
 
 
 def _month(m: business_analytics.MonthStat) -> MonthStatRead:
     return MonthStatRead(
-        month=f"{m.month:%Y-%m}", revenue=m.revenue, orders=m.orders, top_service=m.top_service
+        month=f"{m.month:%Y-%m}",
+        revenue=m.revenue,
+        orders=m.orders,
+        top_service=m.top_service,
+        items_by_service=m.items_by_service,
+        revenue_by_method=m.revenue_by_method,
     )
+
+
+def _days(busy_days: list[tuple[str, int]]) -> list[BusinessDayCount]:
+    return [BusinessDayCount(weekday=d, orders=n) for d, n in busy_days]

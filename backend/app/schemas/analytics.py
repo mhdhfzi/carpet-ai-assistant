@@ -54,6 +54,8 @@ class MonthStatRead(BaseModel):
     revenue: Decimal
     orders: int
     top_service: str | None
+    items_by_service: dict[str, int]
+    revenue_by_method: dict[PaymentMethod, Decimal]
 
 
 class PeriodStatRead(BaseModel):
@@ -62,6 +64,9 @@ class PeriodStatRead(BaseModel):
     revenue: Decimal
     orders: int
     average_days_to_ready: float | None
+    revenue_by_method: dict[PaymentMethod, Decimal]
+    items_by_service: dict[str, int]
+    busy_days: list[BusinessDayCount]
 
 
 class BusinessAnalytics(BaseModel):

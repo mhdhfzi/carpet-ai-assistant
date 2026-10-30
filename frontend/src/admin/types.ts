@@ -267,7 +267,14 @@ export type BusinessAnalytics = {
   revenue_total: string // received in the year
   unpaid: string // owed now on the year's orders
   unpaid_orders: number
-  months: { month: string; revenue: string; orders: number; top_service: string | null }[] // January first
+  months: {
+    month: string
+    revenue: string
+    orders: number
+    top_service: string | null
+    items_by_service: Record<string, number>
+    revenue_by_method: Record<PaymentMethod, string>
+  }[] // January first
   revenue: string // the detail period's
   revenue_by_method: Record<PaymentMethod, string>
   orders: number
@@ -278,7 +285,16 @@ export type BusinessAnalytics = {
   average_days_to_ready: number | null
   last_year_months: BusinessAnalytics['months'] // all 12 months of the year before
   // The month before the chosen month, or the year before the year: to show the change.
-  previous: { start: string; end: string; revenue: string; orders: number; average_days_to_ready: number | null }
+  previous: {
+    start: string
+    end: string
+    revenue: string
+    orders: number
+    average_days_to_ready: number | null
+    revenue_by_method: Record<PaymentMethod, string>
+    items_by_service: Record<string, number>
+    busy_days: { weekday: string; orders: number }[]
+  }
 }
 
 /** The cards at the top of the work pages (GET /api/work/summary). */

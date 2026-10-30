@@ -518,26 +518,28 @@ describe('back office', () => {
         const year = Number(call.query.get('year') ?? 2026)
         const month = call.query.get('month') ? Number(call.query.get('month')) : null
         const thisYear = year === 2026
-        const none = { revenue: '0', orders: 0, average_days_to_ready: null }
+        const methods = (cash: string, transfer = '0') => ({ cash, transfer, duitnow: '0' })
+        const days = (sat: number) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => ({ weekday: d, orders: d === 'Sat' ? sat : 0 }))
+        const none = { revenue: '0', orders: 0, average_days_to_ready: null, revenue_by_method: methods('0'), items_by_service: {}, busy_days: days(0) }
         return {
           body: {
             year, years: [2026, 2025], month, start: `${year}-01-01`, end: `${year}-12-31`,
             revenue_total: thisYear ? '5200.00' : '900.00', unpaid: thisYear ? '256.00' : '0', unpaid_orders: thisYear ? 2 : 0,
             months: thisYear
               ? [
-                  { month: '2026-09', revenue: '3956.00', orders: 30, top_service: 'Cucian Sofa' },
-                  { month: '2026-10', revenue: '1244.00', orders: 9, top_service: 'Karpet Biasa' },
+                  { month: '2026-09', revenue: '3956.00', orders: 30, top_service: 'Cucian Sofa', items_by_service: { 'Cucian Sofa': 12, 'Karpet Biasa': 3 }, revenue_by_method: methods('3956.00') },
+                  { month: '2026-10', revenue: '1244.00', orders: 9, top_service: 'Karpet Biasa', items_by_service: { 'Karpet Biasa': 4 }, revenue_by_method: methods('744.00', '500.00') },
                 ]
-              : [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa' }],
-            last_year_months: thisYear ? [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa' }] : [],
+              : [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa', items_by_service: {}, revenue_by_method: methods('900.00') }],
+            last_year_months: thisYear ? [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa', items_by_service: {}, revenue_by_method: methods('900.00') }] : [],
             revenue: month === 9 ? '3956.00' : '5200.00',
             revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
             orders: month === 9 ? 30 : 39, order_value: '1500.00', cancelled: 1,
             services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
-            busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
+            busy_days: days(5), average_days_to_ready: 6.4,
             previous: month === 9
               ? { start: '2026-08-01', end: '2026-08-31', ...none }
-              : { start: `${year - 1}-01-01`, end: `${year - 1}-12-31`, ...(thisYear ? { revenue: '900.00', orders: 6, average_days_to_ready: 7 } : none) },
+              : { start: `${year - 1}-01-01`, end: `${year - 1}-12-31`, ...(thisYear ? { ...none, revenue: '900.00', orders: 6, average_days_to_ready: 7, revenue_by_method: methods('900.00'), items_by_service: { 'Karpet Biasa': 5 }, busy_days: days(2) } : none) },
           },
         }
       },
@@ -568,6 +570,19 @@ describe('back office', () => {
     const now = within(business).getByRole('region', { name: 'Di kedai sekarang' })
     expect(now).toHaveTextContent('9karpet belum dipack') // 4 to wash + 3 drying + 2 to pack
     expect(now).toHaveTextContent('Siap, tunggu diambil1 tempahan')
+
+    // Services and payments: each with its change and a small line through the year.
+    const services = within(business).getByRole('region', { name: 'Servis paling popular' })
+    expect(services).toHaveTextContent('Karpet BiasaRM980.007 barang+40%') // 7 vs 5 last year
+    expect(within(services).getByRole('list', { name: 'Karpet Biasa setiap bulan' })).toBeInTheDocument()
+    expect(within(services).getByLabelText('September: 3 barang')).toBeInTheDocument()
+    const payments = within(business).getByRole('region', { name: 'Cara bayaran' })
+    expect(payments).toHaveTextContent('Tunai14% daripada hasil') // 744 of 5200
+    expect(within(payments).getByText('-17%')).toHaveClass('text-red-700') // 744 vs 900
+    expect(within(payments).getByLabelText('Oktober: RM500')).toBeInTheDocument()
+    // Busy days: a line against the period before.
+    const busy = within(business).getByRole('region', { name: 'Hari sibuk' })
+    expect(within(busy).getByLabelText('Sabtu: 5 pesanan · 2025: 2')).toBeInTheDocument()
 
     // One month: against the month before, which had nothing.
     await user.selectOptions(within(business).getByLabelText('Tempoh'), '2026-9')
