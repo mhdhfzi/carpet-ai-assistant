@@ -7,7 +7,7 @@ vi.mock('html-to-image', () => ({ toJpeg: vi.fn(async () => 'data:image/jpeg;bas
 import { App } from './App'
 import { AuthProvider } from './auth'
 import { formatShortDate, todayInMalaysia } from './format'
-import type { Order, Receipt, Service, WorkItem } from './types'
+import type { MonthStat, Order, Receipt, Service, WorkItem } from './types'
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown }
 type Handler = (call: Call) => { status?: number; body?: unknown }
@@ -57,6 +57,10 @@ const NEXT: Record<Order['status'], Order['next_status']> = {
   ready: 'completed',
   completed: null,
   cancelled: null,
+}
+
+function monthStat(overrides: Partial<MonthStat> & { month: string }): MonthStat {
+  return { revenue: '0', orders: 0, order_value: '0', customers: 0, new_customers: 0, top_service: null, items_by_service: {}, ...overrides }
 }
 
 function order(overrides: Partial<Order> = {}): Order {
@@ -519,17 +523,19 @@ describe('back office', () => {
           body: {
             year, years: [2026, 2025], month, start: `${year}-01-01`, end: `${year}-12-31`,
             revenue_total: thisYear ? '5200.00' : '900.00', unpaid: thisYear ? '256.00' : '0', unpaid_orders: thisYear ? 2 : 0,
+            customers_total: thisYear ? 25 : 6,
             months: thisYear
               ? [
-                  { month: '2026-09', revenue: '3956.00', orders: 30, top_service: 'Cucian Sofa' },
-                  { month: '2026-10', revenue: '1244.00', orders: 9, top_service: 'Karpet Biasa' },
+                  monthStat({ month: '2026-09', revenue: '3956.00', orders: 30, order_value: '4000.00', customers: 20, new_customers: 15, top_service: 'Cucian Sofa', items_by_service: { 'Cucian Sofa': 40, 'Karpet Biasa': 5 } }),
+                  monthStat({ month: '2026-10', revenue: '1244.00', orders: 9, order_value: '1500.00', customers: 8, new_customers: 6, top_service: 'Karpet Biasa', items_by_service: { 'Karpet Biasa': 7 } }),
                 ]
-              : [{ month: '2025-12', revenue: '900.00', orders: 6, top_service: 'Karpet Biasa' }],
+              : [monthStat({ month: '2025-12', revenue: '900.00', orders: 6, customers: 6 })],
+            month_before: thisYear ? monthStat({ month: '2025-12' }) : monthStat({ month: '2024-12' }),
             revenue: month === 9 ? '3956.00' : '5200.00',
             revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
-            orders: month === 9 ? 30 : 39, order_value: '1500.00', cancelled: 1,
+            orders: month === 9 ? 30 : 39, order_value: '1500.00', new_customers: month === 9 ? 15 : 21, cancelled: 1,
             services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
-            busy_days: [{ weekday: 'Sat', orders: 5 }], average_days_to_ready: 6.4,
+            busy_days: [{ weekday: 'Sat', orders: 5 }],
           },
         }
       },
@@ -540,13 +546,25 @@ describe('back office', () => {
     expect(business).toHaveTextContent('Jumlah hasil keseluruhanRM5456.00') // 5200 received + 256 owed
     expect(business).toHaveTextContent('Jumlah hasil diterimaRM5200.00')
     expect(business).toHaveTextContent('Baki belum dibayarRM256.002 pesanan')
+    // The latest month against the one before: October's RM1244 is 69% below September's RM3956.
+    expect(business).toHaveTextContent('Jumlah hasil diterimaRM5200.00▼ 69% berbanding September')
+    expect(business).toHaveTextContent('Jumlah pelanggan25▼ 60% berbanding September') // 8 vs 20
     const monthly = within(business).getByRole('region', { name: 'Setiap bulan' })
     const rows = within(monthly).getAllByRole('row').map((r) => r.textContent)
-    expect(rows[1]).toBe('OktoberRM1244.009Karpet Biasa') // newest first, no year on each month
-    expect(rows[2]).toBe('SeptemberRM3956.0030Cucian Sofa')
+    // Newest first, no year on each month; September has no month before it to compare with.
+    expect(rows[1]).toBe('OktoberRM1244.00▼ 69% berbanding September9▼ 70% berbanding September6▼ 60% berbanding SeptemberKarpet Biasa')
+    expect(rows[2]).toBe('SeptemberRM3956.003015Cucian Sofa')
+    // The line switches between money, orders and customers; a month shows its change.
+    expect(within(monthly).getByRole('img', { name: 'Hasil setiap bulan' })).toBeInTheDocument()
+    await user.click(within(monthly).getByRole('button', { name: 'Pelanggan baru' }))
+    await user.hover(within(monthly).getByRole('button', { name: 'Okt' }))
+    expect(within(monthly).getByRole('status')).toHaveTextContent('Oktober: 6 pelanggan baru▼ 60% berbanding September')
     expect(within(business).getByRole('heading', { name: 'Sepanjang tahun' })).toBeInTheDocument()
     expect(business).toHaveTextContent('Hasil diterimaRM5200.00Bayaran tahun ini')
-    expect(business).toHaveTextContent('Purata masa siap6.4 hari')
+    expect(business).not.toHaveTextContent('Purata masa siap')
+    // The whole year: a line per service, the rest added up.
+    const popular = within(business).getByRole('region', { name: 'Servis paling popular' })
+    expect(within(popular).getByRole('img', { name: 'Barang setiap bulan, ikut servis' })).toBeInTheDocument()
     expect(business).not.toHaveTextContent('Sedang kering')
     expect(business).not.toHaveTextContent('Belum dicuci')
 
@@ -554,6 +572,8 @@ describe('back office', () => {
     await user.selectOptions(within(business).getByLabelText('Lihat'), '9')
     expect(await within(business).findByRole('heading', { name: 'September' })).toBeInTheDocument()
     expect(calls.findLast((c) => c.path === '/api/analytics/business')?.query.get('month')).toBe('9')
+    expect(business).toHaveTextContent('Pelanggan baru15Pesanan pertama mereka bulan ini') // nothing in August to compare with
+    expect(within(business).queryByRole('img', { name: 'Barang setiap bulan, ikut servis' })).toBeNull() // bars for one month
 
     // Another year: everything switches to it, back to the whole year.
     await user.click(within(business).getByRole('button', { name: '2025' }))

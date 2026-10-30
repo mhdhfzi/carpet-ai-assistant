@@ -53,7 +53,11 @@ class MonthStatRead(BaseModel):
     month: str  # "2026-10"
     revenue: Decimal
     orders: int
+    order_value: Decimal
+    customers: int  # different customers that month
+    new_customers: int  # customers whose first order was that month
     top_service: str | None
+    items_by_service: dict[str, int]  # most items first
 
 
 class BusinessAnalytics(BaseModel):
@@ -68,12 +72,14 @@ class BusinessAnalytics(BaseModel):
     revenue_total: Decimal  # received in the year
     unpaid: Decimal  # owed now on the year's orders
     unpaid_orders: int
+    customers_total: int  # different customers in the year
     months: list[MonthStatRead]  # January onwards (up to this month for this year)
+    month_before: MonthStatRead  # the December before: what January is compared with
     revenue: Decimal  # the detail period's
     revenue_by_method: dict[PaymentMethod, Decimal]
     orders: int
     order_value: Decimal
+    new_customers: int  # first order in the detail period
     cancelled: int
     services: list[ServiceStatRead]
     busy_days: list[BusinessDayCount]
-    average_days_to_ready: float | None
