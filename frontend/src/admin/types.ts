@@ -109,6 +109,7 @@ export type Service = {
   pricing_unit: PricingUnit
   unit_price: string
   unit_price_max: string | null
+  price_cap?: string | null // the most one item is charged (velvet: RM50)
   on_site: boolean // done at the customer's home: no washing or packing forms
   needs_fold: boolean // velvet: gulung or lipat, chosen with the order
   custom: boolean // "Lain-lain": described and priced when the order is taken
@@ -134,6 +135,8 @@ export type OrderItem = {
   width_ft: string | null
   quantity: string | null // null: a carpet not measured yet (measured when washed)
   unit_price: string | null
+  price_cap?: string | null // the most this item is charged (velvet)
+  agreed_total?: string | null // the owner's price for it, instead of size x price
   line_total: string | null
   notes: string | null
   status: ItemStatus
@@ -242,6 +245,7 @@ export type OrderItemInput = {
   width_ft?: string
   quantity?: string
   unit_price?: string
+  total?: string | null // owner, capped items (velvet): its price; null = size x price again
   notes?: string
 }
 

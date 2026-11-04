@@ -1,5 +1,5 @@
 import { FOLD_LABEL, formatMoney } from './format'
-import { type AgentPrices, type ItemRow, emptyRow, fixedPrice, measurable, rowPrice } from './itemRows'
+import { type AgentPrices, type ItemRow, emptyRow, fixedPrice, measurable, priceCap, rowPrice } from './itemRows'
 import type { Service } from './types'
 
 type Props = {
@@ -22,11 +22,13 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
   const othersLabel = others.every((s) => s.on_site) ? 'Kerja luar (di rumah pelanggan)' : 'Lain-lain (di kedai)'
   const update = (key: number, patch: Partial<ItemRow>) =>
     onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)))
-  // A new type: an agent's price box starts from their last price for it.
+  // A new type: an agent's price box starts from their last price for it, and a velvet's
+  // own price doesn't carry over to another type.
   const choose = (row: ItemRow, serviceId: number | null) => {
     const last = agent && serviceId !== null ? prices?.get(serviceId) : undefined
-    if (last) update(row.key, { serviceId, unitPrice: String(Number(last)), suggested: true })
-    else update(row.key, { serviceId, ...(row.suggested ? { unitPrice: '', suggested: false } : {}) })
+    const fresh = { serviceId, total: '', totalEdited: false }
+    if (last) update(row.key, { ...fresh, unitPrice: String(Number(last)), suggested: true })
+    else update(row.key, { ...fresh, ...(row.suggested ? { unitPrice: '', suggested: false } : {}) })
   }
 
   return (
@@ -39,6 +41,9 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
         const sized = !!(row.length && row.width)
         const agentPrice = agent && !!service && fixedPrice(service) && !service.on_site
         const { units, total } = rowPrice(row, service, agent)
+        const cap = service ? priceCap(row, service) : null
+        // What size x price comes to (capped), for the velvet price box's hint.
+        const worked = service && cap !== null ? rowPrice({ ...row, total: '' }, service, agent).total : null
         const label = row.tag ? `Barang ${row.tag}` : `Barang ${index + 1}`
         return (
           <fieldset key={row.key} className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-line">
@@ -155,6 +160,19 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
                 {row.suggested && <p className="text-xs text-amber-800">Harga terakhir ejen ini. Semak sebelum simpan.</p>}
               </div>
             )}
+            {isOwner && service && cap !== null && (
+              <div className="space-y-1">
+                <NumberField
+                  label={`Harga karpet ini (maks RM${cap})`}
+                  value={row.total}
+                  placeholder={worked === null ? 'Ikut saiz' : `Ikut saiz: ${worked}`}
+                  onChange={(v) => update(row.key, { total: v, totalEdited: true })}
+                />
+                <p className="text-xs text-ink-soft">
+                  Kosongkan untuk ikut saiz × harga{worked === null ? '' : ` (RM${worked})`}. Tidak lebih RM{cap}.
+                </p>
+              </div>
+            )}
 
             <label className="block space-y-1">
               <span className="text-sm font-semibold">
@@ -182,6 +200,7 @@ export function ItemsEditor({ services, rows, onChange, isOwner, onCancelItem, a
                       ? 'Saiz boleh diisi semasa cuci; harga dikira selepas itu'
                       : 'Masukkan kuantiti'
                   : formatMoney(String(total))}
+                {cap !== null && total !== null && !row.total && total >= cap && ` (maks RM${cap})`}
               </p>
             )}
           </fieldset>
@@ -231,11 +250,13 @@ export function NumberField({
   value,
   onChange,
   step = '0.01',
+  placeholder,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   step?: string
+  placeholder?: string
 }) {
   return (
     <label className="block space-y-1">
@@ -245,6 +266,7 @@ export function NumberField({
         type="text"
         inputMode={step === '1' ? 'numeric' : 'decimal'}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-xl bg-foam px-3 py-3"
       />

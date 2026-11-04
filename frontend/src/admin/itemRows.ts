@@ -12,17 +12,19 @@ export type ItemRow = {
   width: string
   quantity: string
   unitPrice: string // owner only; '' = the price list's price (or the price it already has)
+  total: string // owner only, velvet: this carpet's price; '' = size x price, up to the cap
+  totalEdited?: boolean // the owner changed it: sent, so an emptied box goes back to size x price
   notes: string // "Lain-lain": what the job is
   fold?: ItemFold // velvet: gulung or lipat
   // An item already on the order: the service and price it has, for the preview.
-  saved?: { serviceId: number; price: string | null }
+  saved?: { serviceId: number; price: string | null; cap?: string | null }
   suggested?: boolean // unitPrice is this agent's last price, filled in for the owner to check
 }
 
 let nextKey = 1
 
 export function emptyRow(serviceId: number | null = null): ItemRow {
-  return { key: nextKey++, serviceId, length: '', width: '', quantity: '', unitPrice: '', notes: '' }
+  return { key: nextKey++, serviceId, length: '', width: '', quantity: '', unitPrice: '', total: '', notes: '' }
 }
 
 export function rowsFromItems(items: OrderItem[]): ItemRow[] {
@@ -35,9 +37,10 @@ export function rowsFromItems(items: OrderItem[]): ItemRow[] {
     width: item.width_ft ? String(Number(item.width_ft)) : '',
     quantity: item.length_ft || item.quantity === null ? '' : String(Number(item.quantity)),
     unitPrice: '',
+    total: item.agreed_total ? String(Number(item.agreed_total)) : '',
     notes: item.notes ?? '',
     fold: item.fold ?? undefined,
-    saved: { serviceId: item.service.id, price: item.unit_price },
+    saved: { serviceId: item.service.id, price: item.unit_price, cap: item.price_cap },
   }))
 }
 
@@ -50,6 +53,7 @@ export function rowsToInput(rows: ItemRow[]): OrderItemInput[] {
       ...(row.length && row.width ? { length_ft: row.length, width_ft: row.width } : {}),
       ...(row.quantity && !(row.length && row.width) ? { quantity: row.quantity } : {}),
       ...(row.unitPrice ? { unit_price: row.unitPrice } : {}),
+      ...(row.totalEdited ? { total: row.total || null } : {}),
       ...(row.notes.trim() ? { notes: row.notes.trim() } : {}),
       ...(row.fold ? { fold: row.fold } : {}),
     }))
@@ -94,8 +98,20 @@ export function rowPrice(row: ItemRow, service: Service | undefined, agent = fal
         ? null
         : Number(row.saved!.price)
       : listPrice(service, agent)
-  // Whole ringgit per line, like the server (RM37.80 -> RM37).
-  return { units, total: unit === null || !units ? null : Math.floor(Math.round(units * unit * 100) / 100) }
+  // The owner's own price for a capped item (velvet) comes first.
+  if (row.total) return { units, total: Math.floor(Number(row.total)) }
+  // Whole ringgit per line, like the server (RM37.80 -> RM37), never above the cap.
+  const total = unit === null || !units ? null : Math.floor(Math.round(units * unit * 100) / 100)
+  const cap = priceCap(row, service)
+  return { units, total: total !== null && cap !== null ? Math.min(total, cap) : total }
+}
+
+/** The most this row's item is charged: the cap it was recorded with, or today's for a new
+ * one (velvet: RM50); null when there's none. */
+export function priceCap(row: ItemRow, service: Service): number | null {
+  const kept = row.saved && row.saved.serviceId === service.id
+  const cap = kept ? row.saved!.cap : service.price_cap
+  return cap ? Number(cap) : null
 }
 
 /** Agent prices the owner gave this agent last time, by service id. */

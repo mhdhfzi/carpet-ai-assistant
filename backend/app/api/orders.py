@@ -424,6 +424,8 @@ def _item_read(order: Order, item: OrderItem) -> OrderItemRead:
         width_ft=item.width_ft,
         quantity=item.quantity,
         unit_price=item.unit_price,
+        price_cap=item.price_cap,
+        agreed_total=item.agreed_total,
         line_total=orders.line_total(item),
         notes=item.notes,
         status=item.status,

@@ -20,6 +20,7 @@ class ServiceCreate(BaseModel):
     unit_price: Money
     # Only for services priced on inspection; unit_price is then the lower bound.
     unit_price_max: Money | None = None
+    price_cap: Money | None = None  # the most one item is charged (velvet: RM50)
     minimum_charge: Money = Decimal("0")
     visit_minutes: VisitMinutes = 120
     on_site: bool = False  # done at the customer's home (no washing or packing forms)
@@ -28,7 +29,8 @@ class ServiceCreate(BaseModel):
 class ServiceUpdate(BaseModel):
     """Partial update: only fields present in the request body are changed.
 
-    unit_price_max may be sent as null to turn a price range back into a fixed price.
+    unit_price_max may be sent as null to turn a price range back into a fixed price, and
+    price_cap as null to take the cap off.
     """
 
     name: Name | None = None
@@ -36,6 +38,7 @@ class ServiceUpdate(BaseModel):
     pricing_unit: PricingUnit | None = None
     unit_price: Money | None = None
     unit_price_max: Money | None = None
+    price_cap: Money | None = None
     minimum_charge: Money | None = None
     visit_minutes: VisitMinutes | None = None
     on_site: bool | None = None
@@ -45,7 +48,7 @@ class ServiceUpdate(BaseModel):
     def _reject_explicit_nulls(self) -> Self:
         nulls = sorted(
             field
-            for field in self.model_fields_set - {"unit_price_max"}
+            for field in self.model_fields_set - {"unit_price_max", "price_cap"}
             if getattr(self, field) is None
         )
         if nulls:
@@ -65,6 +68,7 @@ class ServiceRead(BaseModel):
     custom: bool  # "Lain-lain": described and priced when the order is taken
     unit_price: Decimal
     unit_price_max: Decimal | None
+    price_cap: Decimal | None = None
     minimum_charge: Decimal
     visit_minutes: int
     is_active: bool

@@ -57,6 +57,8 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
   const [filter, setFilter] = useState(filters.find((f) => f.key === initial) ?? filters[0])
   const [query, setQuery] = useState('')
   const [orders, setOrders] = useState<Order[] | null>(null)
+  // A search that finds nothing in this tab: the matches in every tab, to say where they are.
+  const [elsewhere, setElsewhere] = useState<Order[]>([])
   const [error, setError] = useState(false)
   const [version, setVersion] = useState(0)
   const [closing, setClosing] = useState<number | null>(null)
@@ -84,15 +86,20 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
 
   useEffect(() => {
     let current = true
+    const q = query.trim()
     const params = new URLSearchParams({ kind })
-    // A search looks through every status: a customer asking about a tag may be anywhere.
-    if (query.trim()) params.set('q', query.trim())
-    else for (const s of filter.statuses) params.append('status', s)
+    // A search stays inside the chosen tab: under Siap, only orders that are ready.
+    if (q) params.set('q', q)
+    for (const s of filter.statuses) params.append('status', s)
     const timer = setTimeout(() => {
       request<Order[]>(`/api/orders?${params}`)
-        .then((data) => {
+        .then(async (data) => {
+          const found = data.filter((o) => !filter.keep || filter.keep(o, today))
+          // Nothing here: look in every tab, so the page can say where the order is.
+          const others = q && !found.length ? await request<Order[]>(`/api/orders?${new URLSearchParams({ kind, q })}`) : []
           if (current) {
             setOrders(data)
+            setElsewhere(others)
             setError(false)
           }
         })
@@ -104,9 +111,18 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
       current = false
       clearTimeout(timer)
     }
-  }, [request, kind, filter, query, version])
+  }, [request, kind, filter, query, version, today])
 
-  const shown = orders && !query.trim() && filter.keep ? orders.filter((o) => filter.keep?.(o, today)) : orders
+  const shown = orders && filter.keep ? orders.filter((o) => filter.keep?.(o, today)) : orders
+  const choose = (f: Filter) => {
+    setOrders(null) // show "loading", not the previous filter's orders
+    setFilter(f)
+  }
+  // Where a search with nothing in this tab did find orders: "Sejarah (1)".
+  const foundIn = filters
+    .filter((f) => f.key !== filter.key)
+    .map((f) => ({ filter: f, count: elsewhere.filter((o) => f.statuses.includes(o.status) && (!f.keep || f.keep(o, today))).length }))
+    .filter((f) => f.count > 0)
   const toPack = (orders ?? []).flatMap((o) => o.items).filter((i) => readyToPack(i, today)).length
 
   return (
@@ -144,24 +160,19 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
               className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </label>
-          {!query.trim() && (
-            <div className="flex flex-wrap gap-1" role="group" aria-label="Tapis status">
-              {filters.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  aria-pressed={filter.key === f.key}
-                  onClick={() => {
-                    setOrders(null) // show "loading", not the previous filter's orders
-                    setFilter(f)
-                  }}
-                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 aria-pressed:bg-slate-900 aria-pressed:text-white"
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Tapis status">
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                aria-pressed={filter.key === f.key}
+                onClick={() => choose(f)}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 aria-pressed:bg-slate-900 aria-pressed:text-white"
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
         <a
           href={href({ page: 'new-order', kind })}
@@ -182,7 +193,24 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
       {error && <p role="alert" className="text-danger">Tak dapat muatkan pesanan. Cuba lagi.</p>}
       {shown === null && !error && <p className="text-ink-soft">Memuatkan…</p>}
       {shown?.length === 0 && (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-ink-soft shadow-sm">Tiada pesanan di sini.</p>
+        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-6 text-center text-ink-soft shadow-sm">
+          <p>{query.trim() ? `Tiada dalam ${filter.label}.` : 'Tiada pesanan di sini.'}</p>
+          {query.trim() !== '' && foundIn.length > 0 && (
+            <p className="flex flex-wrap items-center justify-center gap-2 text-sm">
+              Dijumpai di:
+              {foundIn.map(({ filter: f, count }) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => choose(f)}
+                  className="rounded-lg bg-amber-100 px-3 py-1 font-semibold text-amber-900 hover:bg-amber-200"
+                >
+                  {f.label} ({count})
+                </button>
+              ))}
+            </p>
+          )}
+        </div>
       )}
 
       {shown && shown.length > 0 && (
@@ -194,6 +222,7 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
                   <th scope="col" className="px-4 py-3">No. siri / tarikh</th>
                   <th scope="col" className="px-4 py-3">Pelanggan & alamat</th>
                   <th scope="col" className="px-4 py-3">{luar ? 'Senarai kerja' : 'Senarai karpet (jenis & saiz)'}</th>
+                  <th scope="col" className="px-4 py-3">Catatan</th>
                   <th scope="col" className="px-4 py-3">{luar ? 'Status kerja' : 'Tarikh cuci & tempoh kering'}</th>
                   <th scope="col" className="px-4 py-3">{luar ? 'Progress' : 'Status packing'}</th>
                   <th scope="col" className="px-4 py-3">Jumlah & bayaran</th>
@@ -221,6 +250,34 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
 }
 
 const cell = 'px-4 py-3.5 max-md:block max-md:px-0 max-md:py-1.5'
+
+/** The book's "Catatan": the order's note, each carpet's note ("21-1: tompok kopi") and what
+ * the washer wrote ("Cuci 21-1: tompok tak hilang"). A "Lain-lain"'s note is its name, already
+ * in the list. On a phone, the cell only shows when there's something to read. */
+function BookNotes({ order }: { order: Order }) {
+  const lines = [
+    ...(order.notes ? [{ key: 'order', label: 'Pesanan', text: order.notes }] : []),
+    ...order.items.flatMap((item) => [
+      ...(item.notes && !item.service.custom ? [{ key: `n${item.id}`, label: item.tag, text: item.notes }] : []),
+      ...(item.wash_note ? [{ key: `w${item.id}`, label: `Cuci ${item.tag}`, text: item.wash_note }] : []),
+    ]),
+  ]
+  return (
+    <td className={`${cell} max-w-56 ${lines.length ? '' : 'max-md:hidden'}`}>
+      {lines.length ? (
+        <ul className="space-y-1 text-xs">
+          {lines.map((line) => (
+            <li key={line.key} className="text-rose-800">
+              <span className="font-mono font-bold">{line.label}:</span> {line.text}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span className="text-xs text-slate-400">–</span>
+      )}
+    </td>
+  )
+}
 
 function BookRow({
   order,
@@ -290,11 +347,6 @@ function BookRow({
                   {item.fold && ` (${FOLD_LABEL[item.fold]})`}
                 </span>{' '}
                 <span className="text-slate-500">({formatSize(item)})</span>
-                {item.wash_note && (
-                  <span className="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                    {item.wash_note}
-                  </span>
-                )}
               </span>
               <span className="font-semibold whitespace-nowrap text-slate-700">
                 {item.line_total ? formatMoney(item.line_total) : '—'}
@@ -309,6 +361,8 @@ function BookRow({
           </p>
         )}
       </td>
+
+      <BookNotes order={order} />
 
       <td className={cell}>
         <ul className="space-y-1.5">
