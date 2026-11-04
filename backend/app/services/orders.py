@@ -444,10 +444,14 @@ def whole_ringgit(amount: Decimal) -> Decimal:
 
 def line_total(item: OrderItem) -> Decimal | None:
     """In whole ringgit, like the total (RM37.80 -> RM37). None while the price isn't known:
-    no price set yet, or a carpet not measured yet."""
+    no price set yet, or a carpet not measured yet. A price the owner agreed for the item
+    comes first; otherwise size x price, never above the item's cap (velvet: RM50)."""
+    if item.agreed_total is not None:
+        return whole_ringgit(item.agreed_total)
     if item.unit_price is None or item.quantity is None:
         return None
-    return whole_ringgit(item.unit_price * item.quantity)
+    total = whole_ringgit(item.unit_price * item.quantity)
+    return total if item.price_cap is None else min(total, item.price_cap)
 
 
 def item_name(item: OrderItem) -> str:
@@ -825,8 +829,9 @@ def update_item_status(
     if item.cancelled_on is not None:
         raise BusinessRuleError(f"{tag(order, item)} was cancelled")
     if size is not None:
-        if item.service.pricing_unit is not PricingUnit.PER_SQFT:
+        if not _measured(item.service):
             raise BusinessRuleError(f"{tag(order, item)} is not measured in feet")
+        # A "Lain-lain" measured now: the owner's price becomes a price per square foot.
         item.length_ft, item.width_ft = size
         item.quantity = _sqft(*size)
     if new is item.status:
@@ -1026,6 +1031,12 @@ def _update_item(db: Session, item: OrderItem, data: OrderItemIn, actor: Owner) 
     item.unit_price, item.fold = _price_and_fold(
         service, data, actor, agent=item.order.agent, before=item
     )
+    same = item.service_id == service.id
+    # The cap it was recorded with stays (an old velvet has none); a new type takes today's.
+    item.price_cap = item.price_cap if same else service.price_cap
+    item.agreed_total = _agreed_total(
+        data, item.price_cap, actor, before=item.agreed_total if same else None
+    )
     if service.custom and data.unit_price is None and (item.length_ft is None) != (length is None):
         # Measured now and counted before (or the other way): a price per piece isn't a price
         # per square foot. The owner prices it again.
@@ -1125,6 +1136,8 @@ def _build_items(
                 width_ft=width,
                 quantity=quantity,
                 unit_price=unit_price,
+                price_cap=service.price_cap,
+                agreed_total=_agreed_total(data, service.price_cap, actor),
                 notes=data.notes,
                 fold=fold,
                 # Set here, not left to the column default: the order's step is worked out
@@ -1163,6 +1176,23 @@ def _price_and_fold(
     return price, data.fold if service.needs_fold else None
 
 
+def _agreed_total(
+    data: OrderItemIn, cap: Decimal | None, actor: Owner, *, before: Decimal | None = None
+) -> Decimal | None:
+    """The owner's own price for one capped item (velvet), instead of size x price. Not sent:
+    it keeps the one it had; sent empty: back to size x price."""
+    if "total" not in data.model_fields_set:
+        return before
+    _owner_only(actor, "set a price")
+    if data.total is None:
+        return None
+    if cap is None:
+        raise BusinessRuleError("Only items with a price cap (velvet) take a set price")
+    if data.total > cap:
+        raise BusinessRuleError(f"The most this item is charged is RM{cap}")
+    return data.total
+
+
 def _fixed_price(service: Service) -> bool:
     """Priced from the price list (not a range, not "Lain-lain")."""
     return not service.custom and service.unit_price_max is None
@@ -1182,10 +1212,7 @@ def _quantity(
     """Square feet from length x width for carpets; a count for everything else. A carpet
     may come in unmeasured (it's measured when washed): its size is then None. "Lain-lain"
     brought to the shop may be measured (a shaggy rug: square feet) or counted (curtains)."""
-    measured = service.pricing_unit is PricingUnit.PER_SQFT or (
-        service.custom and not service.on_site
-    )
-    if measured:
+    if _measured(service):
         if (data.length_ft is None) != (data.width_ft is None):
             raise BusinessRuleError(f"{service.name}: enter both the length and the width")
         if data.length_ft is not None and data.width_ft is not None:
@@ -1197,6 +1224,11 @@ def _quantity(
     if data.quantity != data.quantity.to_integral_value():
         raise BusinessRuleError(f"{service.name}: the quantity must be a whole number")
     return data.quantity, None, None
+
+
+def _measured(service: Service) -> bool:
+    """Measured in feet: carpets, and "Lain-lain" brought to the shop (when it has a size)."""
+    return service.pricing_unit is PricingUnit.PER_SQFT or (service.custom and not service.on_site)
 
 
 def _sqft(length: Decimal, width: Decimal) -> Decimal:

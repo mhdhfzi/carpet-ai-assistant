@@ -171,6 +171,15 @@ export function needsMeasuring(item: { service: { pricing_unit: string }; quanti
   return item.service.pricing_unit === 'per_sqft' && item.quantity === null
 }
 
+/** A "Lain-lain" at the shop with no size yet: it may be measured when it's washed (a shaggy
+ * rug, then priced per square foot) or not (toto, curtains: priced per piece). */
+export function mayMeasure(item: {
+  service: { custom?: boolean; on_site: boolean }
+  length_ft: string | null
+}): boolean {
+  return !!item.service.custom && !item.service.on_site && item.length_ft === null
+}
+
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash: 'Tunai',
   transfer: 'Pindahan bank',

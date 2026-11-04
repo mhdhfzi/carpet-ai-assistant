@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
-import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, needsMeasuring, readyToPack, todayInMalaysia } from './format'
+import { FOLD_LABEL, daysBetween, formatShortDate, formatSize, mayMeasure, needsMeasuring, readyToPack, todayInMalaysia } from './format'
 import { AlertIcon, BoxIcon, CheckIcon, ClockIcon, DropIcon, PrintIcon, TagIcon } from './icons'
 import { SearchBox } from './SearchBox'
 import { carpetMatches } from './search'
@@ -115,6 +115,14 @@ export function WashPage() {
   const [sizes, setSizes] = useState<Record<number, { length: string; width: string }>>({})
   const sizeOf = (id: number) => sizes[id] ?? { length: '', width: '' }
   const measured = (id: number) => Number(sizeOf(id).length) > 0 && Number(sizeOf(id).width) > 0
+  const halfMeasured = (id: number) => !measured(id) && (sizeOf(id).length !== '' || sizeOf(id).width !== '')
+  // What stops "Tandakan siap cuci": a carpet with no size, or a size with one side missing.
+  const blocked = (item: WorkItem) =>
+    needsMeasuring(item) && !measured(item.id)
+      ? 'Isi saiz karpet dulu'
+      : mayMeasure(item) && halfMeasured(item.id)
+        ? 'Isi panjang dan lebar, atau kosongkan kedua-duanya'
+        : undefined
   const { move, busy, notice } = useMove(work.reload)
   const [query, setQuery] = useState('')
   // Only carpets still to wash: once washed they leave the form (Rekod harian keeps the day's).
@@ -164,9 +172,10 @@ export function WashPage() {
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-4 p-4 hover:bg-slate-50">
                 <CarpetSummary item={item} waiting />
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                  {needsMeasuring(item) && (
+                  {(needsMeasuring(item) || mayMeasure(item)) && (
                     <div className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
-                      <span>Saiz:</span>
+                      {/* "Lain-lain": measured (priced per square foot) or left blank (per piece). */}
+                      <span>{mayMeasure(item) ? 'Saiz (pilihan):' : 'Saiz:'}</span>
                       {(['length', 'width'] as const).map((side, i) => (
                         <span key={side} className="flex items-center gap-1.5">
                           {i === 1 && <span aria-hidden="true">×</span>}
@@ -199,12 +208,14 @@ export function WashPage() {
                   </label>
                   <button
                     type="button"
-                    disabled={busy !== null || (needsMeasuring(item) && !measured(item.id))}
-                    title={needsMeasuring(item) && !measured(item.id) ? 'Isi saiz karpet dulu' : undefined}
+                    disabled={busy !== null || blocked(item) !== undefined}
+                    title={blocked(item)}
                     onClick={() =>
                       move(item, 'washed', {
                         ...(notes[item.id]?.trim() ? { note: notes[item.id].trim() } : {}),
-                        ...(needsMeasuring(item) ? { length_ft: sizeOf(item.id).length, width_ft: sizeOf(item.id).width } : {}),
+                        ...((needsMeasuring(item) || mayMeasure(item)) && measured(item.id)
+                          ? { length_ft: sizeOf(item.id).length, width_ft: sizeOf(item.id).width }
+                          : {}),
                       })
                     }
                     className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-sky-700 disabled:opacity-50"

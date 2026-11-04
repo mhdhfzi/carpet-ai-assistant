@@ -729,6 +729,74 @@ describe('measuring when washing', () => {
 
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ status: 'washed', length_ft: '8', width_ft: '10' })
   })
+
+  it('lets staff measure a "Lain-lain" if it has a size, or leave it blank', async () => {
+    const other = { id: 6, name: 'Lain-lain (kedai)', pricing_unit: 'per_item' as const, needs_fold: false, on_site: false, custom: true }
+    const shaggy = workItem({ name: 'Shaggy', service: other, length_ft: null, width_ft: null, quantity: '1', notes: 'Shaggy' })
+    const toto = workItem({ id: 2, position: 2, tag: '412-2', name: 'Toto', service: other, length_ft: null, width_ft: null, quantity: '1', notes: 'Toto' })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/work/items': () => ({ body: [shaggy, toto] }),
+      'GET /api/work/log': (call) => ({ body: { day: call.query.get('day'), washed: [], packed: [] } }),
+      'GET /api/work/untagged': () => ({ body: [] }),
+      'PATCH /api/orders/7/items/1': () => ({ body: order() }),
+      'PATCH /api/orders/7/items/2': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/cuci')
+
+    expect(await screen.findAllByText('Saiz (pilihan):')).toHaveLength(2)
+    const [washShaggy, washToto] = screen.getAllByRole('button', { name: 'Tandakan siap cuci' })
+    await user.type(screen.getByLabelText('Panjang 412-1 (kaki)'), '5')
+    expect(washShaggy).toBeDisabled() // one side only
+    await user.type(screen.getByLabelText('Lebar 412-1 (kaki)'), '8')
+    await user.click(washShaggy)
+    await user.click(washToto) // no size: priced per piece
+
+    const patches = calls.filter((c) => c.method === 'PATCH').map((c) => c.body)
+    expect(patches).toEqual([{ status: 'washed', length_ft: '5', width_ft: '8' }, { status: 'washed' }])
+  })
+})
+
+describe('the book', () => {
+  it('searches only in the chosen tab and says where else the order is', async () => {
+    const done = order({ status: 'completed', completed_on: '2026-10-20' })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      // Only the completed order matches "412": nothing in Siap, one in Sejarah.
+      'GET /api/orders': (call) => ({
+        body: call.query.getAll('status').length && !call.query.getAll('status').includes('completed') ? [] : [done],
+      }),
+    })
+    const user = renderSignedIn('#/orders?tapis=ready')
+
+    await user.type(await screen.findByLabelText('Cari pesanan'), '412')
+    expect(await screen.findByText('Tiada dalam Siap.')).toBeInTheDocument()
+    const searched = calls.findLast((c) => c.path === '/api/orders' && c.query.get('q') && c.query.getAll('status').length)
+    expect(searched?.query.getAll('status')).toEqual(['ready'])
+    await user.click(screen.getByRole('button', { name: 'Sejarah (1)' }))
+
+    expect(await screen.findByRole('row', { name: /Pesanan 412, Ali/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sejarah', pressed: true })).toBeInTheDocument()
+  })
+
+  it('shows the order, carpet and washing notes in their own column', async () => {
+    const noted = order({
+      notes: 'Hantar petang',
+      items: [{ ...order().items[0], wash_note: 'tompok tak hilang' }],
+    })
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: [noted] }),
+    })
+    renderSignedIn()
+
+    const row = await screen.findByRole('row', { name: /Pesanan 412, Ali/ })
+    expect(screen.getByRole('columnheader', { name: 'Catatan' })).toBeInTheDocument()
+    expect(row).toHaveTextContent('Pesanan: Hantar petang412-1: tompok kopiCuci 412-1: tompok tak hilang')
+  })
 })
 
 describe("jobs at the customer's home", () => {
@@ -1120,6 +1188,34 @@ describe('order form', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
     const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
     expect(posted.items[0]).toMatchObject({ service_id: 4, fold: 'rolled' })
+  })
+
+  it('caps velvet at its most and lets the owner type its price', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: [...SERVICES, { ...VELVET, price_cap: '50.00' }] }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Velvet')
+    await user.type(screen.getByLabelText('Panjang (kaki)'), '10')
+    await user.type(screen.getByLabelText('Lebar (kaki)'), '8')
+    expect(screen.getByText('80 kaki persegi · RM50.00 (maks RM50)')).toBeInTheDocument() // 72 -> 50
+    const price = screen.getByLabelText('Harga karpet ini (maks RM50)')
+    expect(price).toHaveAttribute('placeholder', 'Ikut saiz: 50')
+    await user.type(price, '40')
+    expect(screen.getByText('80 kaki persegi · RM40.00')).toBeInTheDocument()
+    await user.click(within(screen.getByRole('radiogroup', { name: /Gulung atau lipat/ })).getByRole('radio', { name: 'Gulung' }))
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
+    expect(posted.items[0]).toMatchObject({ service_id: 4, length_ft: '10', width_ft: '8', total: '40' })
   })
 
   it('lets staff describe "Lain-lain" and leaves its price to the owner', async () => {

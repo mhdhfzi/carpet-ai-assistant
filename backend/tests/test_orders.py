@@ -1279,6 +1279,69 @@ def test_lain_lain_at_the_shop_may_be_measured_and_is_then_priced_per_square_foo
     assert sofa.status_code == 422
 
 
+def test_a_lain_lain_measured_on_the_washing_form_is_priced_per_square_foot(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    shop = services["Lain-lain (kedai)"]
+    shaggy = {"service_id": shop, "quantity": "1", "notes": "Shaggy", "unit_price": "2.50"}
+    toto = {"service_id": shop, "quantity": "1", "notes": "Toto", "unit_price": "20"}
+    order = client.post("/api/orders", json={"customer": ALI, "items": [shaggy, toto]}).json()
+    item_id = order["items"][0]["id"]
+
+    washed = staff_client.patch(
+        f"/api/orders/{order['id']}/items/{item_id}",
+        json={"status": "washed", "length_ft": "5", "width_ft": "8"},
+    ).json()
+    move(staff_client, order, 2, "washed")  # the toto isn't measured: priced per piece
+    home = client.post(
+        "/api/orders",
+        json={"customer": ALI, "items": [{"service_id": services["Cucian Sofa"], "quantity": 3}]},
+    ).json()
+    sofa = staff_client.patch(
+        f"/api/orders/{home['id']}/items/{home['items'][0]['id']}",
+        json={"status": "ready", "length_ft": "5", "width_ft": "8"},
+    )
+
+    rug, piece = washed["items"]
+    assert (rug["quantity"], rug["unit_price"], rug["line_total"]) == ("40.00", "2.50", "100.00")
+    assert piece["line_total"] == "20.00"
+    assert sofa.status_code == 422
+
+
+def test_velvet_is_never_charged_more_than_its_cap(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    velvet = carpet(services, "Karpet Velvet", "10", "8", fold="rolled")  # 80 x 0.90 = 72
+    premium = carpet(services, "Karpet Premium Velvet", "10", "8", fold="rolled")  # 80 x 1.00
+    small = carpet(services, "Karpet Velvet", "5", "4", fold="rolled")  # 20 x 0.90 = 18
+    order = staff_client.post(
+        "/api/orders", json={"customer": ALI, "items": [velvet, premium, small]}
+    ).json()
+    assert [i["line_total"] for i in order["items"]] == ["50.00", "55.00", "18.00"]
+    assert order["items"][0]["price_cap"] == "50.00"
+
+    url = f"/api/orders/{order['id']}"
+    items = [same(order, 0, velvet), same(order, 1, premium), same(order, 2, small)]
+    staff_sets = staff_client.patch(url, json={"items": [items[0] | {"total": "40"}, *items[1:]]})
+    too_much = client.patch(url, json={"items": [items[0] | {"total": "60"}, *items[1:]]})
+    agreed = client.patch(url, json={"items": [items[0] | {"total": "40"}, *items[1:]]}).json()
+    kept = staff_client.patch(url, json={"items": items}).json()  # not sent: it stays
+    cleared = client.patch(url, json={"items": [items[0] | {"total": None}, *items[1:]]}).json()
+    plain = client.post(
+        "/api/orders",
+        json={
+            "customer": ALI,
+            "items": [carpet(services, "Karpet Biasa", "8", "10", total="100")],
+        },
+    )
+
+    assert (staff_sets.status_code, too_much.status_code, plain.status_code) == (403, 422, 422)
+    assert agreed["items"][0]["line_total"] == "40.00"
+    assert agreed["total"] == "113.00"  # 40 + 55 + 18
+    assert kept["items"][0]["line_total"] == "40.00"
+    assert cleared["items"][0]["line_total"] == "50.00"  # back to size x price, capped
+
+
 def test_lain_lain_at_the_shop_dries_5_to_7_days_like_a_carpet(
     staff_client: TestClient, services: dict[str, int]
 ) -> None:

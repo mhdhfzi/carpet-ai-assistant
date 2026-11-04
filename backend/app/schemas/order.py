@@ -34,6 +34,9 @@ class OrderItemIn(BaseModel):
     # Owner only (anyone for "Lain-lain"). Unset = the price list's price, or the price it
     # already has when editing (handmade carpet: set after inspection).
     unit_price: Amount | None = None
+    # Owner only, for an item with a price cap (velvet): its price, instead of size x price.
+    # Unset keeps the one it has; null goes back to size x price.
+    total: Amount | None = None
     notes: str | None = Field(default=None, max_length=500)  # "Lain-lain": what the job is
     fold: ItemFold | None = None  # velvet: gulung or lipat, chosen when the order is taken
 
@@ -144,6 +147,7 @@ class OrderServiceRead(BaseModel):
     needs_fold: bool  # velvet: packed rolled or folded
     on_site: bool  # done at the customer's home: no washing or packing forms
     custom: bool = False  # "Lain-lain": the item's notes say what the job is
+    price_cap: Decimal | None = None  # the most one item is charged now (velvet)
 
 
 class OrderItemRead(BaseModel):
@@ -156,6 +160,8 @@ class OrderItemRead(BaseModel):
     width_ft: Decimal | None
     quantity: Decimal | None  # None: a carpet not measured yet
     unit_price: Decimal | None  # None: the owner hasn't set it yet
+    price_cap: Decimal | None = None  # the most this item is charged (velvet)
+    agreed_total: Decimal | None = None  # the owner's price for it, instead of size x price
     line_total: Decimal | None
     notes: str | None
     status: ItemStatus

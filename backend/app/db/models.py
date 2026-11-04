@@ -150,6 +150,8 @@ class Service(TimestampMixin, Base):
     # Set only when the price varies (e.g. handmade carpet, decided by the owner on
     # inspection); unit_price is then the lower bound. NULL means a fixed price.
     unit_price_max: Mapped[Decimal | None] = mapped_column(Money)
+    # The most one item is charged, whatever its size (velvet: RM50). NULL: no cap.
+    price_cap: Mapped[Decimal | None] = mapped_column(Money)
     minimum_charge: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
     # How long the team spends at the customer's home: e.g. 30 min to collect a carpet
     # (cleaned at the shop, returned in 5-7 days), 2 hours to clean a sofa on site.
@@ -531,6 +533,11 @@ class OrderItem(Base):
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # None while the owner hasn't set it (e.g. handmade carpet, priced after inspection).
     unit_price: Mapped[Decimal | None] = mapped_column(Money)
+    # The service's cap when the item was recorded (velvet: RM50), so a later change to the
+    # price list never changes an old bill; and a price the owner agreed for this one item
+    # instead of size x price (never above the cap).
+    price_cap: Mapped[Decimal | None] = mapped_column(Money)
+    agreed_total: Mapped[Decimal | None] = mapped_column(Money)
     notes: Mapped[str | None] = mapped_column(Text)
     # Each carpet moves on its own: washed one day, packed 5-7 days later once dry.
     status: Mapped[ItemStatus] = mapped_column(
