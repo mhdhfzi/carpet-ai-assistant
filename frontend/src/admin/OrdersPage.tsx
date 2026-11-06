@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type TouchEvent as SwipeEvent } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
 import {
@@ -48,6 +48,15 @@ const FILTERS: Record<OrderKind, Filter[]> = {
   ],
 }
 
+// A page of the book: ten customers, then swipe (or ‹ ›) to the next ten.
+const PAGE_SIZE = 10
+
+const monthLong = new Intl.DateTimeFormat('ms-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
+/** "Oktober 2026" from "2026-10". */
+function monthName(month: string): string {
+  return monthLong.format(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 15)))
+}
+
 export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?: string }) {
   const { request, state } = useAuth()
   const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
@@ -56,6 +65,13 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
   const luar = kind === 'on_site'
   const [filter, setFilter] = useState(filters.find((f) => f.key === initial) ?? filters[0])
   const [query, setQuery] = useState('')
+  // The month received ("2026-10"), or '' for every month. A search ignores it.
+  const [month, setMonth] = useState('')
+  const [months, setMonths] = useState<string[]>([])
+  const [page, setPage] = useState(0)
+  const [turn, setTurn] = useState<'next' | 'back' | null>(null)
+  const listTop = useRef<HTMLDivElement>(null)
+  const swipe = useRef<{ x: number; y: number } | null>(null)
   const [orders, setOrders] = useState<Order[] | null>(null)
   // A search that finds nothing in this tab: the matches in every tab, to say where they are.
   const [elsewhere, setElsewhere] = useState<Order[]>([])
@@ -86,10 +102,24 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
 
   useEffect(() => {
     let current = true
+    request<string[]>(`/api/orders/months?${new URLSearchParams({ kind })}`)
+      .then((data) => {
+        if (current) setMonths(data)
+      })
+      .catch(() => {}) // without the list, the picker just offers "Semua bulan"
+    return () => {
+      current = false
+    }
+  }, [request, kind, version])
+
+  useEffect(() => {
+    let current = true
     const q = query.trim()
     const params = new URLSearchParams({ kind })
-    // A search stays inside the chosen tab: under Siap, only orders that are ready.
+    // A search stays inside the chosen tab (under Siap, only orders that are ready) but looks
+    // through every month: a customer asking about a tag may have come in any month.
     if (q) params.set('q', q)
+    else if (month) params.set('month', month)
     for (const s of filter.statuses) params.append('status', s)
     const timer = setTimeout(() => {
       request<Order[]>(`/api/orders?${params}`)
@@ -111,12 +141,37 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
       current = false
       clearTimeout(timer)
     }
-  }, [request, kind, filter, query, version, today])
+  }, [request, kind, filter, query, month, version, today])
 
   const shown = orders && filter.keep ? orders.filter((o) => filter.keep?.(o, today)) : orders
   const choose = (f: Filter) => {
     setOrders(null) // show "loading", not the previous filter's orders
     setFilter(f)
+    setPage(0)
+  }
+  const pages = Math.max(1, Math.ceil((shown?.length ?? 0) / PAGE_SIZE))
+  const at = Math.min(page, pages - 1) // an order closed on the last page may empty it
+  const onPage = shown?.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE) ?? []
+  const turnTo = (next: number) => {
+    if (next < 0 || next >= pages) return
+    setTurn(next > at ? 'next' : 'back')
+    setPage(next)
+    // A long page on a phone: start reading the new one from its top.
+    const top = listTop.current
+    if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView?.({ block: 'start' })
+  }
+  // A sideways swipe on a phone turns the page, like a book; an up-down one still scrolls.
+  const onTouchStart = (e: SwipeEvent) => {
+    swipe.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+  const onTouchEnd = (e: SwipeEvent) => {
+    const start = swipe.current
+    swipe.current = null
+    if (!start) return
+    const dx = e.changedTouches[0].clientX - start.x
+    const dy = e.changedTouches[0].clientY - start.y
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    turnTo(dx < 0 ? at + 1 : at - 1)
   }
   // Where a search with nothing in this tab did find orders: "Sejarah (1)".
   const foundIn = filters
@@ -127,7 +182,7 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
 
   return (
     <section className="space-y-5">
-      {!luar && filter.key === 'open' && !query.trim() && toPack > 0 && (
+      {!luar && filter.key === 'open' && !query.trim() && !month && toPack > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-r-xl border-l-4 border-amber-500 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent p-4">
           <div>
             <h2 className="flex items-center gap-2 text-sm font-bold text-amber-900">
@@ -155,10 +210,35 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
             <input
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setPage(0)
+              }}
               placeholder="Cari no. siri, nama atau no. HP"
               className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <span className="sr-only">Bulan</span>
+            <select
+              value={query.trim() ? '' : month}
+              disabled={query.trim() !== ''}
+              onChange={(e) => {
+                setOrders(null)
+                setMonth(e.target.value)
+                setPage(0)
+              }}
+              className="rounded-lg border border-slate-300 bg-white py-2 pr-8 pl-3 text-sm font-semibold focus:ring-2 focus:ring-amber-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+            >
+              <option value="">Semua bulan</option>
+              {/* A month just picked stays offered even if the list hasn't caught up. */}
+              {(month && !months.includes(month) ? [month, ...months] : months).map((m) => (
+                <option key={m} value={m}>
+                  {monthName(m)}
+                </option>
+              ))}
+            </select>
+            {query.trim() !== '' && month !== '' && <span className="text-slate-500">Carian: semua bulan</span>}
           </label>
           <div className="flex flex-wrap gap-1" role="group" aria-label="Tapis status">
             {filters.map((f) => (
@@ -194,7 +274,13 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
       {shown === null && !error && <p className="text-ink-soft">Memuatkan…</p>}
       {shown?.length === 0 && (
         <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-6 text-center text-ink-soft shadow-sm">
-          <p>{query.trim() ? `Tiada dalam ${filter.label}.` : 'Tiada pesanan di sini.'}</p>
+          <p>
+            {query.trim()
+              ? `Tiada dalam ${filter.label}.`
+              : month
+                ? `Tiada dalam ${filter.label} pada ${monthName(month)}.`
+                : 'Tiada pesanan di sini.'}
+          </p>
           {query.trim() !== '' && foundIn.length > 0 && (
             <p className="flex flex-wrap items-center justify-center gap-2 text-sm">
               Dijumpai di:
@@ -214,8 +300,16 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
       )}
 
       {shown && shown.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
+        <div
+          ref={listTop}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+          className="scroll-mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
+          <div
+            key={at}
+            className={`overflow-x-auto ${turn === 'next' ? 'motion-safe:animate-page-next' : turn === 'back' ? 'motion-safe:animate-page-back' : ''}`}
+          >
             <table className="w-full border-collapse text-left text-sm max-md:block">
               <thead className="max-md:hidden">
                 <tr className="bg-slate-800 text-xs text-slate-200 uppercase">
@@ -230,12 +324,13 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 max-md:block">
-                {shown.map((order) => (
+                {onPage.map((order) => (
                   <BookRow key={order.id} order={order} today={today} closing={closing} onClose={close} />
                 ))}
               </tbody>
             </table>
           </div>
+          {pages > 1 && <Pager at={at} pages={pages} total={shown.length} onTurn={turnTo} />}
         </div>
       )}
       {isOwner && (
@@ -250,6 +345,28 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
 }
 
 const cell = 'px-4 py-3.5 max-md:block max-md:px-0 max-md:py-1.5'
+
+/** Under the list: "Muka 2 / 5 · 11–20 daripada 47", with ‹ › for a mouse (a phone can swipe). */
+function Pager({ at, pages, total, onTurn }: { at: number; pages: number; total: number; onTurn: (page: number) => void }) {
+  const button =
+    'flex size-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-slate-100'
+  return (
+    <nav aria-label="Muka buku" className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+      <button type="button" className={button} disabled={at === 0} onClick={() => onTurn(at - 1)} aria-label="Muka sebelum">
+        <ArrowIcon className="size-4 rotate-180" />
+      </button>
+      <p className="text-center text-xs text-slate-600" aria-live="polite">
+        <strong className="text-slate-900">
+          Muka {at + 1} / {pages}
+        </strong>{' '}
+        · {at * PAGE_SIZE + 1}–{Math.min((at + 1) * PAGE_SIZE, total)} daripada {total}
+      </p>
+      <button type="button" className={button} disabled={at === pages - 1} onClick={() => onTurn(at + 1)} aria-label="Muka seterusnya">
+        <ArrowIcon className="size-4" />
+      </button>
+    </nav>
+  )
+}
 
 /** The book's "Catatan": the order's note, each carpet's note ("21-1: tompok kopi") and what
  * the washer wrote ("Cuci 21-1: tompok tak hilang"). A "Lain-lain"'s note is its name, already

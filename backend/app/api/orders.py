@@ -63,18 +63,34 @@ work_router = APIRouter(
 )
 
 
+MONTH = r"^\d{4}-(0[1-9]|1[0-2])$"  # "2026-10"
+
+
 @router.get("", response_model=list[OrderRead])
 def list_orders(
     db: DbSession,
     status: Annotated[list[OrderStatus] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
     kind: Annotated[OrderKind | None, Query()] = None,
+    month: Annotated[str | None, Query(pattern=MONTH)] = None,
 ) -> list[OrderRead]:
     """Newest first; filter by one or more statuses (?status=completed&status=cancelled for
-    the history) and by book (?kind=shop for carpets, ?kind=on_site for kerja luar), or find
-    by order number, tag, phone or name."""
-    found = orders.list_orders(db, statuses=status or (), q=q, kind=kind)
+    the history), by book (?kind=shop for carpets, ?kind=on_site for kerja luar) and by the
+    month received (?month=2026-10), or find by order number, tag, phone or name."""
+    found = orders.list_orders(
+        db, statuses=status or (), q=q, kind=kind, month=_month(month), limit=500
+    )
     return [to_read(order) for order in found]
+
+
+@router.get("/months", response_model=list[str])
+def order_months(db: DbSession, kind: Annotated[OrderKind | None, Query()] = None) -> list[str]:
+    """The months the book has orders in, newest first ("2026-11", "2026-10", ...)."""
+    return [month.strftime("%Y-%m") for month in orders.order_months(db, kind)]
+
+
+def _month(value: str | None) -> date | None:
+    return None if value is None else date(int(value[:4]), int(value[5:]), 1)
 
 
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)

@@ -14,6 +14,22 @@
   --color-brand: #f59e0b; /* amber-500 */
   --color-brand-hover: #d97706;
   --color-brand-ink: #92400e;
+
+  /* The book's pages turning: the next page comes in from the right, the one before from the left. */
+  --animate-page-next: page-next 200ms ease-out;
+  --animate-page-back: page-back 200ms ease-out;
+  @keyframes page-next {
+    from {
+      opacity: 0.4;
+      transform: translateX(2rem);
+    }
+  }
+  @keyframes page-back {
+    from {
+      opacity: 0.4;
+      transform: translateX(-2rem);
+    }
+  }
 }
 
 @layer base {
