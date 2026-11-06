@@ -188,13 +188,17 @@ def list_orders(
     q: str | None = None,
     customer_id: int | None = None,
     kind: OrderKind | None = None,
+    month: date | None = None,
     limit: int = 100,
 ) -> list[Order]:
     """Newest first. `q` finds an order by number ("412", "L12"), tag ("412-2"), phone or
-    name. `kind` picks one book: carpets or kerja luar."""
+    name. `kind` picks one book: carpets or kerja luar. `month` (its first day) keeps the
+    orders received that month."""
     query = select(Order).join(Order.customer).options(*_with_details())
     if kind is not None:
         query = query.where(Order.kind == kind)
+    if month is not None:
+        query = query.where(Order.received_on >= month, Order.received_on < _next_month(month))
     if customer_id is not None:
         query = query.where(Order.customer_id == customer_id)
     if statuses:
@@ -203,6 +207,19 @@ def list_orders(
         query = query.where(_search(q.strip()))
     # By when they were recorded: the two books' numbers don't compare.
     return list(db.scalars(query.order_by(Order.id.desc()).limit(limit)))
+
+
+def _next_month(month: date) -> date:
+    return date(month.year + month.month // 12, month.month % 12 + 1, 1)
+
+
+def order_months(db: Session, kind: OrderKind | None = None) -> list[date]:
+    """The months a book has orders in (each as its first day), newest first: the choices
+    for the book's month picker, so it never offers an empty month."""
+    query = select(Order.received_on).distinct().where(Order.deleted_at.is_(None))
+    if kind is not None:
+        query = query.where(Order.kind == kind)
+    return sorted({day.replace(day=1) for day in db.scalars(query)}, reverse=True)
 
 
 def _search(q: str):

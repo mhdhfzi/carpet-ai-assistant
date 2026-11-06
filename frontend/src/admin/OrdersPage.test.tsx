@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -779,6 +779,73 @@ describe('the book', () => {
 
     expect(await screen.findByRole('row', { name: /Pesanan 412, Ali/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sejarah', pressed: true })).toBeInTheDocument()
+  })
+
+  it('shows ten customers a page, turned by the arrows or a swipe', async () => {
+    const many = Array.from({ length: 23 }, (_, i) => order({ id: 100 + i, number: 500 - i, code: String(500 - i) }))
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders': () => ({ body: many }),
+    })
+    const user = renderSignedIn()
+    const rows = () => screen.getAllByRole('row', { name: /^Pesanan/ }).map((r) => r.getAttribute('aria-label')?.split(',')[0])
+
+    await screen.findByRole('row', { name: /Pesanan 500,/ })
+    expect(rows()).toHaveLength(10)
+    expect(screen.getByRole('navigation', { name: 'Muka buku' })).toHaveTextContent('Muka 1 / 3 · 1–10 daripada 23')
+    expect(screen.getByRole('button', { name: 'Muka sebelum' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Muka seterusnya' }))
+    expect(rows()[0]).toBe('Pesanan 490')
+    expect(screen.getByRole('navigation', { name: 'Muka buku' })).toHaveTextContent('Muka 2 / 3 · 11–20 daripada 23')
+
+    // Swiping left turns to the next page; a mostly up-down drag doesn't.
+    const book = screen.getByRole('table').closest('div[class*="rounded-xl"]') as HTMLElement
+    fireEvent.touchStart(book, { touches: [{ clientX: 300, clientY: 100 }] })
+    fireEvent.touchEnd(book, { changedTouches: [{ clientX: 280, clientY: 300 }] })
+    expect(rows()[0]).toBe('Pesanan 490')
+    fireEvent.touchStart(book, { touches: [{ clientX: 300, clientY: 100 }] })
+    fireEvent.touchEnd(book, { changedTouches: [{ clientX: 120, clientY: 110 }] })
+    expect(rows()).toEqual(['Pesanan 480', 'Pesanan 479', 'Pesanan 478'])
+    expect(screen.getByRole('button', { name: 'Muka seterusnya' })).toBeDisabled()
+
+    // Another tab starts again at the first page.
+    await user.click(screen.getByRole('button', { name: 'Belum cuci' }))
+    await waitFor(() => expect(rows()[0]).toBe('Pesanan 500'))
+  })
+
+  it('shows one month of the book, but a search looks through every month', async () => {
+    const october = order({ received_on: '2026-10-10' })
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/months': () => ({ body: ['2026-11', '2026-10'] }),
+      'GET /api/orders': (call) => ({ body: call.query.get('month') === '2026-11' ? [] : [october] }),
+    })
+    const user = renderSignedIn()
+    const picker = await screen.findByLabelText('Bulan')
+    await screen.findByRole('row', { name: /Pesanan 412/ })
+
+    expect(within(picker).getAllByRole('option').map((o) => o.textContent)).toEqual(['Semua bulan', 'November 2026', 'Oktober 2026'])
+    expect(picker).toHaveValue('')
+    expect(calls.find((c) => c.path === '/api/orders/months')?.query.get('kind')).toBe('shop')
+
+    await user.selectOptions(picker, '2026-11')
+    expect(await screen.findByText('Tiada dalam Semua pada November 2026.')).toBeInTheDocument()
+    expect(calls.findLast((c) => c.path === '/api/orders')?.query.get('month')).toBe('2026-11')
+
+    await user.type(screen.getByLabelText('Cari pesanan'), '412')
+    expect(await screen.findByRole('row', { name: /Pesanan 412/ })).toBeInTheDocument()
+    const searched = calls.findLast((c) => c.path === '/api/orders')
+    expect(searched?.query.get('q')).toBe('412')
+    expect(searched?.query.has('month')).toBe(false)
+    expect(picker).toBeDisabled()
+    expect(screen.getByText('Carian: semua bulan')).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('Cari pesanan'))
+    expect(await screen.findByText('Tiada dalam Semua pada November 2026.')).toBeInTheDocument()
+    expect(picker).toHaveValue('2026-11')
   })
 
   it('shows the order, carpet and washing notes in their own column', async () => {

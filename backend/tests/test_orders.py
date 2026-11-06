@@ -879,6 +879,23 @@ def test_the_order_list_filters_by_status(client: TestClient, services: dict[str
     assert [o["number"] for o in washed] == [1]
 
 
+def test_the_book_can_show_one_month(client: TestClient, services: dict[str, int]) -> None:
+    october = new_order(client, services, received_on="2026-10-31")
+    new_order(client, services, received_on="2026-09-01")
+    november = new_order(client, services, received_on="2026-11-01")
+    new_order(client, services, received_on="2025-11-15")
+
+    shown = client.get("/api/orders", params={"month": "2026-10"}).json()
+    months = client.get("/api/orders/months", params={"kind": "shop"}).json()
+
+    assert [o["number"] for o in shown] == [october["number"]]
+    assert months == ["2026-11", "2026-10", "2026-09", "2025-11"]
+    assert client.get("/api/orders/months", params={"kind": "on_site"}).json() == []
+    first = client.get("/api/orders", params={"month": "2026-11"}).json()
+    assert [o["number"] for o in first] == [november["number"]]
+    assert client.get("/api/orders", params={"month": "2026-13"}).status_code == 422
+
+
 def test_a_customer_page_shows_their_order_history(
     client: TestClient, services: dict[str, int]
 ) -> None:
