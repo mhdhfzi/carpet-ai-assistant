@@ -274,8 +274,10 @@ export type BusinessAnalytics = {
   customers_total: number // different customers in the year
   months: MonthStat[] // January first
   month_before: MonthStat // the December before: what January is compared with
-  revenue: string // the detail period's
+  revenue: string // paid for the detail period's jobs, whenever paid
   revenue_by_method: Record<PaymentMethod, string>
+  owed: string // still owed on the detail period's jobs
+  owed_orders: number
   orders: number
   order_value: string
   new_customers: number // first ever order in the detail period

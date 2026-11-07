@@ -14,6 +14,7 @@ import {
 } from './charts'
 import { PAYMENT_LABEL, formatMoney, todayInMalaysia } from './format'
 import type { BusinessAnalytics, MonthStat, PaymentMethod } from './types'
+import { href } from './useHashRoute'
 
 const WEEKDAY: Record<string, string> = {
   Mon: 'Isnin',
@@ -163,7 +164,7 @@ export function BusinessSection() {
           label="Jumlah hasil diterima"
           value={formatMoney(data.revenue_total)}
           change={latestChange((m) => Number(m.revenue))}
-          hint={`Semua bayaran sepanjang tahun${latestNote && ` · ${latestNote}`}`}
+          hint={`Bayaran untuk pesanan tahun ini${latestNote && ` · ${latestNote}`}`}
         />
         <StatTile
           label="Baki belum dibayar"
@@ -252,12 +253,12 @@ export function BusinessSection() {
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className={`grid gap-3 sm:grid-cols-2 ${data.month ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <StatTile
           label="Hasil diterima"
           value={formatMoney(data.revenue)}
           change={chosenChange(MEASURES.revenue.of)}
-          hint={`Bayaran ${period}`}
+          hint={`Bayaran untuk pesanan ${period}`}
         />
         <StatTile
           label="Pesanan"
@@ -271,6 +272,20 @@ export function BusinessSection() {
           change={chosenChange(MEASURES.customers.of)}
           hint={`Pesanan pertama mereka ${period}`}
         />
+        {/* What the month's jobs still owe; the year's is in the tiles at the top. */}
+        {data.month && (
+          <StatTile
+            label="Baki belum dibayar"
+            value={formatMoney(data.owed)}
+            hint={
+              data.owed_orders
+                ? `${data.owed_orders} pesanan belum bayar penuh · untuk karpet diterima bulan ini`
+                : 'Semua pesanan bulan ini sudah dibayar'
+            }
+            href={data.owed_orders ? href({ page: 'orders', filter: 'unpaid', month: `${data.year}-${String(data.month).padStart(2, '0')}` }) : undefined}
+            action="Lihat dalam Buku Utama"
+          />
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

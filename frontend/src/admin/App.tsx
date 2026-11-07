@@ -119,7 +119,7 @@ function Page({ route }: { route: Route }) {
     case 'analytics':
       return <AnalyticsPage />
     case 'orders':
-      return <OrdersPage key={route.filter ?? ''} kind="shop" filter={route.filter} />
+      return <OrdersPage key={`${route.filter ?? ''}-${route.month ?? ''}`} kind="shop" filter={route.filter} month={route.month} />
     case 'customers':
       return <CustomersPage />
     case 'wash':

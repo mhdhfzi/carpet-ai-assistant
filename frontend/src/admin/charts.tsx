@@ -7,14 +7,18 @@ export function StatTile({
   value,
   hint,
   change,
+  href,
+  action,
 }: {
   label: string
   value: string
   hint?: string
   change?: ReactNode
+  href?: string // a tile that opens the list behind its number
+  action?: string // what following the link shows, under the hint
 }) {
-  return (
-    <div className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line">
+  const body = (
+    <>
       <p className="text-sm text-ink-soft">{label}</p>
       {/* A bit smaller on a phone, and it wraps rather than run into the next tile. */}
       <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
@@ -22,7 +26,15 @@ export function StatTile({
         {change}
       </p>
       {hint && <p className="mt-1 text-xs text-ink-soft">{hint}</p>}
-    </div>
+      {href && action && <p className="mt-2 text-xs font-bold text-brand-ink">{action} →</p>}
+    </>
+  )
+  return href ? (
+    <a href={href} className="block min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line transition hover:ring-2 hover:ring-amber-400">
+      {body}
+    </a>
+  ) : (
+    <div className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line">{body}</div>
   )
 }
 

@@ -6,7 +6,7 @@ import type { OrderKind } from './types'
 export type Route =
   | { page: 'bookings' }
   | { page: 'analytics' }
-  | { page: 'orders'; filter?: string }
+  | { page: 'orders'; filter?: string; month?: string } // month: "2026-10", from analytics
   | { page: 'receipts' }
   | { page: 'customers' }
   | { page: 'wash' }
@@ -33,7 +33,11 @@ export function parseRoute(hash: string): Route | null {
       if (rest === 'resit' && Number.isInteger(number) && number > 0) return { page: 'receipt', id: number }
       if (id && Number.isInteger(number) && number > 0)
         return { page: 'order', id: number, edit: new URLSearchParams(query).has('ubah') }
-      return { page: 'orders', filter: new URLSearchParams(query).get('tapis') ?? undefined }
+      return {
+        page: 'orders',
+        filter: new URLSearchParams(query).get('tapis') ?? undefined,
+        month: new URLSearchParams(query).get('bulan') ?? undefined,
+      }
     case 'resit':
       return { page: 'receipts' }
     case 'cuci':
@@ -59,7 +63,13 @@ export function parseRoute(hash: string): Route | null {
 export function href(route: Route): string {
   switch (route.page) {
     case 'orders':
-      return route.filter ? `#/orders?tapis=${route.filter}` : '#/orders'
+    {
+      const query = new URLSearchParams({
+        ...(route.filter ? { tapis: route.filter } : {}),
+        ...(route.month ? { bulan: route.month } : {}),
+      }).toString()
+      return query ? `#/orders?${query}` : '#/orders'
+    }
     case 'receipts':
       return '#/resit'
     case 'new-order':
