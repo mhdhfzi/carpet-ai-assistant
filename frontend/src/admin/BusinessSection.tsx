@@ -41,6 +41,20 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => monthLong.format(new Date(Da
 const monthShort = new Intl.DateTimeFormat('ms-MY', { month: 'short', timeZone: 'Asia/Kuala_Lumpur' })
 const MONTHS_SHORT = Array.from({ length: 12 }, (_, i) => monthShort.format(new Date(Date.UTC(2026, i, 15))))
 
+/** Under "Baki belum dibayar" for a month: each book that's owed money, opened on its
+ * Belum bayar tab at that month. */
+function owedLinks(data: BusinessAnalytics): { href: string; label: string }[] {
+  if (!data.month) return []
+  const month = `${data.year}-${String(data.month).padStart(2, '0')}`
+  const books = [
+    { owed: data.owed_by_book.shop, name: 'Buku Utama', href: href({ page: 'orders', filter: 'unpaid', month }) },
+    { owed: data.owed_by_book.on_site, name: 'Buku Luar', href: href({ page: 'visits', book: true, filter: 'unpaid', month }) },
+  ]
+  return books
+    .filter((book) => book.owed?.orders)
+    .map((book) => ({ href: book.href, label: `${book.name} · ${book.owed.orders} pesanan · ${formatMoney(book.owed.amount)}` }))
+}
+
 /** "Oktober" from "2026-10". */
 function monthName(month: string): string {
   return MONTHS[Number(month.slice(5, 7)) - 1]
@@ -279,11 +293,10 @@ export function BusinessSection() {
             value={formatMoney(data.owed)}
             hint={
               data.owed_orders
-                ? `${data.owed_orders} pesanan belum bayar penuh · untuk karpet diterima bulan ini`
+                ? `${data.owed_orders} pesanan belum bayar penuh · untuk kerja diterima bulan ini`
                 : 'Semua pesanan bulan ini sudah dibayar'
             }
-            href={data.owed_orders ? href({ page: 'orders', filter: 'unpaid', month: `${data.year}-${String(data.month).padStart(2, '0')}` }) : undefined}
-            action="Lihat dalam Buku Utama"
+            links={owedLinks(data)}
           />
         )}
       </div>

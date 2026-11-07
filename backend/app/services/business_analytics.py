@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import (
     Order,
     OrderItem,
+    OrderKind,
     OrderStatus,
     Payment,
     PaymentMethod,
@@ -32,6 +33,12 @@ class ServiceStat:
     name: str
     items: int
     value: Decimal
+
+
+@dataclass(frozen=True)
+class Owed:
+    amount: Decimal
+    orders: int
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,7 @@ class BusinessSummary:
     revenue_by_method: dict[PaymentMethod, Decimal]
     owed: Decimal  # still owed on the period's jobs
     owed_orders: int
+    owed_by_book: dict[OrderKind, Owed]  # the same, per book (carpets, kerja luar)
     orders: int  # received that month, not cancelled
     order_value: Decimal  # their total value
     new_customers: int  # customers whose very first order was in the period
@@ -130,6 +138,7 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         revenue_by_method=by_method,
         owed=sum(owed, Decimal("0")),
         owed_orders=len(owed),
+        owed_by_book={kind: _owed([o for o in kept if o.kind is kind]) for kind in OrderKind},
         orders=len(kept),
         order_value=_value(kept),
         new_customers=_new_customers(_first_orders(db), start, end),
@@ -230,6 +239,11 @@ def _paid(orders: list[Order]) -> list[Payment]:
 def _balances(orders: list[Order]) -> list[Decimal]:
     """What each of these orders still owes, for those that owe anything."""
     return [b for b in (order_service.totals(o).balance for o in orders) if b > 0]
+
+
+def _owed(orders: list[Order]) -> Owed:
+    balances = _balances(orders)
+    return Owed(sum(balances, Decimal("0")), len(balances))
 
 
 def _orders(db: Session, condition) -> list[Order]:

@@ -278,6 +278,7 @@ export type BusinessAnalytics = {
   revenue_by_method: Record<PaymentMethod, string>
   owed: string // still owed on the detail period's jobs
   owed_orders: number
+  owed_by_book: Record<OrderKind, { amount: string; orders: number }> // the same, per book
   orders: number
   order_value: string
   new_customers: number // first ever order in the detail period

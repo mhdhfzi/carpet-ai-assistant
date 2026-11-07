@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.db.models import Channel, PaymentMethod, UnansweredReason
+from app.db.models import Channel, OrderKind, PaymentMethod, UnansweredReason
 
 
 class ChannelConversionRead(BaseModel):
@@ -49,6 +49,11 @@ class BusinessDayCount(BaseModel):
     orders: int
 
 
+class OwedRead(BaseModel):
+    amount: Decimal
+    orders: int
+
+
 class MonthStatRead(BaseModel):
     month: str  # "2026-10"
     revenue: Decimal
@@ -79,6 +84,7 @@ class BusinessAnalytics(BaseModel):
     revenue_by_method: dict[PaymentMethod, Decimal]
     owed: Decimal  # still owed on the detail period's jobs
     owed_orders: int
+    owed_by_book: dict[OrderKind, OwedRead]  # the same, per book: shop and on_site
     orders: int
     order_value: Decimal
     new_customers: int  # first order in the detail period

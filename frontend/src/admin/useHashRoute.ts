@@ -11,7 +11,7 @@ export type Route =
   | { page: 'customers' }
   | { page: 'wash' }
   | { page: 'pack' }
-  | { page: 'visits'; book?: boolean; filter?: string } // Kerja Luar: the visit schedule, or its book
+  | { page: 'visits'; book?: boolean; filter?: string; month?: string } // Kerja Luar: the visit schedule, or its book
   | { page: 'log' }
   | { page: 'deleted' } // the owner's "Pesanan dipadam" list
   | { page: 'new-order'; kind?: OrderKind }
@@ -47,7 +47,12 @@ export function parseRoute(hash: string): Route | null {
     case 'kerja-luar':
     case 'kerja-rumah': // the page's old address, kept for bookmarks
       return id === 'buku'
-        ? { page: 'visits', book: true, filter: new URLSearchParams(query).get('tapis') ?? undefined }
+        ? {
+            page: 'visits',
+            book: true,
+            filter: new URLSearchParams(query).get('tapis') ?? undefined,
+            month: new URLSearchParams(query).get('bulan') ?? undefined,
+          }
         : { page: 'visits' }
     case 'rekod':
       return { page: 'log' }
@@ -60,16 +65,16 @@ export function parseRoute(hash: string): Route | null {
   }
 }
 
+/** A book's tab and month in its address: "?tapis=unpaid&bulan=2026-10". */
+function bookQuery({ filter, month }: { filter?: string; month?: string }): string {
+  const query = new URLSearchParams({ ...(filter ? { tapis: filter } : {}), ...(month ? { bulan: month } : {}) }).toString()
+  return query ? `?${query}` : ''
+}
+
 export function href(route: Route): string {
   switch (route.page) {
     case 'orders':
-    {
-      const query = new URLSearchParams({
-        ...(route.filter ? { tapis: route.filter } : {}),
-        ...(route.month ? { bulan: route.month } : {}),
-      }).toString()
-      return query ? `#/orders?${query}` : '#/orders'
-    }
+      return `#/orders${bookQuery(route)}`
     case 'receipts':
       return '#/resit'
     case 'new-order':
@@ -86,7 +91,7 @@ export function href(route: Route): string {
       return '#/packing'
     case 'visits':
       if (!route.book) return '#/kerja-luar'
-      return route.filter ? `#/kerja-luar/buku?tapis=${route.filter}` : '#/kerja-luar/buku'
+      return `#/kerja-luar/buku${bookQuery(route)}`
     case 'log':
       return '#/rekod'
     case 'deleted':
