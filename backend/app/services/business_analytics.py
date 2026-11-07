@@ -37,7 +37,7 @@ class ServiceStat:
 @dataclass(frozen=True)
 class MonthStat:
     month: date  # the first day of the month
-    revenue: Decimal  # money received that month
+    revenue: Decimal  # paid so far for the jobs received that month, whenever it was paid
     orders: int  # orders received that month, not cancelled
     order_value: Decimal  # their total value
     customers: int  # different customers among those orders
@@ -53,15 +53,17 @@ class BusinessSummary:
     month: int | None  # the month shown in detail (1-12), or None for the whole year
     start: date  # the detail period
     end: date
-    revenue_total: Decimal  # every payment received in the year (not voided)
+    revenue_total: Decimal  # paid so far for the year's jobs (not cancelled), whenever paid
     unpaid: Decimal  # owed now on the year's orders that aren't cancelled
     unpaid_orders: int
     customers_total: int  # different customers with an order in the year
     months: list[MonthStat]  # January onwards: all 12, or up to this month for this year
     month_before: MonthStat  # the December before, so January has a month to compare with
     # The detail period (the whole year, or the chosen month):
-    revenue: Decimal
+    revenue: Decimal  # paid for the period's jobs
     revenue_by_method: dict[PaymentMethod, Decimal]
+    owed: Decimal  # still owed on the period's jobs
+    owed_orders: int
     orders: int  # received that month, not cancelled
     order_value: Decimal  # their total value
     new_customers: int  # customers whose very first order was in the period
@@ -80,7 +82,11 @@ def first_of_month(day: date) -> date:
 
 def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary:
     """One year: its totals, its months side by side, and the whole year (month=None) or
-    one of its months in detail."""
+    one of its months in detail.
+
+    Money follows the job, not the day it was paid: a September carpet's balance paid in
+    October counts for September. So each month's received + owed is the value of the jobs
+    received that month, and months compare job for job."""
     year_start, year_end = date(year, 1, 1), date(year, 12, 31)
     if month is None:
         start, end = year_start, year_end
@@ -91,16 +97,22 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
     period_orders = _orders(db, Order.received_on.between(start, end))
     kept = [o for o in period_orders if o.status is not OrderStatus.CANCELLED]
     by_method = {method: Decimal("0") for method in PaymentMethod}
-    for payment in _payments(db, start, end):
+    for payment in _paid(kept):
         by_method[payment.method] += payment.amount
+    owed = _balances(kept)
 
-    # What's still owed on the orders received this year.
-    owing = _orders(
-        db,
-        Order.received_on.between(year_start, year_end) & (Order.status != OrderStatus.CANCELLED),
+    # The year's jobs: what they've paid and what they still owe.
+    year_jobs = (
+        kept
+        if month is None
+        else _orders(
+            db,
+            Order.received_on.between(year_start, year_end)
+            & (Order.status != OrderStatus.CANCELLED),
+        )
     )
-    balances = [order_service.totals(o).balance for o in owing]
-    received = sum((p.amount for p in _payments(db, year_start, year_end)), Decimal("0"))
+    balances = _balances(year_jobs)
+    received = sum((p.amount for p in _paid(year_jobs)), Decimal("0"))
 
     return BusinessSummary(
         year=year,
@@ -109,13 +121,15 @@ def summary(db: Session, year: int, month: int | None = None) -> BusinessSummary
         start=start,
         end=end,
         revenue_total=received,
-        unpaid=sum((b for b in balances if b > 0), Decimal("0")),
-        unpaid_orders=sum(1 for b in balances if b > 0),
-        customers_total=_customers(owing),
+        unpaid=sum(balances, Decimal("0")),
+        unpaid_orders=len(balances),
+        customers_total=_customers(year_jobs),
         months=_months_of(db, year),
         month_before=_month_stats(db, [date(year - 1, 12, 1)])[0],
         revenue=sum(by_method.values(), Decimal("0")),
         revenue_by_method=by_method,
+        owed=sum(owed, Decimal("0")),
+        owed_orders=len(owed),
         orders=len(kept),
         order_value=_value(kept),
         new_customers=_new_customers(_first_orders(db), start, end),
@@ -155,9 +169,6 @@ def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
     first_orders = _first_orders(db)
     end = _next_month(firsts[-1]) - timedelta(days=1)
 
-    revenue: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
-    for payment in _payments(db, firsts[0], end):
-        revenue[first_of_month(payment.paid_on)] += payment.amount
     received: dict[date, list[Order]] = defaultdict(list)
     for order in _orders(db, Order.received_on.between(firsts[0], end)):
         if order.status is not OrderStatus.CANCELLED:
@@ -170,7 +181,7 @@ def _month_stats(db: Session, firsts: list[date]) -> list[MonthStat]:
         stats.append(
             MonthStat(
                 month=first,
-                revenue=revenue[first],
+                revenue=sum((p.amount for p in _paid(orders)), Decimal("0")),
                 orders=len(orders),
                 order_value=_value(orders),
                 customers=_customers(orders),
@@ -211,12 +222,14 @@ def _next_month(first: date) -> date:
     return (first + timedelta(days=32)).replace(day=1)
 
 
-def _payments(db: Session, start: date, end: date) -> list[Payment]:
-    return list(
-        db.scalars(
-            select(Payment).where(Payment.voided_at.is_(None), Payment.paid_on.between(start, end))
-        )
-    )
+def _paid(orders: list[Order]) -> list[Payment]:
+    """The payments on these orders, whenever they were made (voided ones don't count)."""
+    return [p for o in orders for p in o.payments if p.voided_at is None]
+
+
+def _balances(orders: list[Order]) -> list[Decimal]:
+    """What each of these orders still owes, for those that owe anything."""
+    return [b for b in (order_service.totals(o).balance for o in orders) if b > 0]
 
 
 def _orders(db: Session, condition) -> list[Order]:

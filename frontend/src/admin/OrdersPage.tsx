@@ -57,7 +57,7 @@ function monthName(month: string): string {
   return monthLong.format(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 15)))
 }
 
-export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?: string }) {
+export function OrdersPage({ kind, filter: initial, month: initialMonth }: { kind: OrderKind; filter?: string; month?: string }) {
   const { request, state } = useAuth()
   const isOwner = state.status === 'signed-in' && state.owner.role === 'owner'
   const today = todayInMalaysia()
@@ -66,7 +66,7 @@ export function OrdersPage({ kind, filter: initial }: { kind: OrderKind; filter?
   const [filter, setFilter] = useState(filters.find((f) => f.key === initial) ?? filters[0])
   const [query, setQuery] = useState('')
   // The month received ("2026-10"), or '' for every month. A search ignores it.
-  const [month, setMonth] = useState('')
+  const [month, setMonth] = useState(initialMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(initialMonth) ? initialMonth : '')
   const [months, setMonths] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [turn, setTurn] = useState<'next' | 'back' | null>(null)

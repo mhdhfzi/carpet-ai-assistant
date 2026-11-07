@@ -69,14 +69,16 @@ class BusinessAnalytics(BaseModel):
     month: int | None  # the month in detail (1-12), or None for the whole year
     start: date  # the detail period
     end: date
-    revenue_total: Decimal  # received in the year
+    revenue_total: Decimal  # paid for the year's jobs, whenever paid
     unpaid: Decimal  # owed now on the year's orders
     unpaid_orders: int
     customers_total: int  # different customers in the year
     months: list[MonthStatRead]  # January onwards (up to this month for this year)
     month_before: MonthStatRead  # the December before: what January is compared with
-    revenue: Decimal  # the detail period's
+    revenue: Decimal  # paid for the detail period's jobs
     revenue_by_method: dict[PaymentMethod, Decimal]
+    owed: Decimal  # still owed on the detail period's jobs
+    owed_orders: int
     orders: int
     order_value: Decimal
     new_customers: int  # first order in the detail period

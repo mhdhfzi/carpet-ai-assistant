@@ -131,6 +131,33 @@ def test_one_month_in_detail(client: TestClient, services: dict[str, int]) -> No
     assert bad.status_code == 422
 
 
+def test_money_counts_for_the_month_the_job_came_in(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    carpet = {"service_id": services["Karpet Biasa"], "length_ft": "8", "width_ft": "10"}  # 144
+    # September: RM50 deposit, the rest paid in October. All of it is September's.
+    september = place(client, [carpet], received_on="2026-09-28", deposit="50.00")
+    client.post(
+        f"/api/orders/{september['id']}/payments",
+        json={"amount": "60.00", "method": "cash", "paid_on": "2026-10-05"},
+    )
+    # October: one owes RM144; a cancelled job's deposit doesn't count.
+    place(client, [carpet], BADRUL)
+    cancelled = place(client, [carpet], deposit="30.00")
+    client.patch(f"/api/orders/{cancelled['id']}", json={"status": "cancelled"})
+
+    sept = client.get("/api/analytics/business", params={"month": 9}).json()
+    october = client.get("/api/analytics/business", params={"month": 10}).json()
+
+    assert (sept["revenue"], sept["owed"], sept["owed_orders"]) == ("110.00", "34.00", 1)
+    assert sept["revenue_by_method"]["cash"] == "110.00"  # the deposit was cash too
+    assert (october["revenue"], october["owed"], october["owed_orders"]) == ("0", "144.00", 1)
+    months = {m["month"]: m["revenue"] for m in october["months"]}
+    assert (months["2026-09"], months["2026-10"]) == ("110.00", "0")
+    # The year: received + owed is the value of its jobs.
+    assert (october["revenue_total"], october["unpaid"]) == ("110.00", "178.00")
+
+
 def test_a_measured_lain_lain_counts_as_one_item(
     client: TestClient, services: dict[str, int]
 ) -> None:

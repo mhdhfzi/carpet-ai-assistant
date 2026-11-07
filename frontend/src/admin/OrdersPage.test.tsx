@@ -533,6 +533,7 @@ describe('back office', () => {
             month_before: thisYear ? monthStat({ month: '2025-12' }) : monthStat({ month: '2024-12' }),
             revenue: month === 9 ? '3956.00' : '5200.00',
             revenue_by_method: { cash: '744.00', transfer: '500.00', duitnow: '0' },
+            owed: month === 9 ? '44.00' : '256.00', owed_orders: month === 9 ? 1 : 2,
             orders: month === 9 ? 30 : 39, order_value: '1500.00', new_customers: month === 9 ? 15 : 21, cancelled: 1,
             services: [{ name: 'Karpet Biasa', items: 7, value: '980.00' }],
             busy_days: [{ weekday: 'Sat', orders: 5 }],
@@ -560,7 +561,8 @@ describe('back office', () => {
     await user.hover(within(monthly).getByRole('button', { name: 'Okt' }))
     expect(within(monthly).getByRole('status')).toHaveTextContent('Oktober: 6 pelanggan baru▼ 60% berbanding September')
     expect(within(business).getByRole('heading', { name: 'Sepanjang tahun' })).toBeInTheDocument()
-    expect(business).toHaveTextContent('Hasil diterimaRM5200.00Bayaran tahun ini')
+    expect(business).toHaveTextContent('Hasil diterimaRM5200.00Bayaran untuk pesanan tahun ini')
+    expect(within(business).queryByRole('link', { name: /Lihat dalam Buku Utama/ })).toBeNull() // the year's is at the top
     expect(business).not.toHaveTextContent('Purata masa siap')
     // The whole year: a line per service, the rest added up.
     const popular = within(business).getByRole('region', { name: 'Servis paling popular' })
@@ -573,6 +575,10 @@ describe('back office', () => {
     expect(await within(business).findByRole('heading', { name: 'September' })).toBeInTheDocument()
     expect(calls.findLast((c) => c.path === '/api/analytics/business')?.query.get('month')).toBe('9')
     expect(business).toHaveTextContent('Pelanggan baru15Pesanan pertama mereka bulan ini') // nothing in August to compare with
+    // What September's jobs still owe, and a way to see who.
+    const owed = within(business).getByRole('link', { name: /Lihat dalam Buku Utama/ })
+    expect(owed).toHaveTextContent('Baki belum dibayarRM44.001 pesanan belum bayar penuh · untuk karpet diterima bulan ini')
+    expect(owed).toHaveAttribute('href', '#/orders?tapis=unpaid&bulan=2026-09')
     expect(within(business).queryByRole('img', { name: 'Barang setiap bulan, ikut servis' })).toBeNull() // bars for one month
 
     // Another year: everything switches to it, back to the whole year.
@@ -846,6 +852,21 @@ describe('the book', () => {
     await user.clear(screen.getByLabelText('Cari pesanan'))
     expect(await screen.findByText('Tiada dalam Semua pada November 2026.')).toBeInTheDocument()
     expect(picker).toHaveValue('2026-11')
+  })
+
+  it('opens on a month from the analytics link', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('owner'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/months': () => ({ body: ['2026-10'] }),
+      'GET /api/orders': () => ({ body: [order()] }),
+    })
+    renderSignedIn('#/orders?tapis=unpaid&bulan=2026-10')
+
+    await screen.findByRole('row', { name: /Pesanan 412/ })
+    expect(screen.getByLabelText('Bulan')).toHaveValue('2026-10')
+    expect(screen.getByRole('button', { name: 'Belum bayar', pressed: true })).toBeInTheDocument()
+    expect(calls.findLast((c) => c.path === '/api/orders')?.query.get('month')).toBe('2026-10')
   })
 
   it('shows the order, carpet and washing notes in their own column', async () => {

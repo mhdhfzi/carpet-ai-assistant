@@ -78,6 +78,8 @@ def get_business(
         revenue_by_method=s.revenue_by_method,
         orders=s.orders,
         order_value=s.order_value,
+        owed=s.owed,
+        owed_orders=s.owed_orders,
         new_customers=s.new_customers,
         cancelled=s.cancelled,
         services=[ServiceStatRead(name=x.name, items=x.items, value=x.value) for x in s.services],
