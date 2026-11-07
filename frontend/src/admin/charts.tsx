@@ -7,18 +7,16 @@ export function StatTile({
   value,
   hint,
   change,
-  href,
-  action,
+  links = [],
 }: {
   label: string
   value: string
   hint?: string
   change?: ReactNode
-  href?: string // a tile that opens the list behind its number
-  action?: string // what following the link shows, under the hint
+  links?: { href: string; label: string }[] // the lists behind the number
 }) {
-  const body = (
-    <>
+  return (
+    <div className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line">
       <p className="text-sm text-ink-soft">{label}</p>
       {/* A bit smaller on a phone, and it wraps rather than run into the next tile. */}
       <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
@@ -26,15 +24,21 @@ export function StatTile({
         {change}
       </p>
       {hint && <p className="mt-1 text-xs text-ink-soft">{hint}</p>}
-      {href && action && <p className="mt-2 text-xs font-bold text-brand-ink">{action} →</p>}
-    </>
-  )
-  return href ? (
-    <a href={href} className="block min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line transition hover:ring-2 hover:ring-amber-400">
-      {body}
-    </a>
-  ) : (
-    <div className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-line">{body}</div>
+      {links.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {links.map((link) => (
+            <li key={link.href}>
+              <a
+                href={link.href}
+                className="flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-brand-ink ring-1 ring-amber-200 transition hover:bg-amber-100"
+              >
+                {link.label} <span aria-hidden="true">→</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

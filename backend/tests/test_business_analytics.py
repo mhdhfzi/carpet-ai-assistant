@@ -101,6 +101,10 @@ def test_business_numbers_for_the_year(client: TestClient, services: dict[str, i
     assert body["new_customers"] == 1  # Badrul; Ali was already a customer
     assert body["revenue_by_method"] == {"cash": "288.00", "transfer": "100.00", "duitnow": "0"}
     assert body["cancelled"] == 1
+    assert body["owed_by_book"] == {  # the carpet's 144 - 100, and the sofa's 180
+        "shop": {"amount": "44.00", "orders": 1},
+        "on_site": {"amount": "180.00", "orders": 1},
+    }
     assert body["services"][0] == {"name": "Karpet Biasa", "items": 3, "value": "432.00"}
     assert body["services"][1] == {"name": "Cucian Sofa", "items": 3, "value": "180.00"}
     assert {d["weekday"]: d["orders"] for d in body["busy_days"]}["Sat"] == 3
@@ -152,6 +156,11 @@ def test_money_counts_for_the_month_the_job_came_in(
     assert (sept["revenue"], sept["owed"], sept["owed_orders"]) == ("110.00", "34.00", 1)
     assert sept["revenue_by_method"]["cash"] == "110.00"  # the deposit was cash too
     assert (october["revenue"], october["owed"], october["owed_orders"]) == ("0", "144.00", 1)
+    # Each book's share, for the links to Buku Utama and Buku Luar.
+    assert sept["owed_by_book"] == {
+        "shop": {"amount": "34.00", "orders": 1},
+        "on_site": {"amount": "0", "orders": 0},
+    }
     months = {m["month"]: m["revenue"] for m in october["months"]}
     assert (months["2026-09"], months["2026-10"]) == ("110.00", "0")
     # The year: received + owed is the value of its jobs.

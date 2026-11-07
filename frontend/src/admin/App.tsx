@@ -129,7 +129,7 @@ function Page({ route }: { route: Route }) {
     case 'visits':
       return route.book ? (
         <HouseJobsPage view="book">
-          <OrdersPage key={`luar-${route.filter ?? ''}`} kind="on_site" filter={route.filter} />
+          <OrdersPage key={`luar-${route.filter ?? ''}-${route.month ?? ''}`} kind="on_site" filter={route.filter} month={route.month} />
         </HouseJobsPage>
       ) : (
         <HouseJobsPage view="schedule" />
