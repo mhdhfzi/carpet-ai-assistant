@@ -8,6 +8,7 @@ import { App } from './App'
 import { AuthProvider } from './auth'
 import { formatShortDate, todayInMalaysia } from './format'
 import type { MonthStat, Order, Receipt, Service, WorkItem } from './types'
+import { receiptMessage } from './whatsappMessages'
 
 type Call = { method: string; path: string; query: URLSearchParams; body: unknown }
 type Handler = (call: Call) => { status?: number; body?: unknown }
@@ -1411,6 +1412,86 @@ describe('order form', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
     const posted = calls.find((c) => c.method === 'POST')?.body as { items: Record<string, unknown>[] }
     expect(posted.items[0]).toEqual({ service_id: 6, length_ft: '5', width_ft: '8', unit_price: '2.5', notes: 'Shaggy lembut' })
+  })
+})
+
+describe('extra charges (caj tambahan)', () => {
+  const FAR = { amount: '30.00', reason: 'Ambil lebih 15km' }
+
+  it('adds a charge with its reason to a new order, and its total', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/customers': () => ({ body: [] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('No. telefon'), '012-345 6789')
+    await user.type(screen.getByLabelText('Nama'), 'Ali')
+    await user.selectOptions(screen.getByLabelText('Jenis'), 'Karpet Biasa')
+    await user.type(screen.getByLabelText('Panjang (kaki)'), '8')
+    await user.type(screen.getByLabelText('Lebar (kaki)'), '10') // RM144
+    await user.click(screen.getByRole('button', { name: '+ Tambah caj' }))
+    const charge = screen.getByRole('group', { name: 'Caj 1' })
+    await user.type(within(charge).getByLabelText('Amaun (RM)'), '30')
+
+    expect(screen.getByText('Termasuk caj tambahan').nextSibling).toHaveTextContent('+ RM30.00')
+    expect(screen.getByText(/^Jumlah/).nextSibling).toHaveTextContent('RM174.00')
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Caj 1: tulis sebab caj')
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+
+    await user.type(within(charge).getByLabelText('Sebab'), 'Ambil lebih 15km')
+    await user.click(screen.getByRole('button', { name: 'Simpan pesanan' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({ charges: [{ amount: '30', reason: 'Ambil lebih 15km' }] })
+  })
+
+  it('shows the charges on the bill, and staff add one while the job is under way', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ charges: [FAR], total: '174.00', balance: '174.00' }) }),
+      'PATCH /api/orders/7': () => ({ body: order() }),
+    })
+    const user = renderSignedIn('#/orders/7')
+
+    expect((await screen.findByText('Caj: Ambil lebih 15km')).nextSibling).toHaveTextContent('+ RM30.00')
+    await user.click(screen.getByRole('button', { name: 'Ubah caj tambahan' }))
+    await user.click(screen.getByRole('button', { name: '+ Tambah caj' }))
+    const chemical = screen.getByRole('group', { name: 'Caj 2' })
+    await user.type(within(chemical).getByLabelText('Amaun (RM)'), '25')
+    await user.type(within(chemical).getByLabelText('Sebab'), 'Bahan kimia khas')
+    await user.click(screen.getByRole('button', { name: 'Simpan caj' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true))
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({
+      charges: [
+        { amount: '30', reason: 'Ambil lebih 15km' },
+        { amount: '25', reason: 'Bahan kimia khas' },
+      ],
+    })
+  })
+
+  it("doesn't let staff change the charges once the job is siap", async () => {
+    mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/orders/7/receipt': () => ({ body: receipt({ status: 'ready', charges: [FAR] }) }),
+    })
+    renderSignedIn('#/orders/7')
+
+    expect(await screen.findByText('Caj: Ambil lebih 15km')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /caj/i })).toBeNull()
+  })
+
+  it('lists each charge with its reason on the WhatsApp receipt', () => {
+    const message = receiptMessage(order({ charges: [FAR], total: '174.00', balance: '174.00' }), receipt().business)
+    expect(message).toContain('*Caj tambahan:*\n- Ambil lebih 15km - RM30.00')
+    expect(message).toContain('*Jumlah harga:* RM174.00')
   })
 })
 

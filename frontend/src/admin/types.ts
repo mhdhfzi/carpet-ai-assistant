@@ -172,6 +172,9 @@ export type WorkLog = { day: string; washed: WorkItem[]; packed: WorkItem[]; on_
 /** Which book an order is in: carpets (shop) or kerja luar (on_site), each numbered on its own. */
 export type OrderKind = 'shop' | 'on_site'
 
+/** An extra charge on an order and why, e.g. RM30 "Ambil lebih 15km". */
+export type Charge = { amount: string; reason: string }
+
 export type Order = {
   id: number
   kind: OrderKind
@@ -184,6 +187,7 @@ export type Order = {
   next_status: OrderStatus | null // what the order's big button moves it to
   return_method: ReturnMethod | null
   discount: string
+  charges?: Charge[] // extra charges (a pickup over 15km, a special chemical), each with why
   agent?: boolean // taken at agent prices: the owner types each carpet's price
   notes: string | null
   washed_on: string | null

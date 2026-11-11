@@ -1357,6 +1357,66 @@ def test_velvet_is_never_charged_more_than_its_cap(
     assert agreed["total"] == "113.00"  # 40 + 55 + 18
     assert kept["items"][0]["line_total"] == "40.00"
     assert cleared["items"][0]["line_total"] == "50.00"  # back to size x price, capped
+    # The database agrees: the customer list and what's owed count the caps too.
+    client.patch(url, json={"items": [items[0] | {"total": "40"}, *items[1:]]})
+    assert client.get("/api/customers").json()[0]["total_value"] == "113.00"
+    assert client.get("/api/work/summary").json()["unpaid"] == "113.00"
+
+
+# --- Extra charges ---------------------------------------------------------------------------
+
+
+def test_an_extra_charge_is_added_to_the_bill_with_its_reason(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    far = {"amount": "30.00", "reason": "  Ambil lebih 15km  "}
+    order = new_order(staff_client, services, charges=[far], deposit="50.00")  # RM324 of carpets
+
+    assert order["charges"] == [{"amount": "30.00", "reason": "Ambil lebih 15km"}]
+    assert (order["subtotal"], order["total"], order["balance"]) == ("324.00", "354.00", "304.00")
+    # Everywhere that adds up money agrees.
+    assert client.get("/api/customers").json()[0]["total_value"] == "354.00"
+    assert client.get("/api/work/summary").json()["unpaid"] == "304.00"
+
+    # More found on the job: staff add it while it's under way; with a discount, both count.
+    url = f"/api/orders/{order['id']}"
+    chemical = {"amount": "25.50", "reason": "Bahan kimia khas"}
+    both = staff_client.patch(url, json={"charges": [far, chemical]}).json()
+    discounted = client.patch(url, json={"discount": "10.00"}).json()
+
+    assert [c["reason"] for c in both["charges"]] == ["Ambil lebih 15km", "Bahan kimia khas"]
+    assert both["total"] == "379.00"  # 324 + 30 + 25.50, in whole ringgit
+    assert discounted["total"] == "369.00"  # less the RM10 discount
+    assert client.patch(url, json={"charges": []}).json()["total"] == "314.00"  # removed
+
+
+def test_only_the_owner_changes_the_charges_once_the_job_is_siap(
+    client: TestClient, staff_client: TestClient, services: dict[str, int]
+) -> None:
+    order = new_order(staff_client, services)
+    url = f"/api/orders/{order['id']}"
+    charge = {"charges": [{"amount": "20.00", "reason": "Hantar lebih 15km"}]}
+    client.patch(url, json={"status": "ready"})
+
+    refused = staff_client.patch(url, json=charge)
+    allowed = client.patch(url, json=charge)
+    client.patch(url, json={"status": "completed"})
+    still_refused = staff_client.patch(url, json={"charges": []})
+
+    assert (refused.status_code, still_refused.status_code) == (403, 403)
+    assert allowed.json()["total"] == "344.00"
+
+
+def test_a_charge_needs_an_amount_and_a_reason(
+    client: TestClient, services: dict[str, int]
+) -> None:
+    body = {"customer": ALI, "items": [carpet(services, "Karpet Biasa", "8", "10")]}
+    for charge in (
+        {"amount": "0", "reason": "Ambil lebih 15km"},
+        {"amount": "20.00", "reason": ""},
+        {"amount": "20.00"},
+    ):
+        assert client.post("/api/orders", json=body | {"charges": [charge]}).status_code == 422
 
 
 def test_lain_lain_at_the_shop_dries_5_to_7_days_like_a_carpet(

@@ -376,9 +376,14 @@ export function ReceiptSheet({ receipt }: { receipt: Receipt }) {
         )}
         <div className="space-y-1 text-sm">
           <Total label="Jumlah harga" value={order.subtotal} strong />
+          {(order.charges ?? []).map((charge, index) => (
+            <Total key={index} label={`Caj tambahan: ${charge.reason}`} value={charge.amount} />
+          ))}
           {Number(order.discount) > 0 && <Total label="Diskaun" value={order.discount} />}
           {roundingOf(order) > 0 && <Total label="Pembundaran" value={roundingOf(order).toFixed(2)} />}
-          {(Number(order.discount) > 0 || roundingOf(order) > 0) && <Total label="Jumlah perlu dibayar" value={order.total} strong />}
+          {(Number(order.discount) > 0 || roundingOf(order) > 0 || !!order.charges?.length) && (
+            <Total label="Jumlah perlu dibayar" value={order.total} strong />
+          )}
           <Total label="Deposit / dibayar" value={order.paid} />
           <Total label="Baki" value={Number(order.balance) > 0 ? order.balance : '0'} strong />
           {order.price_pending && <p className="text-xs text-slate-500">Sebahagian harga belum ditetapkan.</p>}

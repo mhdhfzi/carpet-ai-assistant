@@ -41,6 +41,20 @@ class OrderItemIn(BaseModel):
     fold: ItemFold | None = None  # velvet: gulung or lipat, chosen when the order is taken
 
 
+class ChargeIn(BaseModel):
+    """An extra charge and why, e.g. RM20 "Ambil lebih 15km"."""
+
+    amount: Annotated[Decimal, Field(gt=0, max_digits=10, decimal_places=2)]
+    reason: str = Field(min_length=2, max_length=200)
+
+
+class ChargeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    amount: Decimal
+    reason: str
+
+
 class OrderCreate(BaseModel):
     customer: CustomerIn
     received_on: date | None = None  # defaults to today
@@ -51,6 +65,7 @@ class OrderCreate(BaseModel):
     deposit: Amount = Decimal("0")
     deposit_method: PaymentMethod = PaymentMethod.CASH
     discount: Amount = Decimal("0")  # owner only
+    charges: list[ChargeIn] = Field(default=[], max_length=10)  # anyone may add them
     # An agent's order (Buku Utama): the owner types the carpets' agent prices.
     agent: bool = False
     notes: str | None = Field(default=None, max_length=1000)
@@ -116,6 +131,8 @@ class OrderUpdate(BaseModel):
     visit_at: datetime | None = None
     return_method: ReturnMethod | None = None
     discount: Amount | None = None
+    # The order's extra charges, all of them: replaces the ones it has ([] removes them).
+    charges: list[ChargeIn] | None = Field(default=None, max_length=10)
     agent: bool | None = None  # switch between agent and normal prices
     notes: str | None = Field(default=None, max_length=1000)
 
@@ -224,6 +241,7 @@ class OrderRead(BaseModel):
     next_status: OrderStatus | None  # the button's step (home jobs only: straight to ready)
     return_method: ReturnMethod | None
     discount: Decimal
+    charges: list[ChargeRead] = []  # extra charges, each on its own line of the bill
     agent: bool = False  # taken at agent prices
     notes: str | None
     washed_on: date | None
@@ -236,7 +254,7 @@ class OrderRead(BaseModel):
     items_ready: int  # items packed: "2 / 3 siap"
     price_pending: bool  # some item has no price yet: totals are partial
     subtotal: Decimal
-    total: Decimal  # subtotal - discount
+    total: Decimal  # subtotal + charges - discount
     paid: Decimal  # payments, not counting voided ones
     balance: Decimal  # total - paid
     items: list[OrderItemRead]  # what the customer still wants

@@ -254,6 +254,7 @@ def _orders(db: Session, condition) -> list[Order]:
             .options(
                 selectinload(Order.items).selectinload(OrderItem.service),
                 selectinload(Order.payments),
+                selectinload(Order.charges),
             )
         )
     )
