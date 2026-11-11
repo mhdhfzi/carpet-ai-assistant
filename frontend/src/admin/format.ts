@@ -1,4 +1,4 @@
-import type { BookingLocation, BookingStatus, ItemFold, ItemStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
+import type { BookingLocation, BookingStatus, Charge, ItemFold, ItemStatus, OrderStatus, PaymentMethod, ReturnMethod } from './types'
 
 // The business runs on Malaysia time, whatever timezone the owner's device is set to.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'
@@ -28,9 +28,14 @@ export function wholeRinggit(amount: number): number {
 }
 
 /** The sen dropped from an order's total (shown as "Pembundaran"), or 0. */
-export function roundingOf(order: { subtotal: string; discount: string; total: string }): number {
-  const before = Number(order.subtotal) - Number(order.discount)
+export function roundingOf(order: { subtotal: string; discount: string; total: string; charges?: Charge[] }): number {
+  const before = Number(order.subtotal) + chargesTotal(order.charges) - Number(order.discount)
   return before > 0 ? Math.round((before - Number(order.total)) * 100) / 100 : 0
+}
+
+/** What an order's extra charges add up to. */
+export function chargesTotal(charges: Charge[] = []): number {
+  return charges.reduce((sum, c) => sum + Number(c.amount), 0)
 }
 
 /** "RM180.00", or "RM250.00 – RM400.00" for a price range. */

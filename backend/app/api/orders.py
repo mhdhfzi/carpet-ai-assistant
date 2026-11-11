@@ -21,6 +21,7 @@ from app.db.models import (
 )
 from app.schemas.order import (
     AgentPriceRead,
+    ChargeRead,
     CustomerDetail,
     CustomerSummary,
     ItemCancel,
@@ -367,6 +368,7 @@ def to_read(order: Order) -> OrderRead:
         next_status=orders.next_status(order),
         return_method=order.return_method,
         discount=order.discount,
+        charges=[ChargeRead.model_validate(c) for c in order.charges],
         agent=order.agent,
         notes=order.notes,
         washed_on=order.washed_on,

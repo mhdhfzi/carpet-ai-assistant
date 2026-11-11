@@ -509,6 +509,27 @@ class Order(TimestampMixin, Base):
         passive_deletes=True,
         order_by="ReceiptSend.id",
     )
+    charges: Mapped[list["OrderCharge"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="OrderCharge.id",
+    )
+
+
+class OrderCharge(Base):
+    """An extra charge on an order, with why: a pickup over 15km, a special chemical for a
+    kerja luar job. Added to the total and printed on the bill as its own line."""
+
+    __tablename__ = "order_charges"
+    __table_args__ = (CheckConstraint("amount > 0", name="amount_positive"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Money)
+    reason: Mapped[str] = mapped_column(String(200))  # e.g. "Ambil lebih 15km"
+
+    order: Mapped[Order] = relationship(back_populates="charges")
 
 
 class OrderItem(Base):

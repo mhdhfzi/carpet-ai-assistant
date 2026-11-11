@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
-from sqlalchemy import cast, func, or_, select, text
+from sqlalchemy import case, cast, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import clock
@@ -33,6 +33,7 @@ from app.db.models import (
     ItemStatus,
     Money,
     Order,
+    OrderCharge,
     OrderEvent,
     OrderItem,
     OrderKind,
@@ -47,7 +48,7 @@ from app.db.models import (
     UntaggedItem,
 )
 from app.schemas.booking import CustomerIn, normalize_phone
-from app.schemas.order import OrderCreate, OrderItemIn, OrderUpdate, PaymentIn
+from app.schemas.order import ChargeIn, OrderCreate, OrderItemIn, OrderUpdate, PaymentIn
 from app.services.availability import HOURS
 from app.services.errors import BusinessRuleError, InvalidStatusTransitionError, NotFoundError
 
@@ -61,6 +62,8 @@ NEXT_STATUS = {
     OrderStatus.READY: OrderStatus.COMPLETED,
 }
 CLOSED = {OrderStatus.COMPLETED, OrderStatus.CANCELLED}
+# From siap on, only the owner changes an order's extra charges.
+CHARGES_LOCKED = {OrderStatus.READY, *CLOSED}
 ITEM_STEPS = [ItemStatus.RECEIVED, ItemStatus.WASHED, ItemStatus.READY]
 # A job at the customer's home is done in one visit: not done yet, then done.
 HOME_STEPS = [ItemStatus.RECEIVED, ItemStatus.READY]
@@ -83,7 +86,8 @@ _NUMBER_LOCK = 774_101
 
 @dataclass(frozen=True)
 class Totals:
-    subtotal: Decimal
+    subtotal: Decimal  # the items
+    charges: Decimal  # extra charges (a pickup over 15km, a special chemical)
     total: Decimal
     paid: Decimal
     balance: Decimal
@@ -116,6 +120,7 @@ def _with_details():
         selectinload(Order.events).selectinload(OrderEvent.by),
         selectinload(Order.payments).selectinload(Payment.received_by),
         selectinload(Order.receipt_sends).selectinload(ReceiptSend.sent_by),
+        selectinload(Order.charges),
     )
 
 
@@ -365,11 +370,17 @@ def work_summary(db: Session) -> WorkSummary:
 
 
 def _order_value_and_owed():
-    """Per order, as SQL expressions over Order: its value (priced items less discount; an
-    item without a price yet counts as 0) and what is still owed on it."""
+    """Per order, as SQL expressions over Order, the same as totals(): its value (priced
+    items plus extra charges, less discount; an item without a price yet counts as 0) and
+    what is still owed on it."""
     items = (
-        select(func.coalesce(func.sum(func.floor(OrderItem.unit_price * OrderItem.quantity)), 0))
+        select(func.coalesce(func.sum(_line_total_sql()), 0))
         .where(OrderItem.order_id == Order.id, OrderItem.cancelled_on.is_(None))
+        .scalar_subquery()
+    )
+    charges = (
+        select(func.coalesce(func.sum(OrderCharge.amount), 0))
+        .where(OrderCharge.order_id == Order.id)
         .scalar_subquery()
     )
     paid = (
@@ -377,8 +388,19 @@ def _order_value_and_owed():
         .where(Payment.order_id == Order.id, Payment.voided_at.is_(None))
         .scalar_subquery()
     )
-    value = cast(func.floor(func.greatest(items - Order.discount, 0)), Money)  # whole ringgit
+    value = cast(func.floor(func.greatest(items + charges - Order.discount, 0)), Money)
     return value, func.greatest(value - paid, 0)
+
+
+def _line_total_sql():
+    """line_total() in SQL: the agreed price, or size x price in whole ringgit up to the
+    item's cap; NULL while it has no price."""
+    sized = func.floor(OrderItem.unit_price * OrderItem.quantity)
+    capped = case(
+        (sized.is_(None), None),
+        else_=func.least(sized, func.coalesce(OrderItem.price_cap, sized)),
+    )
+    return func.coalesce(func.floor(OrderItem.agreed_total), capped)
 
 
 # --- Untagged carpets ------------------------------------------------------------------------
@@ -448,10 +470,11 @@ def live_items(order: Order) -> list[OrderItem]:
 def totals(order: Order) -> Totals:
     lines = [line_total(item) for item in live_items(order)]
     subtotal = sum((line for line in lines if line is not None), Decimal("0"))
-    total = whole_ringgit(subtotal - order.discount)
+    charges = sum((c.amount for c in order.charges), Decimal("0"))
+    total = whole_ringgit(subtotal + charges - order.discount)
     paid = sum((p.amount for p in order.payments if p.voided_at is None), Decimal("0"))
     pending = any(line is None for line in lines)
-    return Totals(subtotal, total, paid, total - paid, pending)
+    return Totals(subtotal, charges, total, paid, total - paid, pending)
 
 
 def whole_ringgit(amount: Decimal) -> Decimal:
@@ -540,29 +563,9 @@ def list_customers(
     db: Session, q: str | None = None, *, limit: int = 50, offset: int = 0
 ) -> list[CustomerRow]:
     """Every customer (or those matching a name or phone), most recent first."""
-    # Each order's value: its priced items less its discount (items without a price yet
-    # count as 0), computed in the database so the whole table is one query.
-    lines = (
-        select(
-            OrderItem.order_id,
-            func.coalesce(func.sum(func.floor(OrderItem.unit_price * OrderItem.quantity)), 0).label(
-                "items"
-            ),
-        )
-        .where(OrderItem.cancelled_on.is_(None))
-        .group_by(OrderItem.order_id)
-        .subquery()
-    )
-    paid = (
-        select(Payment.order_id, func.sum(Payment.amount).label("paid"))
-        .where(Payment.voided_at.is_(None))
-        .group_by(Payment.order_id)
-        .subquery()
-    )
-    value = cast(
-        func.floor(func.greatest(func.coalesce(lines.c["items"], 0) - Order.discount, 0)), Money
-    )
-    owed = func.greatest(value - func.coalesce(paid.c.paid, 0), 0)
+    # Each order's value and what it still owes, computed in the database so the whole
+    # table is one query.
+    value, owed = _order_value_and_owed()
     counted = Order.status != OrderStatus.CANCELLED
     query = (
         select(
@@ -573,8 +576,6 @@ def list_customers(
             func.coalesce(func.sum(owed).filter(counted), 0),
         )
         .outerjoin(Order, Order.customer_id == Customer.id)
-        .outerjoin(lines, lines.c.order_id == Order.id)
-        .outerjoin(paid, paid.c.order_id == Order.id)
         .group_by(Customer.id)
         .order_by(func.max(Order.received_on).desc().nulls_last(), Customer.name)
         .limit(limit)
@@ -655,6 +656,7 @@ def create_order(db: Session, data: OrderCreate, actor: Owner) -> Order:
         visit_at=data.visit_at,
         return_method=data.return_method,
         discount=data.discount,
+        charges=_charges(data.charges),
         agent=data.agent,
         notes=data.notes,
         created_by_id=actor.id,
@@ -730,6 +732,12 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
         order.discount = data.discount or Decimal("0")
     if order.status in CLOSED and not is_owner(actor) and {"items", "agent"} & sent:
         raise ForbiddenError("Only the owner can change a finished order")
+    # Anyone may add a charge while the job is under way (the team on site knows a special
+    # chemical was used); once it's siap or selesai, only the owner changes what's billed.
+    if "charges" in sent and data.charges is not None:
+        if order.status in CHARGES_LOCKED and not is_owner(actor):
+            raise ForbiddenError("Only the owner can change the charges on a finished job")
+        order.charges = _charges(data.charges)
     # Before the items: switching re-prices the items already on the order.
     if "agent" in sent and data.agent is not None and data.agent != order.agent:
         _switch_agent(order, data.agent)
@@ -746,6 +754,10 @@ def update_order(db: Session, order: Order, data: OrderUpdate, actor: Owner) -> 
         _change_status(order, data.status, data.status_note, actor)
     db.commit()
     return get_order(db, order.id)
+
+
+def _charges(charges: list[ChargeIn]) -> list[OrderCharge]:
+    return [OrderCharge(amount=c.amount, reason=c.reason.strip()) for c in charges]
 
 
 def _switch_agent(order: Order, agent: bool) -> None:

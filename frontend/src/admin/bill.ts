@@ -15,6 +15,7 @@ export function combinedBill(order: Order, linked: Order | null | undefined): Or
     received_on: first.received_on < second.received_on ? first.received_on : second.received_on,
     items: [...first.items, ...second.items],
     cancelled_items: [...first.cancelled_items, ...second.cancelled_items],
+    charges: [...(first.charges ?? []), ...(second.charges ?? [])],
     subtotal: sum('subtotal'),
     discount: sum('discount'),
     total: sum('total'),

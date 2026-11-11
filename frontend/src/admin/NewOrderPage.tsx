@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
+import { type ChargeRow, chargeProblem, chargeRowsTotal, chargesToInput } from './chargeRows'
+import { ChargesEditor } from './ChargesEditor'
 import { AgentChoice, ItemsEditor, NumberField } from './ItemsEditor'
 import { type AgentPrices, type ItemRow, emptyRow, loadAgentPrices, rowPrice, rowsToInput, rowProblem, suggestPrices } from './itemRows'
 import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia, wholeRinggit } from './format'
@@ -27,6 +29,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
   const [deposit, setDeposit] = useState('')
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
   const [discount, setDiscount] = useState('')
+  const [charges, setCharges] = useState<ChargeRow[]>([])
   const [returnMethod, setReturnMethod] = useState<ReturnMethod | ''>('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -91,15 +94,16 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
   // Sofa, mattress and car seat jobs are done at the customer's home: when is the visit?
   const offered = (services ?? []).filter((s) => s.on_site === luar)
   const subtotal = lines.reduce((sum, l) => sum + (l.total ?? 0), 0)
-  const total = wholeRinggit(subtotal - Number(discount || 0))
-  const rounding = Math.round((Math.max(subtotal - Number(discount || 0), 0) - total) * 100) / 100
+  const before = subtotal + chargeRowsTotal(charges) - Number(discount || 0)
+  const total = wholeRinggit(before)
+  const rounding = Math.round((Math.max(before, 0) - total) * 100) / 100
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     // Velvet needs gulung or lipat, "Lain-lain" what the job is: say so before saving.
     const problem = rows
       .map((row, i) => rowProblem(row, row.serviceId === null ? undefined : byId.get(row.serviceId), `Barang ${i + 1}`))
-      .find(Boolean)
+      .find(Boolean) ?? chargeProblem(charges)
     if (problem) {
       setError(problem)
       return
@@ -117,6 +121,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
           deposit: deposit || '0',
           deposit_method: depositMethod,
           ...(isOwner && discount ? { discount } : {}),
+          charges: chargesToInput(charges),
           ...(luar ? {} : { agent }),
           return_method: returnMethod || null,
           notes: notes.trim() || null,
@@ -192,6 +197,7 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
             ))}
           </div>
         )}
+        <ChargesEditor rows={charges} onChange={setCharges} />
         {isOwner && <NumberField label="Diskaun (RM)" value={discount} onChange={setDiscount} />}
         {!luar && (
           <fieldset className="space-y-1">
@@ -217,6 +223,12 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
       </section>
 
       <div className="sticky bottom-0 space-y-3 border-t border-line bg-mist py-4">
+        {chargeRowsTotal(charges) > 0 && (
+          <p className="flex justify-between text-sm text-ink-soft">
+            <span>Termasuk caj tambahan</span>
+            <span>+ {formatMoney(chargeRowsTotal(charges).toFixed(2))}</span>
+          </p>
+        )}
         {rounding > 0 && (
           <p className="flex justify-between text-sm text-ink-soft">
             <span>Pembundaran (sen dibuang)</span>

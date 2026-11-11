@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { errorMessage } from './api'
 import { useAuth } from './auth'
 import { combinedBill } from './bill'
+import { type ChargeRow, chargeProblem, chargeRows, chargesToInput, emptyCharge } from './chargeRows'
+import { ChargesEditor } from './ChargesEditor'
 import {
   ORDER_ACTION_LABEL,
   ORDER_STATUS_LABEL,
@@ -37,6 +39,7 @@ import {
   suggestPrices,
 } from './itemRows'
 import {
+  type Charge,
   type ItemFold,
   type ItemStatus,
   NEXT_ITEM_STATUS,
@@ -330,6 +333,7 @@ export function OrderPage({ id, edit = false }: { id: number; edit?: boolean }) 
         business={business}
         onPay={(payment) => send('/payments', 'POST', payment)}
         onVoid={(paymentId, reason) => send(`/payments/${paymentId}/void`, 'POST', { reason })}
+        onSaveCharges={(charges) => save({ charges })}
       />
 
       {business && <SendToCustomer order={order} bill={combinedBill(order, linked)} business={business} onRecorded={setOrder} />}
@@ -407,6 +411,7 @@ function Payments({
   busy,
   onPay,
   onVoid,
+  onSaveCharges,
   business,
   bill,
 }: {
@@ -417,7 +422,10 @@ function Payments({
   business: Receipt['business'] | null
   onPay: (payment: Record<string, unknown>) => Promise<void>
   onVoid: (paymentId: number, reason: string) => Promise<void>
+  onSaveCharges: (charges: Charge[]) => Promise<void>
 }) {
+  // Anyone while the job is under way; from siap on, only the owner (the server agrees).
+  const canEditCharges = order.status !== 'cancelled' && (isOwner || !(order.status === 'ready' || order.status === 'completed'))
   const owed = Number(bill.balance)
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -428,6 +436,9 @@ function Payments({
       <h2 className="font-semibold">Bayaran</h2>
       <div className="space-y-1">
         <Row label="Jumlah barang" value={formatMoney(bill.subtotal)} />
+        {(bill.charges ?? []).map((charge, index) => (
+          <Row key={index} label={`Caj: ${charge.reason}`} value={`+ ${formatMoney(charge.amount)}`} />
+        ))}
         {Number(bill.discount) > 0 && <Row label="Diskaun" value={`− ${formatMoney(bill.discount)}`} />}
         {roundingOf(bill) > 0 && <Row label="Pembundaran (sen dibuang)" value={`− ${formatMoney(roundingOf(bill).toFixed(2))}`} />}
         <Row label={bill.price_pending ? 'Jumlah (belum lengkap)' : 'Jumlah'} value={formatMoney(bill.total)} strong />
@@ -442,6 +453,9 @@ function Payments({
           <Row label="Baki" value={formatMoney(bill.balance)} strong />
         )}
       </div>
+
+      {/* Remounted when the charges change, so it closes once they're saved. */}
+      {canEditCharges && <EditCharges key={JSON.stringify(order.charges)} order={order} busy={busy} onSave={onSaveCharges} />}
 
       {order.payments.length > 0 && (
         <ul className="divide-y divide-line border-t border-line text-sm" aria-label="Senarai bayaran">
@@ -688,6 +702,59 @@ function Notes({ order, busy, onSave }: { order: Order; busy: boolean; onSave: (
           Simpan catatan
         </button>
       )}
+    </div>
+  )
+}
+
+/** Caj tambahan on the order page: found on the job (a special chemical), added later. */
+function EditCharges({ order, busy, onSave }: { order: Order; busy: boolean; onSave: (charges: Charge[]) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<ChargeRow[]>(() => chargeRows(order.charges))
+  const [problem, setProblem] = useState<string | null>(null)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (rows.length === 0) setRows([emptyCharge()])
+          setOpen(true)
+        }}
+        className="text-sm underline"
+      >
+        {order.charges?.length ? 'Ubah caj tambahan' : '+ Tambah caj (cth. lebih 15km, bahan kimia khas)'}
+      </button>
+    )
+  }
+  const saveCharges = () => {
+    const missing = chargeProblem(rows)
+    setProblem(missing)
+    if (!missing) void onSave(chargesToInput(rows))
+  }
+  return (
+    <div className="space-y-3 border-t border-line pt-3">
+      <ChargesEditor rows={rows} onChange={setRows} />
+      {problem && (
+        <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger ring-1 ring-red-200">
+          {problem}
+        </p>
+      )}
+      <div className="flex gap-3">
+        <button type="button" disabled={busy} onClick={saveCharges} className="flex-1 rounded-full bg-brand py-3 font-semibold disabled:opacity-50">
+          Simpan caj
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setRows(chargeRows(order.charges))
+            setProblem(null)
+            setOpen(false)
+          }}
+          className="rounded-full px-5 py-3 font-semibold ring-1 ring-line"
+        >
+          Batal
+        </button>
+      </div>
     </div>
   )
 }

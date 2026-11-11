@@ -22,6 +22,13 @@ function itemLines(order: Order): string[] {
   )
 }
 
+/** Each extra charge with why, so the customer sees what they're paying for. */
+function chargeLines(order: Order): string[] {
+  const charges = order.charges ?? []
+  if (charges.length === 0) return []
+  return ['*Caj tambahan:*', ...charges.map((c) => `- ${c.reason} - ${rm(c.amount)}`)]
+}
+
 function moneyLines(order: Order): string[] {
   const lines = [`*Jumlah harga:* ${rm(order.total)}${order.price_pending ? ' (belum lengkap)' : ''}`]
   if (Number(order.paid) > 0) lines.push(`*Deposit / dibayar:* ${rm(order.paid)}`)
@@ -50,6 +57,7 @@ export function readyMessage(order: Order, business: string, paymentDetails = ''
     `Barang anda (no. siri *${order.code}*) sudah siap dicuci dan dibungkus.`,
     '',
     ...itemLines(order),
+    ...chargeLines(order),
     '',
     ...moneyLines(order),
     ...paymentBlock(order, paymentDetails),
@@ -70,6 +78,7 @@ export function receiptMessage(order: Order, business: Receipt['business']): str
     `*Tarikh masuk:* ${formatShortDate(order.received_on)}`,
     '*Senarai barang:*',
     ...itemLines(order),
+    ...chargeLines(order),
     ...(Number(order.discount) > 0 ? [`*Diskaun:* -${rm(order.discount)}`] : []),
     '',
     ...moneyLines(order),
