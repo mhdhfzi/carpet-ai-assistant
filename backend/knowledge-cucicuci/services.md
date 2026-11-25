@@ -17,13 +17,13 @@ We clean these types of carpet (jenis karpet):
 - Karpet Premium Velvet
 - Karpet Span
 - Karpet Tatami
-- Karpet Handmade: handmade carpet
+- Karpet Handmade / Premium: handmade or premium carpet
 
 Carpet cleaning is priced per square foot (kaki persegi), and the price per square foot
 depends on the carpet type. Carpets are usually collected and cleaned at our shop rather
 than at the customer's home.
 
-## Handmade carpet (karpet handmade)
+## Handmade or premium carpet (karpet handmade / premium)
 
 Handmade carpet is priced per square foot within a range. The exact price depends on the
 carpet's material, so the owner inspects the carpet and confirms the final price. The

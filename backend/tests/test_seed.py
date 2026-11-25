@@ -11,7 +11,7 @@ def test_seed_creates_all_services(db: Session) -> None:
     created, updated = seed_services(db)
 
     assert (created, updated) == (len(SERVICES), 0)
-    handmade = db.scalar(select(Service).where(Service.name == "Karpet Handmade"))
+    handmade = db.scalar(select(Service).where(Service.name == "Karpet Handmade / Premium"))
     assert handmade is not None
     assert (handmade.unit_price, handmade.unit_price_max) == (Decimal("2.50"), Decimal("4.00"))
 

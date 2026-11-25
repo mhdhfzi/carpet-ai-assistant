@@ -134,7 +134,7 @@ def test_handmade_carpet_waits_for_the_owner_to_price_it(
 ) -> None:
     order = client.post(
         "/api/orders",
-        json={"customer": ALI, "items": [carpet(services, "Karpet Handmade", "5", "8")]},
+        json={"customer": ALI, "items": [carpet(services, "Karpet Handmade / Premium", "5", "8")]},
     ).json()
     assert order["price_pending"] is True
     assert order["items"][0]["unit_price"] is None
@@ -143,7 +143,11 @@ def test_handmade_carpet_waits_for_the_owner_to_price_it(
         f"/api/orders/{order['id']}",
         json={
             "items": [
-                same(order, 0, carpet(services, "Karpet Handmade", "5", "8", unit_price="3.20"))
+                same(
+                    order,
+                    0,
+                    carpet(services, "Karpet Handmade / Premium", "5", "8", unit_price="3.20"),
+                )
             ]
         },
     ).json()
@@ -1094,7 +1098,7 @@ def test_staff_cannot_do_the_owners_part(
 
 
 def test_staff_cannot_set_prices(staff_client: TestClient, services: dict[str, int]) -> None:
-    item = carpet(services, "Karpet Handmade", "5", "8", unit_price="1.00")
+    item = carpet(services, "Karpet Handmade / Premium", "5", "8", unit_price="1.00")
 
     response = staff_client.post("/api/orders", json={"customer": ALI, "items": [item]})
 

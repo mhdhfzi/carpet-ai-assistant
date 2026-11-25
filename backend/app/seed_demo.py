@@ -177,12 +177,15 @@ SCENARIOS = [
                 "Handmade carpets are RM2.50 to RM4.00 per square foot depending on the material, so roughly RM100 to RM160. The owner confirms after inspecting it.",
                 [
                     src(
-                        PRICES, "Price list", "Karpet Handmade", "RM2.50 to RM4.00 per square foot"
+                        PRICES,
+                        "Price list",
+                        "Karpet Handmade / Premium",
+                        "RM2.50 to RM4.00 per square foot",
                     ),
                     src(
                         "services.md",
                         "Services we offer",
-                        "Handmade carpet (karpet handmade)",
+                        "Handmade or premium carpet (karpet handmade / premium)",
                         "the owner inspects the carpet",
                     ),
                 ],
@@ -193,7 +196,7 @@ SCENARIOS = [
         booking={
             "day": 6,
             "hour": 11,
-            "items": [("Karpet Handmade", 40)],
+            "items": [("Karpet Handmade / Premium", 40)],
             "status": BookingStatus.PENDING,
         },
     ),
