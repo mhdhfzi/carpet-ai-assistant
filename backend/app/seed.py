@@ -93,7 +93,7 @@ SERVICES: list[dict] = [
     carpet("Karpet Premium Velvet", "Premium velvet carpet", "1.00", fold=True, cap="55.00"),
     carpet("Karpet Span", "Span carpet", "0.90"),
     carpet("Karpet Tatami", "Tatami carpet", "0.90"),
-    carpet("Karpet Handmade", "Handmade carpet", "2.50", price_max="4.00"),
+    carpet("Karpet Handmade / Premium", "Handmade or premium carpet", "2.50", price_max="4.00"),
     on_site("Cucian Sofa", "Sofa", "seat", "60.00"),
     on_site("Cucian Tilam Single", "Single mattress", "mattress", "100.00"),
     on_site("Cucian Tilam Queen", "Queen mattress", "mattress", "140.00"),

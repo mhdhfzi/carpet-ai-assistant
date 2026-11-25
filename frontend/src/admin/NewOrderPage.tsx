@@ -5,7 +5,7 @@ import { type ChargeRow, chargeProblem, chargeRowsTotal, chargesToInput } from '
 import { ChargesEditor } from './ChargesEditor'
 import { AgentChoice, ItemsEditor, NumberField } from './ItemsEditor'
 import { type AgentPrices, type ItemRow, emptyRow, loadAgentPrices, rowPrice, rowsToInput, rowProblem, suggestPrices } from './itemRows'
-import { PAYMENT_LABEL, RETURN_LABEL, formatMoney, fromVisitInput, todayInMalaysia, wholeRinggit } from './format'
+import { PAYMENT_LABEL, RETURN_LABEL, formatDay, formatMoney, fromVisitInput, todayInMalaysia, wholeRinggit } from './format'
 import type { CustomerSummary, Order, OrderKind, PaymentMethod, ReturnMethod } from './types'
 import { href } from './useHashRoute'
 import { useServices } from './useServices'
@@ -23,6 +23,9 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
   const [area, setArea] = useState('')
   const [address, setAddress] = useState('')
   const [known, setKnown] = useState<CustomerSummary | null>(null)
+  // A name typed in the Nama box (not filled in from the phone): returning customers it may be.
+  const [nameQuery, setNameQuery] = useState('')
+  const [matches, setMatches] = useState<CustomerSummary[]>([])
   const [receivedOn, setReceivedOn] = useState(todayInMalaysia())
   const [visitAt, setVisitAt] = useState('')
   const [rows, setRows] = useState<ItemRow[]>(() => [emptyRow()])
@@ -87,6 +90,39 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
       clearTimeout(timer)
     }
   }, [phone, request, luar, isOwner])
+
+  // A returning customer by name: the customers it could be, to pick from. Picking one fills
+  // in their phone, and the phone lookup above does the rest.
+  useEffect(() => {
+    const typed = nameQuery.trim()
+    if (typed.length < 3 || known) return
+    let current = true
+    const timer = setTimeout(() => {
+      request<CustomerSummary[]>(`/api/customers?${new URLSearchParams({ q: typed, limit: '5' })}`)
+        .then((found) => {
+          if (current) setMatches(found)
+        })
+        .catch(() => {
+          /* the lookup is a convenience; the form works without it */
+        })
+    }, 300)
+    return () => {
+      current = false
+      clearTimeout(timer)
+    }
+  }, [nameQuery, known, request])
+
+  // Only while a name of 3+ letters is being typed and no customer is chosen yet.
+  const choices = nameQuery.trim().length >= 3 && !known ? matches : []
+
+  const pickCustomer = (customer: CustomerSummary) => {
+    setPhone(customer.phone)
+    setName(customer.name)
+    setArea(customer.area ?? '')
+    setAddress(customer.address ?? '')
+    setKnown(customer)
+    setNameQuery('')
+  }
 
   const byId = new Map((services ?? []).map((s) => [s.id, s]))
   const lines = rows.map((row) => rowPrice(row, row.serviceId === null ? undefined : byId.get(row.serviceId), agent))
@@ -159,7 +195,39 @@ export function NewOrderPage({ kind }: { kind: OrderKind }) {
             {isOwner ? 'Harga karpet ejen: isi harga sekaki persegi untuk setiap barang.' : 'Harga karpet ejen akan diisi oleh pemilik.'}
           </p>
         )}
-        <TextField label="Nama" value={name} onChange={setName} required />
+        <TextField
+          label="Nama"
+          value={name}
+          onChange={(value) => {
+            setName(value)
+            setNameQuery(value)
+          }}
+          required
+        />
+        {choices.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-ink-soft">Pelanggan lama? Pilih untuk isi butiran mereka:</p>
+            <ul aria-label="Pelanggan lama dengan nama ini" className="divide-y divide-line rounded-xl ring-1 ring-line">
+              {choices.map((customer) => (
+                <li key={customer.id}>
+                  <button type="button" onClick={() => pickCustomer(customer)} className="w-full px-3 py-2 text-left hover:bg-foam">
+                    <span className="font-semibold">{customer.name}</span>
+                    {customer.is_agent && ' · Ejen'}
+                    <span className="block text-sm text-ink-soft">
+                      {[
+                        customer.phone,
+                        customer.area,
+                        `${customer.orders} pesanan${customer.last_order_on ? `, terakhir ${formatDay(customer.last_order_on)}` : ''}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <TextField label="Kawasan" value={area} onChange={setArea} placeholder="cth. Seremban 2" />
         <TextField label="Alamat" value={address} onChange={setAddress} />
         <TextField label="Tarikh diterima" value={receivedOn} onChange={setReceivedOn} type="date" required />

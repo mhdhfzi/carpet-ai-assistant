@@ -95,7 +95,7 @@ def test_get_services_lists_prices(db: Session, conversation: Conversation) -> N
 
     by_name = {s["name"]: s for s in services}
     assert by_name["Karpet Shaggy"]["price"] == "RM2.00 per square foot"
-    assert by_name["Karpet Handmade"]["price"] == "RM2.50 to RM4.00 per square foot"
+    assert by_name["Karpet Handmade / Premium"]["price"] == "RM2.50 to RM4.00 per square foot"
 
 
 def test_estimate_price_mixes_fixed_and_ranged_lines(
@@ -107,7 +107,7 @@ def test_estimate_price_mixes_fixed_and_ranged_lines(
         ctx,
         "estimate_price",
         items=[
-            {"service_id": service_id(db, "Karpet Handmade"), "quantity": 100},
+            {"service_id": service_id(db, "Karpet Handmade / Premium"), "quantity": 100},
             {"service_id": service_id(db, "Cucian Sofa"), "quantity": 3},
         ],
     )

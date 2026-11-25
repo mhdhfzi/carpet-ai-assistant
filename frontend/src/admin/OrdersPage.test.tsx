@@ -1415,6 +1415,59 @@ describe('order form', () => {
   })
 })
 
+describe('finding a returning customer by name', () => {
+  const ali = (id: number, name: string, phone: string, area: string) => ({
+    id, name, phone, area, address: `${id}, Jalan A`, is_agent: false, orders: id, last_order_on: '2026-11-03', total_value: '144.00', unpaid: '0.00',
+  })
+  const AHMAD = ali(4, 'Ali bin Ahmad', '012-345 6789', 'Seremban 2')
+  const HASSAN = ali(1, 'Ali Hassan', '013-888 1234', 'Senawang')
+
+  it('lists the customers with that name, and picking one fills in their details', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      // A name finds both; a phone number finds its one customer.
+      'GET /api/customers': (call) => ({ body: /\d/.test(call.query.get('q') ?? '') ? [HASSAN] : [AHMAD, HASSAN] }),
+      'POST /api/orders': () => ({ status: 201, body: order() }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('Nama'), 'Ali')
+    const list = await screen.findByRole('list', { name: 'Pelanggan lama dengan nama ini' })
+    expect(calls.findLast((c) => c.path === '/api/customers')?.query.get('limit')).toBe('5')
+    expect(within(list).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Ali bin Ahmad012-345 6789 · Seremban 2 · 4 pesanan, terakhir 3 Nov',
+      'Ali Hassan013-888 1234 · Senawang · 1 pesanan, terakhir 3 Nov',
+    ])
+
+    await user.click(within(list).getByRole('button', { name: /Ali Hassan/ }))
+
+    expect(screen.queryByRole('list', { name: 'Pelanggan lama dengan nama ini' })).toBeNull()
+    expect(screen.getByLabelText('No. telefon')).toHaveValue('013-888 1234')
+    expect(screen.getByLabelText('Nama')).toHaveValue('Ali Hassan')
+    expect(screen.getByLabelText('Kawasan')).toHaveValue('Senawang')
+    expect(screen.getByLabelText('Alamat')).toHaveValue('1, Jalan A')
+    expect(screen.getByRole('status')).toHaveTextContent('Pelanggan lama: Ali Hassan (1 pesanan)')
+  })
+
+  it('needs three letters before it looks', async () => {
+    const calls = mockBackend({
+      'GET /api/auth/me': me('staff'),
+      'GET /api/business': () => ({ body: REAL_BUSINESS }),
+      'GET /api/services': () => ({ body: SERVICES }),
+      'GET /api/customers': () => ({ body: [AHMAD] }),
+    })
+    const user = renderSignedIn('#/orders/new')
+
+    await user.type(await screen.findByLabelText('Nama'), 'Al')
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect(calls.some((c) => c.path === '/api/customers')).toBe(false)
+    expect(screen.queryByRole('list', { name: 'Pelanggan lama dengan nama ini' })).toBeNull()
+  })
+})
+
 describe('extra charges (caj tambahan)', () => {
   const FAR = { amount: '30.00', reason: 'Ambil lebih 15km' }
 
